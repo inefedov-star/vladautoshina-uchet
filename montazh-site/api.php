@@ -33,6 +33,7 @@ if ($a === 'selftest') {
   out([
     'data_dir_public' => $public,
     'php' => PHP_VERSION,
+    'sqlite_version' => extension_loaded('pdo_sqlite') ? (new PDO('sqlite::memory:'))->query('select sqlite_version()')->fetchColumn() : null,
     'php_ok' => version_compare(PHP_VERSION, '7.4', '>='),
     'sqlite' => extension_loaded('pdo_sqlite'),
     'config' => $cfgOk,
@@ -116,7 +117,7 @@ try {
   case 'helper':
     post(); needRole($role, ['owner', 'master']);
     $b = body(); if (!isDay($b['day'] ?? null)) fail('Неверная дата');
-    db($cfg)->prepare('INSERT INTO days (day, helper) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET helper = excluded.helper')->execute([$b['day'], !empty($b['helper']) ? 1 : 0]);
+    db($cfg)->prepare('INSERT OR REPLACE INTO days (day, helper) VALUES (?, ?)')->execute([$b['day'], !empty($b['helper']) ? 1 : 0]);
     logit($cfg, $role, 'helper', $b['day'] . '=' . (!empty($b['helper']) ? 1 : 0));
     out(['ok' => true]);
 
