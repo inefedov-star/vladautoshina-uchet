@@ -172,6 +172,38 @@ h2.sec{font-family:var(--f-display);font-weight:800;font-size:1.5rem;text-transf
 .keys button:active{background:var(--paper-3)}
 .out{border:0;background:none;color:var(--ink-3);font-weight:600;min-height:44px;padding:0 6px}
 body.master .owner-only{display:none!important}
+.calbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-block:18px 8px}
+.calbar h1{font-family:var(--f-display);font-weight:800;font-size:clamp(1.4rem,3vw,2rem);text-transform:uppercase;margin:0 6px;line-height:1}
+.cal-day{display:flex;flex-direction:column;border-top:1.5px solid var(--ink)}
+.cd-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;border-bottom:1px solid var(--rule);padding:6px 0;align-items:start}
+.cd-row .tm{font-family:var(--f-mono);font-weight:700;padding-top:10px}
+.cd-cell{display:flex;gap:6px;flex-wrap:wrap;align-items:stretch;min-width:0}
+.cbk{text-align:left;border:1.5px solid var(--signal);background:var(--signal-tint);border-radius:3px;padding:8px 10px;min-height:44px;min-width:0;max-width:100%}
+.cbk b{display:block;font-size:.92rem}
+.cbk small{display:block;color:var(--ink-3);font-size:.8rem}
+.cbk.done{border-color:var(--moss);background:var(--moss-tint)}
+.cbk.noshow{border-color:var(--rule);background:transparent;opacity:.55;text-decoration:line-through}
+.cbk.sm{padding:4px 6px;min-height:36px;font-size:.78rem;font-weight:600;width:100%;display:block;line-height:1.2}
+.cfree{border:1.5px dashed var(--rule);background:transparent;border-radius:3px;min-height:44px;padding:0 14px;color:var(--ink-3);flex:1;text-align:left}
+.cfree:hover{border-color:var(--ink);color:var(--ink)}
+.cfree.sm{width:100%;min-height:36px;flex:none}
+.cal-week{min-width:760px;table-layout:fixed}
+.cal-week th,.cal-week td{padding:3px;border:1px solid var(--rule-soft);text-align:left;vertical-align:top}
+.cal-week td.tm{font-family:var(--f-mono);font-size:.75rem;font-weight:700;width:52px;color:var(--ink-3);padding-top:10px}
+.cal-week th:first-child{width:52px}
+.cal-week td.closed{background:var(--paper-3)}
+.cal-week th.today .cwh{border-color:var(--signal)}
+.cwh{width:100%;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:6px;font-weight:700;text-transform:none;text-align:left;font-family:var(--f-text);font-size:.85rem;letter-spacing:0;color:var(--ink)}
+.cwh small{display:block;font-weight:500;color:var(--ink-3);font-size:.72rem}
+.cal-month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-bottom:30px}
+.cm-h{text-align:center;color:var(--ink-3);padding:4px 0}
+.cm-d{min-height:78px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:6px;text-align:left;display:flex;flex-direction:column;gap:2px;min-width:0}
+.cm-d .n{font-family:var(--f-display);font-weight:800;font-size:1.2rem;line-height:1}
+.cm-d b{font-size:.78rem;color:var(--signal-deep)}
+.cm-d small{font-size:.72rem;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cm-d.other{opacity:.45}
+.cm-d.today{border-color:var(--signal)}
+@media (max-width:520px){.cm-d{min-height:60px;padding:4px}.cm-d small{display:none}}
 @media print{body *{visibility:hidden}#sheet,#sheet *{visibility:visible}#sheet{position:absolute;inset:0;transform:none;border:0;overflow:visible}.close,#ckPrint{display:none}}
 .week{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;margin-bottom:12px}
 .week::-webkit-scrollbar{display:none}
@@ -248,6 +280,7 @@ body.master .owner-only{display:none!important}
     </div>
     <nav class="tabs" role="tablist" aria-label="Разделы">
       <button class="tab" role="tab" type="button" data-v="day" aria-selected="true">Смена</button>
+      <button class="tab" role="tab" type="button" data-v="cal" aria-selected="false">Запись</button>
       <button class="tab" role="tab" type="button" data-v="cli" aria-selected="false">Клиенты</button>
       <button class="tab owner-only" role="tab" type="button" data-v="exp" aria-selected="false">Расходы</button>
       <button class="tab owner-only" role="tab" type="button" data-v="sum" aria-selected="false">Итоги</button>
@@ -273,6 +306,19 @@ body.master .owner-only{display:none!important}
     <div class="bks" id="bks"></div>
     <div class="hd2"><h2>Сделано</h2></div>
     <div class="orders" id="orders"></div>
+  </section>
+
+  <section id="v-cal" hidden>
+    <div class="calbar">
+      <button class="arrow" type="button" id="calPrev" aria-label="Назад">‹</button>
+      <h1 id="calTitle"></h1>
+      <button class="arrow" type="button" id="calNext" aria-label="Вперёд">›</button>
+      <button class="btn ghost" type="button" id="calToday">Сегодня</button>
+      <div class="row" id="calMode" style="margin-left:auto"><button type="button" class="chip" data-m="day">День</button><button type="button" class="chip" data-m="week">Неделя</button><button type="button" class="chip" data-m="month">Месяц</button></div>
+      <button class="btn sig" type="button" id="calAdd">+ Запись</button>
+    </div>
+    <p class="mono" id="calSum" style="color:var(--ink-3);margin:0 0 10px"></p>
+    <div id="calOut"></div>
   </section>
 
   <section id="v-cli" hidden>
@@ -468,6 +514,49 @@ async function afterSave(){const before=gameStats(S.ms);await loadMonth();const 
   if(after.bonus>before.bonus){await loadSpins();toast(`<b>+${rub(after.bonus-before.bonus)} и вращение колеса!</b>Сладкий бонус мастеру. Уже ${rub(after.bonus)} за месяц`);return;}
   const nb=BADGES.find(b=>after.got[b.id]&&!before.got[b.id]);if(nb)toast(`<b>Новый значок: ${nb.t}</b>${nb.d}`);}
 function monthBonus(baseSum){return Math.floor(baseSum/10000)*100;}
+/* ---------- календарь записи ---------- */
+S.cal={mode:'week',anchor:iso(new Date()),items:[]};
+function monday(d){const x=new Date(d);const wd=(x.getDay()+6)%7;x.setDate(x.getDate()-wd);return x;}
+function calRange(){const a=fromIso(S.cal.anchor);
+  if(S.cal.mode==='day')return[a,a];
+  if(S.cal.mode==='week'){const m=monday(a);const e=new Date(m);e.setDate(m.getDate()+6);return[m,e];}
+  const f=new Date(a.getFullYear(),a.getMonth(),1),l=new Date(a.getFullYear(),a.getMonth()+1,0);const s=monday(f);const e=new Date(l);e.setDate(l.getDate()+(7-((l.getDay()+6)%7)-1));return[s,e];}
+async function loadCal(){const[f,t]=calRange();renderCal();try{const j=await api('bookings',null,{from:iso(f),to:iso(t)});S.cal.items=j.bookings||[];}catch(e){S.cal.items=[];status(e.message,true);}renderCal();}
+function calShift(n){const a=fromIso(S.cal.anchor);if(S.cal.mode==='day')a.setDate(a.getDate()+n);else if(S.cal.mode==='week')a.setDate(a.getDate()+7*n);else a.setMonth(a.getMonth()+n,1);S.cal.anchor=iso(a);loadCal();}
+function bkOf(day){return S.cal.items.filter(b=>b.day===day);}
+function sumEst(list){return list.filter(b=>b.status!=='noshow').reduce((a,b)=>a+(b.est||0),0);}
+function bkLabel(b){return esc(b.name||b.plate||'Клиент')+(b.car!=='com'&&b.d?' · R'+b.d:'');}
+function calNewAt(day,tm){openBk(null,{day,tm,_others:bkOf(day)});}
+function calOpen(b){openBk(Object.assign({},b,{_others:bkOf(b.day)}));}
+function renderCal(){const[f,t]=calRange(),m=S.cal.mode,today=iso(new Date());
+  let title;if(m==='day'){const d=fromIso(S.cal.anchor);title=`${d.getDate()} ${MONTHS_G[d.getMonth()]}, ${WD[d.getDay()]}`;}
+  else if(m==='week')title=`${f.getDate()} ${MONTHS_G[f.getMonth()]} — ${t.getDate()} ${MONTHS_G[t.getMonth()]}`;
+  else{const a=fromIso(S.cal.anchor);title=`${MONTHS[a.getMonth()]} ${a.getFullYear()}`;}
+  $('#calTitle').textContent=title;
+  document.querySelectorAll('#calMode .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.m===m));
+  const all=S.cal.items.filter(b=>b.status!=='noshow');$('#calSum').textContent=all.length?`${all.length} ${plural(all.length,'запись','записи','записей')} · ~${rub(sumEst(all))}`:'Записей нет';
+  const out=$('#calOut');
+  if(m==='day'){const day=S.cal.anchor,list=bkOf(day);
+    out.innerHTML=`<div class="cal-day">${slots(day).map(tm=>{const here=list.filter(b=>b.tm===tm);
+      return `<div class="cd-row"><span class="tm">${tm}</span><div class="cd-cell">${here.map((b,i)=>`<button type="button" class="cbk ${b.status}" data-bk="${b.id}"><b>${bkLabel(b)}</b><small>${esc([PRESET[b.preset],b.est?'~'+rub(b.est):'',b.phone].filter(Boolean).join(' · '))}</small></button>`).join('')}
+        <button type="button" class="cfree" data-new="${day}|${tm}" aria-label="Записать на ${tm}">${here.length?'+':'свободно'}</button></div></div>`;}).join('')}</div>`;}
+  else if(m==='week'){const days=[];for(let i=0;i<7;i++){const d=new Date(f);d.setDate(f.getDate()+i);days.push(iso(d));}
+    const allSlots=slots(days[0]).length>=slots(days[5]).length?slots(days[0]):slots(days[5]);
+    out.innerHTML=`<div class="tw"><table class="cal-week"><thead><tr><th></th>${days.map(d=>{const x=fromIso(d),l=bkOf(d);return `<th class="${d===today?'today':''}"><button type="button" class="cwh" data-go="${d}">${WD[x.getDay()]} ${x.getDate()}<small>${l.length?l.length+' · '+rub(sumEst(l)):'—'}</small></button></th>`;}).join('')}</tr></thead>
+      <tbody>${allSlots.map(tm=>`<tr><td class="tm">${tm}</td>${days.map(d=>{const inDay=slots(d).includes(tm),here=bkOf(d).filter(b=>b.tm===tm);
+        if(!inDay)return `<td class="closed"></td>`;
+        return `<td>${here.map(b=>`<button type="button" class="cbk sm ${b.status}" data-bk="${b.id}">${bkLabel(b)}</button>`).join('')||`<button type="button" class="cfree sm" data-new="${d}|${tm}" aria-label="Записать ${d} на ${tm}"></button>`}</td>`;}).join('')}</tr>`).join('')}</tbody></table></div>`;}
+  else{const a=fromIso(S.cal.anchor),cells=[];for(let d=new Date(f);d<=t;d.setDate(d.getDate()+1))cells.push(iso(d));
+    out.innerHTML=`<div class="cal-month">${['пн','вт','ср','чт','пт','сб','вс'].map(w=>`<div class="cm-h mono">${w}</div>`).join('')}${cells.map(d=>{const x=fromIso(d),l=bkOf(d).filter(b=>b.status!=='noshow');
+      return `<button type="button" class="cm-d ${x.getMonth()!==a.getMonth()?'other':''} ${d===today?'today':''}" data-go="${d}"><span class="n">${x.getDate()}</span>${l.length?`<b class="tnum">${l.length} ${plural(l.length,'запись','записи','записей')}</b><small class="tnum">${rub(sumEst(l))}</small>`:''}</button>`;}).join('')}</div>`;}
+  out.querySelectorAll('[data-bk]').forEach(b=>b.onclick=()=>calOpen(S.cal.items.find(x=>x.id===+b.dataset.bk)));
+  out.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>{const[d,tm]=b.dataset.new.split('|');calNewAt(d,tm);});
+  out.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{S.cal.mode='day';S.cal.anchor=b.dataset.go;loadCal();});}
+$('#calPrev').onclick=()=>calShift(-1);$('#calNext').onclick=()=>calShift(1);
+$('#calToday').onclick=()=>{S.cal.anchor=iso(new Date());loadCal();};
+document.querySelectorAll('#calMode .chip').forEach(c=>c.onclick=()=>{S.cal.mode=c.dataset.m;loadCal();});
+$('#calAdd').onclick=()=>calNewAt(S.cal.mode==='day'?S.cal.anchor:(S.cal.anchor<iso(new Date())?iso(new Date()):S.cal.anchor),'');
+
 
 /* ---------- штрихкоды для кассы (Эвотор) ---------- */
 const BC={"Балансировка колеса R13":"2000082920003","Балансировка колеса R14":"2000082920003","Балансировка колеса R15":"2000082920003","Балансировка колеса R16":"2000082920003","Балансировка колеса R17":"2000082920003","Балансировка колеса R18":"2000082920003","Балансировка колеса R19":"2000082920003","Балансировка колеса R20":"2000082920003","Балансировка колеса R21":"2000082920003","Балансировка колеса R22":"2000082920003","Балансировка колеса внедорожник R13-15":"2000083260009","Балансировка колеса внедорожник R16":"2000083260009","Балансировка колеса внедорожник R17":"2000083260009","Балансировка колеса внедорожник R18":"2000083260009","Балансировка колеса внедорожник R19":"2000083260009","Балансировка колеса внедорожник R20":"2000083260009","Балансировка колеса внедорожник R21":"2000083260009","Балансировка колеса внедорожник R22":"2000083260009","Балансировка колеса коммерческий":"2000083370005","Вентиль резиновый/хром":"2000083430006","Герметизация борта колеса":"2000083430006","Демонтаж/монтаж шины R13":"2000082820006","Демонтаж/монтаж шины R14":"2000082820006","Демонтаж/монтаж шины R15":"2000082820006","Демонтаж/монтаж шины R16":"2000082820006","Демонтаж/монтаж шины R17":"2000082820006","Демонтаж/монтаж шины R18":"2000082820006","Демонтаж/монтаж шины R19":"2000082820006","Демонтаж/монтаж шины R20":"2000082820006","Демонтаж/монтаж шины R21":"2000082820006","Демонтаж/монтаж шины R22":"2000082820006","Демонтаж/монтаж шины внедорожник R13-15":"2000083180000","Демонтаж/монтаж шины внедорожник R16":"2000083180000","Демонтаж/монтаж шины внедорожник R17":"2000083180000","Демонтаж/монтаж шины внедорожник R18":"2000083180000","Демонтаж/монтаж шины внедорожник R19":"2000083180000","Демонтаж/монтаж шины внедорожник R20":"2000083180000","Демонтаж/монтаж шины внедорожник R21":"2000083180000","Демонтаж/монтаж шины внедорожник R22":"2000083180000","Демонтаж/монтаж шины коммерческий":"2000083370005","Мойка колёс (комплект)":"2000083430006","Надбавка RunFlat (+100% к монтаж/демонтаж)":"2000083600003","Надбавка низкопрофильная шина, серия от 45 (+50% к монтаж/демонтаж)":"2000083600003","Пакеты для колес IVANOR":"2000083430006","Повышенная сложность работ (сверх норма-часа)":"2000083600003","Правка диска легкогрузовой / коммерческий":"2000083460003","Правка дисков (Литой)":"2000083460003","Правка дисков (Штампованный)":"2000083460003","Правка литого диска R13–R14":"2000083460003","Правка литого диска R15–R16":"2000083460003","Правка литого диска R17–R18":"2000083460003","Правка литого диска R19–R22":"2000083460003","Правка штампованного диска R13–R14":"2000083460003","Правка штампованного диска R15–R16":"2000083460003","Приём шины на утилизацию":"2000083430006","Проверка колеса на биение (диагностика)":"2000083430006","Ремонт грибком / заплаткой (колесо снято)":"2000083400009","Ремонт камеры":"2000083400009","Ремонт прокола жгутом (колесо снято)":"2000083400009","Сезонное хранение: 5-е колесо / докатка (сезон)":"2000083630000","Сезонное хранение: колёса в сборе (сезон)":"2000083630000","Сезонное хранение: шины без дисков (сезон)":"2000083630000","Снятие прикипевшего крепежа / секретных болтов":"2000083430006","Снятие/установка колеса R13":"2000082720009","Снятие/установка колеса R14":"2000082720009","Снятие/установка колеса R15":"2000082720009","Снятие/установка колеса R16":"2000082720009","Снятие/установка колеса R17":"2000082720009","Снятие/установка колеса R18":"2000082720009","Снятие/установка колеса R19":"2000082720009","Снятие/установка колеса R20":"2000082720009","Снятие/установка колеса R21":"2000082720009","Снятие/установка колеса R22":"2000082720009","Снятие/установка колеса внедорожник R13-15":"2000083100008","Снятие/установка колеса внедорожник R16":"2000083100008","Снятие/установка колеса внедорожник R17":"2000083100008","Снятие/установка колеса внедорожник R18":"2000083100008","Снятие/установка колеса внедорожник R19":"2000083100008","Снятие/установка колеса внедорожник R20":"2000083100008","Снятие/установка колеса внедорожник R21":"2000083100008","Снятие/установка колеса внедорожник R22":"2000083100008","Снятие/установка колеса коммерческий (перед / спарка зад)":"2000083370005","Услуги шиномонтажа":"2007092000008","Услуги шиномонтажа (дошиповка)":"2007505000007","Услуги шиномонтажа (легкогрузовой транспорт)":"2007506000006","Установка датчика давления TPMS":"2000083430006","Установка камеры":"2000083430006","Установка кордового пластыря":"2000083400009","Чернение шин (комплект)":"2000083430006","Чистка и смазка ступицы (комплект)":"2000083430006","Шиномонтаж комплекс R13 (4 колеса)":"2000082620002","Шиномонтаж комплекс R14 (4 колеса)":"2000082620002","Шиномонтаж комплекс R15 (4 колеса)":"2000082620002","Шиномонтаж комплекс R16 (4 колеса)":"2000082620002","Шиномонтаж комплекс R17 (4 колеса)":"2000082620002","Шиномонтаж комплекс R18 (4 колеса)":"2000082620002","Шиномонтаж комплекс R19 (4 колеса)":"2000082620002","Шиномонтаж комплекс R20 (4 колеса)":"2000082620002","Шиномонтаж комплекс R21 (4 колеса)":"2000082620002","Шиномонтаж комплекс R22 (4 колеса)":"2000082620002","Шиномонтаж комплекс внедорожник R13-15 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R16 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R17 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R18 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R19 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R20 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R21 (4 колеса)":"2000083020009","Шиномонтаж комплекс внедорожник R22 (4 колеса)":"2000083020009","Шиномонтаж комплекс коммерческий (4 колеса)":"2000083340008","Шиномонтаж комплекс коммерческий (6 колёс, без камеры)":"2000083340008","Шиномонтаж комплекс коммерческий (6 колёс, с камерой)":"2000083340008"};
@@ -564,7 +653,7 @@ function renderBookings(){const el=$('#bks'),list=S.bookings.slice().sort((a,b)=
     <span class="act">${b.status==='planned'?`<button class="btn sig" type="button" data-go="${i}">Приехал</button>`:''}<button class="btn ghost" type="button" data-ed="${i}">Изменить</button></span></div>`).join('');
   el.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>arrive(list[+x.dataset.go]));
   el.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.ed]));}
-function arrive(b){openOrder(null,{name:b.name||'',phone:b.phone||'',plate:b.plate||'',car:b.car||'car',d:b.d||16,note:b.note||'',bookingId:b.id,lines:presetLines(b.car||'car',b.d||16,b.preset)});}
+function arrive(b){if(b.day&&b.day!==S.day){S.day=b.day;loadDay();}if(S.view!=='day')show('day');openOrder(null,{day:b.day,name:b.name||'',phone:b.phone||'',plate:b.plate||'',car:b.car||'car',d:b.d||16,note:b.note||'',bookingId:b.id,lines:presetLines(b.car||'car',b.d||16,b.preset)});}
 
 /* лист записи */
 let B=null;
@@ -607,11 +696,11 @@ function bindBk(){$('#close').onclick=closeSheet;
   const go=document.getElementById('b-go');if(go)go.onclick=()=>{keepBk();const b={...B};closeSheet();setTimeout(()=>arrive(b),400);};
   const no=document.getElementById('b-no');if(no)no.onclick=()=>saveBk('noshow');
   const del=document.getElementById('b-del');if(del)del.onclick=()=>{$('#bDelBox').innerHTML=`<div class="confirm">Удалить запись? <button class="btn danger" type="button" id="b-del2">Да</button><button class="btn ghost" type="button" id="b-del0">Нет</button></div>`;
-    $('#b-del0').onclick=rerBk;$('#b-del2').onclick=async()=>{try{await api('book_del',{id:B.id});closeSheet();loadDay();loadWeek();}catch(e){bkErr(e.message);}};};}
+    $('#b-del0').onclick=rerBk;$('#b-del2').onclick=async()=>{try{await api('book_del',{id:B.id});closeSheet();loadDay();loadWeek();if(S.view==='cal')loadCal();}catch(e){bkErr(e.message);}};};}
 function bkErr(t){const e=$('#b-err');e.textContent=t;e.hidden=false;}
 async function saveBk(status){keepBk();if(!B.tm)return bkErr('Выберите время.');if(!B.name&&!B.phone&&!B.plate)return bkErr('Впишите имя, телефон или госномер — чтобы узнать клиента.');
   try{await api('book_save',{id:B.id,day:B.day,tm:B.tm,status,name:B.name,phone:B.phone,plate:B.plate,note:B.note,car:B.car,d:B.car==='com'?null:B.d,preset:B.preset,est:B.est});
-    closeSheet();if(B.day!==S.day){S.day=B.day;}loadDay();loadWeek();}catch(e){bkErr('Не сохранилось: '+e.message);}}
+    closeSheet();if(S.view==='cal'){loadCal();}else if(B.day!==S.day){S.day=B.day;}loadDay();loadWeek();}catch(e){bkErr('Не сохранилось: '+e.message);}}
 function openBk(b,pre){B=b?JSON.parse(JSON.stringify(b)):Object.assign({day:S.day,tm:'',car:'car',d:16,preset:'swap',est:0,name:'',phone:'',plate:'',note:'',status:'planned'},pre||{});
   renderBk();const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 $('#addBk').onclick=()=>openBk(null);
@@ -814,7 +903,7 @@ $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.yea
 
 /* ---------- вкладки ---------- */
 function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal')loadCal();$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}

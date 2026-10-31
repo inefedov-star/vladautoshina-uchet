@@ -241,6 +241,13 @@ try {
     logit($cfg, $role, 'book_del', (string)$id);
     out(['ok' => true]);
 
+  case 'bookings':
+    needRole($role, ['owner', 'master']);
+    $from = $_GET['from'] ?? ''; $to = $_GET['to'] ?? '';
+    if (!isDay($from) || !isDay($to) || $to < $from) fail('Неверный период');
+    if ((strtotime($to) - strtotime($from)) > 45 * 86400) fail('Слишком длинный период');
+    out(['bookings' => bookingRows($cfg, 'day BETWEEN ? AND ?', [$from, $to])]);
+
   case 'week':
     // ближайшие дни: сколько записей и на какую сумму
     needRole($role, ['owner', 'master']);
