@@ -116,6 +116,7 @@ try {
     $r = null;
     if ($pin !== '' && hash_equals((string)$cfg['owner_pin'], $pin)) $r = 'owner';
     elseif ($pin !== '' && hash_equals((string)$cfg['master_pin'], $pin)) $r = 'master';
+    elseif ($pin !== '' && !empty($cfg['cashier_pin']) && hash_equals((string)$cfg['cashier_pin'], $pin)) $r = 'cashier';
     if (!$r) { $_SESSION['tries'][] = $now; fail('Неверный PIN', 403); }
     session_regenerate_id(true);
     $_SESSION['role'] = $r; $_SESSION['tries'] = [];
@@ -128,7 +129,7 @@ try {
     out(['ok' => true]);
 
   case 'day':
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     $day = $_GET['day'] ?? '';
     if (!isDay($day)) fail('Неверная дата');
     $st = db($cfg)->prepare('SELECT id, body FROM orders WHERE day = ? ORDER BY t');
@@ -138,14 +139,14 @@ try {
     out(['orders' => $orders, 'helper' => (bool)$h->fetchColumn(), 'bookings' => bookingRows($cfg, 'day = ?', [$day])]);
 
   case 'helper':
-    post(); needRole($role, ['owner', 'master']);
+    post(); needRole($role, ['owner', 'master', 'cashier']);
     $b = body(); if (!isDay($b['day'] ?? null)) fail('Неверная дата');
     db($cfg)->prepare('INSERT OR REPLACE INTO days (day, helper) VALUES (?, ?)')->execute([$b['day'], !empty($b['helper']) ? 1 : 0]);
     logit($cfg, $role, 'helper', $b['day'] . '=' . (!empty($b['helper']) ? 1 : 0));
     out(['ok' => true]);
 
   case 'save':
-    post(); needRole($role, ['owner', 'master']);
+    post(); needRole($role, ['owner', 'master', 'cashier']);
     $o = body();
     if (!isDay($o['day'] ?? null) || !is_array($o['lines'] ?? null) || !count($o['lines'])) fail('Пустая запись');
     $list = 0; $h = 0;
@@ -154,7 +155,10 @@ try {
     $id = isset($o['id']) ? (int)$o['id'] : 0; unset($o['id']);
     $prev = null;
     if ($id) { $s = db($cfg)->prepare('SELECT body FROM orders WHERE id = ?'); $s->execute([$id]); $prev = $s->fetchColumn(); if ($prev === false) fail('Запись уже удалена', 404); $prev = json_decode($prev, true); }
-    if ($role === 'master') {
+    // отметка «оплачено» ставится отдельной кнопкой; правка работ её не сбрасывает
+    $o['paidOk'] = (bool)($prev['paidOk'] ?? false); $o['paidAt'] = $prev['paidAt'] ?? null;
+    if ($o['paidOk'] && $list !== (int)($prev['list'] ?? 0)) $o['changedAfterPaid'] = true; else $o['changedAfterPaid'] = (bool)($prev['changedAfterPaid'] ?? false);
+    if ($role !== 'owner') {
       // скидку и купон ставит только собственник; правка мастера их не сбрасывает
       $mode = $prev['mode'] ?? 'full';
       $o['mode'] = $mode;
@@ -179,8 +183,21 @@ try {
     logit($cfg, $role, 'save', (string)$id);
     out(['id' => $id]);
 
+  case 'paid':
+    // касса отмечает оплату — мастер видит и отпускает машину
+    post(); needRole($role, ['owner', 'cashier']);
+    $b = body(); $id = (int)($b['id'] ?? 0);
+    $st = db($cfg)->prepare('SELECT body FROM orders WHERE id = ?'); $st->execute([$id]); $prev = $st->fetchColumn();
+    if ($prev === false) fail('Запись уже удалена', 404);
+    $o = json_decode($prev, true);
+    $o['paidOk'] = !empty($b['paid']); $o['paidAt'] = $o['paidOk'] ? time() : null; $o['changedAfterPaid'] = false;
+    if (in_array($b['pay'] ?? '', ['cash', 'card', 'transfer'], true) && ($o['mode'] ?? 'full') !== 'coupon') $o['pay'] = $b['pay'];
+    db($cfg)->prepare('UPDATE orders SET body = ?, updated = ? WHERE id = ?')->execute([json_encode($o, JSON_UNESCAPED_UNICODE), time(), $id]);
+    logit($cfg, $role, 'paid', $id . '=' . ($o['paidOk'] ? 1 : 0));
+    out(['ok' => true]);
+
   case 'del':
-    post(); needRole($role, ['owner', 'master']);
+    post(); needRole($role, ['owner', 'master', 'cashier']);
     $id = (int)(body()['id'] ?? 0);
     db($cfg)->prepare('DELETE FROM orders WHERE id = ?')->execute([$id]);
     logit($cfg, $role, 'del', (string)$id);
@@ -219,7 +236,7 @@ try {
     out(['orders' => $orders, 'helperDays' => $d->fetchAll(PDO::FETCH_COLUMN), 'expenses' => array_map(fn($r) => ['day' => $r['day'], 'sum' => (int)$r['sum'], 'kind' => $r['kind']], $e->fetchAll())]);
 
   case 'book_save':
-    post(); needRole($role, ['owner', 'master']);
+    post(); needRole($role, ['owner', 'master', 'cashier']);
     $b = body();
     $kind = in_array($b['kind'] ?? '', ['time', 'leave', 'task'], true) ? $b['kind'] : 'time';
     if (!isDay($b['day'] ?? null)) fail('Укажите день');
@@ -239,14 +256,14 @@ try {
     out(['id' => $id]);
 
   case 'book_del':
-    post(); needRole($role, ['owner', 'master']);
+    post(); needRole($role, ['owner', 'master', 'cashier']);
     $id = (int)(body()['id'] ?? 0);
     db($cfg)->prepare('DELETE FROM bookings WHERE id = ?')->execute([$id]);
     logit($cfg, $role, 'book_del', (string)$id);
     out(['ok' => true]);
 
   case 'bookings':
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     $from = $_GET['from'] ?? ''; $to = $_GET['to'] ?? '';
     if (!isDay($from) || !isDay($to) || $to < $from) fail('Неверный период');
     if ((strtotime($to) - strtotime($from)) > 45 * 86400) fail('Слишком длинный период');
@@ -254,12 +271,12 @@ try {
 
   case 'queue':
     // работы без времени, которые ещё не сделаны: «оставили на день» и «когда будет время»
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     out(['items' => bookingRows($cfg, "status = 'planned' AND tm = ''", [])]);
 
   case 'week':
     // ближайшие дни: сколько записей и на какую сумму
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     $from = $_GET['from'] ?? ''; if (!isDay($from)) fail('Неверная дата');
     $to = date('Y-m-d', strtotime($from . ' +13 days'));
     try { $st = db($cfg)->prepare("SELECT day, COUNT(*) n, SUM(json_extract(body,'$.est')) est FROM bookings WHERE status = 'planned' AND day BETWEEN ? AND ? GROUP BY day"); $st->execute([$from, $to]); $rows = $st->fetchAll(); }
@@ -269,7 +286,7 @@ try {
 
   case 'clients':
     // поиск по телефону, номеру или имени — по машинам и записям
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     $q = trim((string)($_GET['q'] ?? ''));
     if (mb_strlen($q) < 2) out(['orders' => [], 'bookings' => []]);
     $dq = digits($q);
@@ -290,7 +307,7 @@ try {
 
   case 'month':
     // для игры мастера: без сумм «получено» и расходов
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     $m = $_GET['month'] ?? ''; if (!preg_match('/^\d{4}-\d{2}$/', $m)) fail('Неверный месяц');
     $st = db($cfg)->prepare('SELECT day, body FROM orders WHERE day LIKE ?'); $st->execute([$m . '-%']);
     $orders = array_map(function ($r) { $b = json_decode($r['body'], true); $big = 0;
@@ -304,12 +321,12 @@ try {
     out(['orders' => $orders, 'helperDays' => $d->fetchAll(PDO::FETCH_COLUMN), 'bestBefore' => $byDay ? max($byDay) : 0]);
 
   case 'spins':
-    needRole($role, ['owner', 'master']);
+    needRole($role, ['owner', 'master', 'cashier']);
     $m = $_GET['month'] ?? ''; if (!preg_match('/^\d{4}-\d{2}$/', $m)) fail('Неверный месяц');
     out(spinState($cfg, $m));
 
   case 'spin':
-    post(); needRole($role, ['owner', 'master']);
+    post(); needRole($role, ['owner', 'master', 'cashier']);
     $m = date('Y-m');
     $s = spinState($cfg, $m);
     if ($s['left'] < 1) fail('Вращений пока нет — следующее за каждые 10 000 ₽ работ', 409);

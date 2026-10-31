@@ -171,7 +171,22 @@ h2.sec{font-family:var(--f-display);font-weight:800;font-size:1.5rem;text-transf
 .keys button{min-height:64px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);font-family:var(--f-display);font-weight:800;font-size:1.6rem}
 .keys button:active{background:var(--paper-3)}
 .out{border:0;background:none;color:var(--ink-3);font-weight:600;min-height:44px;padding:0 6px}
-body.master .owner-only{display:none!important}
+body.master .owner-only,body.cashier .owner-only{display:none!important}
+.ordw{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
+.ordw.unpaid .ord{border-left:5px solid var(--signal)}
+.ordw.isPaid .ord{border-left:5px solid var(--moss)}
+.pst{display:inline-block;font-family:var(--f-mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:.3em .55em;border-radius:2px;margin-left:6px;vertical-align:2px}
+.pst.ok{background:var(--moss);color:var(--on-ink)}
+.pst.wait{background:var(--signal);color:#fff}
+.pst.chg{background:var(--ink);color:var(--on-ink)}
+.paybtn{min-width:132px;border-radius:3px;font-weight:700;border:1.5px solid var(--signal);background:var(--signal-tint);color:var(--signal-deep);padding:0 12px}
+.paybtn.ok{border-color:var(--moss);background:var(--moss-tint);color:var(--moss)}
+.paybig{display:flex;align-items:center;justify-content:center;gap:10px;min-height:60px;border-radius:3px;font-size:1.15rem;font-weight:700;border:2px solid var(--signal);background:var(--signal-tint);color:var(--signal-deep);width:100%}
+.paybig.ok{border-color:var(--moss);background:var(--moss);color:var(--on-ink)}
+.release{font-family:var(--f-display);font-weight:800;text-transform:uppercase;font-size:1.3rem;text-align:center;padding:12px;border-radius:3px}
+.release.ok{background:var(--moss);color:var(--on-ink)}
+.release.wait{background:var(--signal-tint);color:var(--signal-deep);border:2px dashed var(--signal)}
+@media (max-width:520px){.ordw{grid-template-columns:1fr}.paybtn{min-height:46px}}
 .calbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-block:18px 8px}
 .calbar h1{font-family:var(--f-display);font-weight:800;font-size:clamp(1.4rem,3vw,2rem);text-transform:uppercase;margin:0 6px;line-height:1}
 .cal-day{display:flex;flex-direction:column;border-top:1.5px solid var(--ink)}
@@ -421,7 +436,7 @@ async function api(a,body,q){
   status('');return j;
 }
 async function loadDay(){try{const j=await api('day',null,{day:S.day});S.orders=j.orders||[];S.bookings=j.bookings||[];S.days[S.day]={helper:!!j.helper};renderDay();if(!S.ms||S._msMonth!==S.day.slice(0,7)){S._msMonth=S.day.slice(0,7);loadMonth();}}catch(e){if(e.code!=='auth')status(e.message,true);}}
-function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(()=>{if(document.visibilityState==='visible'&&S.view==='day'&&$('#sheet').hidden)loadDay();},20000);}
+function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(()=>{if(document.visibilityState==='visible'&&S.view==='day'&&$('#sheet').hidden)loadDay();},12000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.role&&S.view==='day')loadDay();});
 
 /* ---------- вход ---------- */
@@ -433,7 +448,7 @@ $('#keys').querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=b.datase
 document.addEventListener('keydown',e=>{if($('#login').hidden)return;if(/^\d$/.test(e.key)&&pin.length<8){pin+=e.key;drawPin();}else if(e.key==='Backspace'){pin=pin.slice(0,-1);drawPin();}else if(e.key==='Enter')doLogin();});
 async function doLogin(){const err=$('#pinErr');err.hidden=true;if(pin.length<4){err.textContent='PIN — от 4 цифр';err.hidden=false;return;}
   try{const j=await api('login',{pin});pin='';enter(j.role);}catch(e){pin='';drawPin();if(e.code!=='auth'){err.textContent=e.message;err.hidden=false;}}}
-function enter(role){S.role=role;document.body.classList.toggle('master',role==='master');$('#who').textContent=role==='owner'?'Собственник':'Мастер';
+function enter(role){S.role=role;document.body.classList.toggle('master',role==='master');document.body.classList.toggle('cashier',role==='cashier');$('#who').textContent=role==='owner'?'Собственник':role==='cashier'?'Касса':'Мастер';
   $('#login').hidden=true;$('#app').hidden=false;show('day');renderAll();loadDay();loadWeek();loadSpins();startPoll();}
 $('#logout').onclick=async()=>{try{await api('logout',{});}catch(_){}showLogin();};
 
@@ -450,6 +465,7 @@ function renderDay(){
     <div class="tile"><span class="mono">Прогноз дня</span><b class="tnum">${rub(list+plSum)}</b></div>
     <div class="tile"><span class="mono">Сделано по прайсу</span><b class="tnum">${rub(list)}</b></div>
     <div class="tile acc owner-only"><span class="mono">Получено</span><b class="tnum">${rub(paid)}</b></div>
+    ${(()=>{const w=S.orders.filter(o=>!o.paidOk&&o.mode!=='coupon');return `<div class="tile ${w.length?'acc':''}"><span class="mono">Ждёт оплаты</span><b class="tnum">${w.length?w.length+' · '+rub(w.reduce((a,o)=>a+(o.paid||0),0)):'—'}</b></div>`;})()}
     <div class="tile"><span class="mono">Мастеру</span><b class="tnum">${rub(master)}</b></div>
     <div class="tile"><span class="mono">Помощнику</span><b class="tnum">${hd?rub(helper):'—'}</b></div>`;
   renderBookings();renderWeekMark();
@@ -459,10 +475,13 @@ function renderDay(){
     const tm=o.t?new Date(o.t):null;
     const works=(o.lines||[]).filter(l=>l.q>0).map(l=>`${l.n}${l.q>1?' ×'+l.q:''}`).join(', ');
     const badge=o.mode==='coupon'?'<span class="badge cp">Купон</span>':o.mode==='disc'?'<span class="badge ds">Скидка</span>':'';
-    return `<button class="ord" type="button" data-i="${i}"><span class="tm">${tm?pad(tm.getHours())+':'+pad(tm.getMinutes()):''}</span>
-      <span class="what"><b>${esc([o.name,o.plate].filter(Boolean).join(' · ')||'Без номера')} · ${CAR[o.car]}${o.car!=='com'?' R'+o.d:''}${badge}</b><small>${esc(works)}</small></span>
-      <span class="sum"><b class="tnum">${rub(o.paid)}</b>${o.paid!==o.list?`<s>${rub(o.list)}</s>`:`<span class="pay">${PAY[o.pay]||''}</span>`}</span></button>`;}).join('');
+    const st=o.mode==='coupon'?'<span class="pst ok">Купон — можно отпускать</span>':o.paidOk?(o.changedAfterPaid?'<span class="pst chg">Работы изменены после оплаты</span>':'<span class="pst ok">Оплачено</span>'):'<span class="pst wait">Ждёт оплаты</span>';
+    const canPay=S.role!=='master'&&o.mode!=='coupon';
+    return `<div class="ordw ${o.paidOk||o.mode==='coupon'?'isPaid':'unpaid'}"><button class="ord" type="button" data-i="${i}"><span class="tm">${tm?pad(tm.getHours())+':'+pad(tm.getMinutes()):''}</span>
+      <span class="what"><b>${esc([o.name,o.plate].filter(Boolean).join(' · ')||'Без номера')} · ${CAR[o.car]}${o.car!=='com'?' R'+o.d:''}${badge}${st}</b><small>${esc(works)}</small></span>
+      <span class="sum"><b class="tnum">${rub(o.paid)}</b>${o.paid!==o.list?`<s>${rub(o.list)}</s>`:`<span class="pay">${PAY[o.pay]||''}</span>`}</span></button>${canPay?`<button class="paybtn ${o.paidOk?'ok':''}" type="button" data-pay-i="${i}">${o.paidOk?'✓ Оплачено':'Отметить оплату'}</button>`:''}</div>`;}).join('');
   el.querySelectorAll('.ord').forEach(b=>b.onclick=()=>openOrder(S.orders[+b.dataset.i]));
+  el.querySelectorAll('[data-pay-i]').forEach(b=>b.onclick=()=>{const o=S.orders[+b.dataset.payI];setPaid(o,!o.paidOk,o.pay);});
 }
 $('#prev').onclick=()=>{const d=fromIso(S.day);d.setDate(d.getDate()-1);S.day=iso(d);S.orders=[];renderDay();loadDay();};
 $('#next').onclick=()=>{const d=fromIso(S.day);d.setDate(d.getDate()+1);S.day=iso(d);S.orders=[];renderDay();loadDay();};
@@ -518,6 +537,9 @@ function toast(html){const t=$('#toast');t.innerHTML=html;t.classList.add('on');
 async function afterSave(){const before=gameStats(S.ms);await loadMonth();const after=gameStats(S.ms);if(!before||!after)return;
   if(after.bonus>before.bonus){await loadSpins();toast(`<b>+${rub(after.bonus-before.bonus)} и вращение колеса!</b>Сладкий бонус мастеру. Уже ${rub(after.bonus)} за месяц`);return;}
   const nb=BADGES.find(b=>after.got[b.id]&&!before.got[b.id]);if(nb)toast(`<b>Новый значок: ${nb.t}</b>${nb.d}`);}
+async function setPaid(o,val,pay){const prev={ok:o.paidOk,pay:o.pay};o.paidOk=val;if(pay)o.pay=pay;renderDay();
+  try{await api('paid',{id:o.id,paid:val,pay:o.pay});if(val)toast(`<b>Оплачено</b>${esc(o.plate||o.name||'Машину')} можно отпускать`);loadDay();}
+  catch(e){o.paidOk=prev.ok;o.pay=prev.pay;renderDay();status('Не отметилось: '+e.message,true);}}
 function monthBonus(baseSum){return Math.floor(baseSum/10000)*100;}
 /* ---------- календарь записи ---------- */
 S.cal={mode:'week',anchor:iso(new Date()),items:[]};
@@ -816,7 +838,11 @@ function renderSheet(){
       <button type="button" class="chip" data-mode="coupon" aria-pressed="${O.mode==='coupon'}">Купон</button></div></div>
     ${O.mode==='disc'?`<label><span class="mono lbl">Взяли с клиента, ₽</span><input class="inp tnum" id="o-paid" type="number" inputmode="numeric" min="0" value="${O.paid||''}"></label>`:''}
     ${O.mode==='coupon'?`<span class="pay">Бесплатный шиномонтаж. Мастер получает свои 30% как обычно.</span>`:''}
-    ${O.mode!=='coupon'?`<div><span class="mono lbl">Оплата</span><div class="row">${Object.entries(PAY).map(([k,t])=>`<button type="button" class="chip" data-pay="${k}" aria-pressed="${O.pay===k}">${t}</button>`).join('')}</div></div>`:''}
+    ${O.id&&O.mode!=='coupon'?(S.role==='master'
+      ?`<div class="release ${O.paidOk?'ok':'wait'}">${O.paidOk?'Оплачено — можно отпускать':'Ждёт оплаты на кассе'}</div>`
+      :`<button type="button" class="paybig ${O.paidOk?'ok':''}" id="o-paid-btn">${O.paidOk?'✓ Оплачено':'Отметить оплату'}</button>`):''}
+    ${O.id&&O.mode==='coupon'?`<div class="release ok">Купон — можно отпускать</div>`:''}
+    ${O.mode!=='coupon'&&S.role!=='master'?`<div><span class="mono lbl">Оплата</span><div class="row">${Object.entries(PAY).map(([k,t])=>`<button type="button" class="chip" data-pay="${k}" aria-pressed="${O.pay===k}">${t}</button>`).join('')}</div></div>`:''}
     <div class="split"><span>Мастеру</span><b class="tnum">${rub(po.master)}</b><span>Помощнику${hd?'':' (сегодня без него)'}</span><b class="tnum">${rub(po.helper)}</b><span>Итого получено</span><b class="tnum">${rub(c.paid)}</b></div>
     <label><span class="mono lbl">Имя клиента</span><input class="inp" id="o-name" type="text" autocomplete="off" value="${esc(O.name||'')}"></label>
     <label><span class="mono lbl">Госномер</span><input class="inp" id="o-plate" type="text" autocapitalize="characters" placeholder="А123ВС 33" value="${esc(O.plate)}"></label>
@@ -851,6 +877,8 @@ function bindSheet(){
     rer();});
   const pd=document.getElementById('o-paid');if(pd)pd.oninput=()=>{O.paid=+pd.value||0;const c=calc(O);document.querySelector('.split b:last-child').textContent=rub(c.paid);};
   $('#o-save').onclick=save;
+  const pb=document.getElementById('o-paid-btn');if(pb)pb.onclick=async()=>{keepInputs();const v=!O.paidOk;pb.disabled=true;
+    try{await api('paid',{id:O.id,paid:v,pay:O.pay});O.paidOk=v;if(v){closeSheet();toast(`<b>Оплачено</b>${esc(O.plate||O.name||'Машину')} можно отпускать`);}else rer();loadDay();}catch(e){pb.disabled=false;showErr('Не отметилось: '+e.message);}};
   const ck=document.getElementById('o-check');if(ck)ck.onclick=()=>{keepInputs();openCheck(O);};
   if(!O.id)hookHint('o-phone','o-plate','o-hint','o-name');
   const del=document.getElementById('o-del');
