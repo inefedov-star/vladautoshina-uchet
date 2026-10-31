@@ -1,0 +1,400 @@
+<title>Витрина IVANOR</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* Планшет в зале: шапка с подбором размера, ниже сетка моделей; карточка модели открывается листом снизу.
+   Токены — дизайн-система IVANOR (бумага, тушь, сигнальный оранжевый, холодный синий). */
+:root{
+  --paper:#F2EFE8; --paper-2:#EAE6DB; --paper-3:#E1DCCE;
+  --ink:#16160F; --ink-2:#3A382E; --ink-3:#6E6B5D;
+  --rule:rgba(22,22,15,.16); --rule-soft:rgba(22,22,15,.08);
+  --signal:#D8410C; --signal-deep:#A82F06; --signal-tint:rgba(216,65,12,.10);
+  --cold:#26586F; --cold-tint:rgba(38,88,111,.12);
+  --moss:#4B6A38; --moss-tint:rgba(75,106,56,.12);
+  --on-ink:#F2EFE8; --scrim:rgba(22,22,15,.45);
+  --f-display:'Fira Sans Extra Condensed','Golos Text',system-ui,sans-serif;
+  --f-text:'Golos Text',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,'Roboto Mono',monospace;
+  --ease:cubic-bezier(.16,.84,.32,1);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#1A1A14; --paper-2:#222219; --paper-3:#2D2C22;
+  --ink:#EDE9DF; --ink-2:#C9C4B6; --ink-3:#958F7E;
+  --rule:rgba(237,233,223,.16); --rule-soft:rgba(237,233,223,.08);
+  --signal:#F0662E; --signal-deep:#FF8A57; --signal-tint:rgba(240,102,46,.16);
+  --cold:#7DB3CC; --cold-tint:rgba(125,179,204,.16);
+  --moss:#9DC181; --moss-tint:rgba(157,193,129,.16);
+  --on-ink:#16160F; --scrim:rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#1A1A14; --paper-2:#222219; --paper-3:#2D2C22;
+  --ink:#EDE9DF; --ink-2:#C9C4B6; --ink-3:#958F7E;
+  --rule:rgba(237,233,223,.16); --rule-soft:rgba(237,233,223,.08);
+  --signal:#F0662E; --signal-deep:#FF8A57; --signal-tint:rgba(240,102,46,.16);
+  --cold:#7DB3CC; --cold-tint:rgba(125,179,204,.16);
+  --moss:#9DC181; --moss-tint:rgba(157,193,129,.16);
+  --on-ink:#16160F; --scrim:rgba(0,0,0,.6); color-scheme:dark}
+
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-text);font-size:16px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;font-weight:500}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* шапка */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--paper)}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--paper);border-bottom:1.5px solid var(--ink)}
+.wrap{max-width:1400px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar{display:flex;align-items:center;gap:16px;padding-block:12px 10px}
+.logo{display:flex;align-items:center;gap:10px;flex:none}
+.logo svg{width:34px;height:34px}
+.logo b{font-family:var(--f-display);font-weight:800;font-size:1.25rem;text-transform:uppercase;letter-spacing:-.02em;line-height:1}
+.logo i{display:block;font-style:normal;font-family:var(--f-mono);font-size:.58rem;letter-spacing:.2em;color:var(--ink-3);margin-top:3px}
+.bar .spacer{flex:1}
+.tool{border:1.5px solid var(--rule);background:transparent;border-radius:3px;padding:.55em .8em;font-size:.88rem;font-weight:600;min-height:44px}
+.tool[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+
+/* подбор размера */
+.pick{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;padding-block:4px 12px}
+.pick .lbl{color:var(--ink-3);width:84px}
+.row{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-block:2px;min-width:0}
+.row::-webkit-scrollbar{display:none}
+.chip{flex:none;min-width:56px;min-height:46px;padding:0 14px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);
+  font-family:var(--f-mono);font-weight:700;font-size:1.02rem;transition:background .2s,border-color .2s,color .2s}
+.chip:active{transform:translateY(1px)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.chip.dim{opacity:.32}
+.chip.txt{font-family:var(--f-text);font-weight:600;font-size:.95rem}
+.chip.w[aria-pressed="true"]{background:var(--cold);border-color:var(--cold);color:var(--on-ink)}
+.chip.s[aria-pressed="true"]{background:var(--moss);border-color:var(--moss);color:var(--on-ink)}
+.size-now{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.size-now b{font-family:var(--f-display);font-weight:800;font-size:clamp(1.6rem,3.4vw,2.3rem);letter-spacing:-.02em;line-height:1}
+.size-now b em{font-style:normal;color:var(--ink-3)}
+.reset{border:0;background:none;color:var(--signal-deep);font-weight:600;padding:8px 4px;min-height:44px}
+
+/* результаты */
+.res-hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:18px 12px}
+.res-hd h1{font-family:var(--f-display);font-weight:800;font-size:clamp(1.3rem,2.4vw,1.7rem);text-transform:uppercase;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.sort{display:flex;gap:6px;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;padding-bottom:40px}
+.card{display:flex;flex-direction:column;text-align:left;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:0;overflow:hidden;
+  transition:border-color .25s,transform .25s var(--ease)}
+.card:hover{border-color:var(--ink)}
+.card:active{transform:scale(.99)}
+.ph{position:relative;aspect-ratio:4/3;max-width:100%;background:var(--paper-3);display:grid;place-items:center;overflow:hidden}
+.ph svg{width:62%;height:auto}
+.ph .tags{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-family:var(--f-mono);font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:.4em .6em;border-radius:2px;border:1.2px solid currentColor}
+.tag.win{color:var(--cold);background:var(--cold-tint)}
+.tag.sum{color:var(--moss);background:var(--moss-tint)}
+.tag.all{color:var(--ink-2);background:var(--rule-soft)}
+.tag.stud{color:var(--signal-deep);background:var(--signal-tint)}
+.cb{padding:14px 14px 16px;display:flex;flex-direction:column;gap:6px;flex:1;min-width:0}
+.brand{color:var(--ink-3)}
+.model{font-family:var(--f-display);font-weight:800;font-size:1.45rem;line-height:1.02;letter-spacing:-.01em;text-wrap:balance}
+.alias{font-size:.85rem;color:var(--ink-3)}
+.sizes{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.sz{font-family:var(--f-mono);font-size:.74rem;font-weight:500;padding:.18em .45em;border:1px solid var(--rule);border-radius:2px;color:var(--ink-2)}
+.price{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:auto;padding-top:10px;border-top:1px solid var(--rule-soft)}
+.price b{font-family:var(--f-display);font-weight:800;font-size:1.75rem;letter-spacing:-.02em;line-height:1}
+.price b small{font-family:var(--f-text);font-weight:500;font-size:.8rem;color:var(--ink-3);letter-spacing:0;margin-right:3px}
+.price span{font-size:.82rem;color:var(--ink-3);text-align:right}
+.stock{font-size:.82rem;font-weight:600;color:var(--moss)}
+.stock.low{color:var(--signal-deep)}
+
+.empty{padding:60px 0;text-align:center;color:var(--ink-3)}
+.empty b{display:block;font-family:var(--f-display);font-size:1.6rem;color:var(--ink);text-transform:uppercase;margin-bottom:6px}
+
+/* лист модели */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:20;opacity:0;transition:opacity .3s}
+.scrim.on{opacity:1}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-height:88%;overflow:auto;background:var(--paper);border-top:2px solid var(--ink);
+  border-radius:6px 6px 0 0;transform:translateY(100%);transition:transform .38s var(--ease);
+  padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
+.sheet.on{transform:none}
+.sh-in{max-width:1000px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 0}
+.sh-top{display:grid;grid-template-columns:minmax(0,260px) 1fr;gap:22px;align-items:start}
+.sh-top .ph{border:1.5px solid var(--rule);border-radius:3px}
+.close{position:sticky;top:0;float:right;border:1.5px solid var(--ink);background:var(--paper);border-radius:3px;width:48px;height:48px;font-size:1.4rem;line-height:1}
+.facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1.5px;background:var(--rule);border:1.5px solid var(--rule);margin-top:14px}
+.facts div{background:var(--paper);padding:10px 12px}
+.facts dt{color:var(--ink-3)}
+.facts dd{margin:3px 0 0;font-weight:600}
+table{width:100%;border-collapse:collapse;margin-top:20px;font-size:.98rem}
+th{text-align:left;font-family:var(--f-mono);font-size:.66rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:500;padding:8px 10px;border-bottom:1.5px solid var(--ink)}
+td{padding:12px 10px;border-bottom:1px solid var(--rule)}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.sz2{font-family:var(--f-mono);font-weight:700}
+tr.hit td{background:var(--signal-tint)}
+.tw{overflow-x:auto}
+.note{font-size:.8rem;color:var(--ink-3);padding-block:6px 0}
+
+
+/* разделы */
+.tabs{display:flex;gap:0;overflow-x:auto;scrollbar-width:none;border-top:1px solid var(--rule-soft);margin-top:2px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;border:0;background:none;padding:12px 16px 11px;min-height:48px;font-family:var(--f-display);font-weight:800;font-size:1.12rem;
+  text-transform:uppercase;letter-spacing:.01em;color:var(--ink-3);border-bottom:3px solid transparent}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--signal)}
+.tab sup{font-family:var(--f-mono);font-size:.62rem;font-weight:500;color:var(--ink-3);margin-left:4px;letter-spacing:.05em}
+.search{width:100%;min-height:46px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:0 14px;font:inherit;font-size:1rem;color:var(--ink)}
+.search:focus{outline:none;border-color:var(--signal)}
+.spec{font-family:var(--f-mono);font-size:.82rem;color:var(--ink-2);letter-spacing:-.01em}
+.big{font-family:var(--f-display);font-weight:800;font-size:2.1rem;line-height:1;letter-spacing:-.02em}
+.list{display:flex;flex-direction:column;border-top:1.5px solid var(--ink);margin-bottom:40px}
+.li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:16px;align-items:baseline;padding:13px 4px;border-bottom:1px solid var(--rule)}
+.li .nm{min-width:0}
+.li .nm small{display:block;color:var(--ink-3);font-size:.8rem;margin-top:2px}
+.li .pr{font-family:var(--f-display);font-weight:800;font-size:1.3rem;white-space:nowrap}
+.li .stock{white-space:nowrap}
+@media (max-width:640px){.li{grid-template-columns:minmax(0,1fr) auto}.li .stock{grid-column:1/-1}}
+
+@media (max-width:640px){
+  .pick{grid-template-columns:1fr}
+  .pick .lbl{width:auto}
+  .sh-top{grid-template-columns:1fr}
+  .sh-top .ph{max-width:260px}
+  .bar .hide-sm{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="bar">
+      <div class="logo">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="2" fill="var(--ink)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="var(--signal)" stroke-width="3"/><circle cx="16" cy="16" r="3.4" fill="var(--paper)"/></svg>
+        <span><b>В наличии</b><i>IVANOR · НОЯБРЬСКАЯ 129</i></span>
+      </div>
+      <div class="spacer"></div>
+      <span class="mono hide-sm" id="stamp" style="color:var(--ink-3)"></span>
+      <button class="tool" id="fs" type="button">На весь экран</button>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Разделы"></nav>
+    <div class="pick" id="pick"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="res-hd">
+    <h1 id="resTitle"></h1>
+    <div class="sort" id="sort">
+      <button class="tool" type="button" data-sort="price" aria-pressed="true">Сначала дешевле</button>
+      <button class="tool" type="button" data-sort="desc" aria-pressed="false">Сначала дороже</button>
+      <button class="tool" type="button" data-sort="name" aria-pressed="false">По названию</button>
+    </div>
+  </div>
+  <div id="out"></div>
+  <p class="note">Прототип. Наличие и цены — из выгрузки каталога CloudShop, фото пока заменены схемами.</p>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="sheet" id="sheet" aria-modal="true" role="dialog" aria-labelledby="shTitle" hidden>
+  <div class="sh-in" id="shIn"></div>
+</section>
+
+<script>
+const STAMP='__STAMP__';
+const TIRES=__TIRES__;
+const OTHER=__OTHER__;
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const rub=n=>n.toLocaleString('ru-RU').replace(/ |\s/g,' ')+' ₽';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const plural=(n,a,b,c)=>{const m=n%10,h=n%100;return m===1&&h!==11?a:m>=2&&m<=4&&(h<10||h>=20)?b:c;};
+const uniq=a=>[...new Set(a.filter(v=>v!=null))].sort((x,y)=>(typeof x==='number'?x-y:String(x).localeCompare(String(y),'ru',{numeric:true})));
+const stockTxt=q=>q>=8?'8+ шт.':q+' шт.';
+const stockHtml=(q,set=4)=>`<span class="stock ${q<set?'low':''}">${stockTxt(q)}</span>`;
+$('#stamp').textContent='Наличие на '+STAMP;
+
+const by=t=>OTHER.filter(o=>o.t===t);
+const DISKS=by('disk'),AKB=by('akb'),FAST=by('fast');
+const MORE=OTHER.filter(o=>['acc','tube','tool','tireo'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
+
+/* ---------- общее состояние ---------- */
+const S={tab:'tires',sort:'price',q:'',
+  tires:{d:16,w:205,p:55,s:'winter'},disks:{d:null,pcd:null,k:null},akb:{std:null,pol:null,cap:null},fast:{k:null,th:null},more:{g:null}};
+
+/* ---------- разметка фильтров ---------- */
+function chipRow(label,vals,cur,avail,fmt,onPick,cls){
+  const row=document.createElement('div');row.className='row';
+  vals.forEach(([v,t])=>{const b=document.createElement('button');b.type='button';b.className='chip '+(cls?cls(v):'');
+    b.textContent=t;b.setAttribute('aria-pressed',cur===v);if(avail&&!avail.has(v))b.classList.add('dim');
+    b.onclick=()=>onPick(cur===v?null:v);row.appendChild(b);});
+  const l=document.createElement('span');l.className='mono lbl';l.textContent=label;
+  return [l,row];
+}
+function searchRow(ph){
+  const l=document.createElement('span');l.className='mono lbl';l.textContent='Поиск';
+  const i=document.createElement('input');i.className='search';i.id='q-'+S.tab;i.type='search';i.placeholder=ph;i.value=S.q;
+  i.oninput=()=>{S.q=i.value;renderOut();};return [l,i];
+}
+const qmatch=(text)=>!S.q||S.q.toLowerCase().split(/\s+/).filter(Boolean).every(w=>text.toLowerCase().includes(w));
+const sortList=(arr,price,name)=>{const a=[...arr];
+  if(S.sort==='price')a.sort((x,y)=>price(x)-price(y));else if(S.sort==='desc')a.sort((x,y)=>price(y)-price(x));
+  else a.sort((x,y)=>name(x).localeCompare(name(y),'ru',{numeric:true}));return a;};
+
+/* ---------- ШИНЫ ---------- */
+const SEAS={winter:['Зима','win'],summer:['Лето','sum'],all:['Всесезон','all']};
+const tSize=o=>`${o.w}/${o.p} R${o.d}${o.c?'C':''}`;
+function tMatch(o,skip){const f=S.tires;
+  return (skip==='d'||f.d==null||o.d===f.d)&&(skip==='w'||f.w==null||o.w===f.w)&&(skip==='p'||f.p==null||o.p===f.p)
+   &&(skip==='s'||f.s==null||(f.s==='stud'?o.st:f.s==='fric'?(o.s==='winter'&&!o.st):o.s===f.s))
+   &&qmatch(`${o.b} ${o.m} ${o.a||''} ${tSize(o)}`);}
+function tireSvg(o){
+  const col=o.s==='winter'?'var(--cold)':o.s==='summer'?'var(--moss)':'var(--ink-3)';let tr='';
+  for(let i=0;i<36;i++){const a=i*10*Math.PI/180;tr+=`<line x1="${(100+78*Math.cos(a)).toFixed(1)}" y1="${(100+78*Math.sin(a)).toFixed(1)}" x2="${(100+92*Math.cos(a+.08)).toFixed(1)}" y2="${(100+92*Math.sin(a+.08)).toFixed(1)}"/>`;}
+  const studs=o.st?Array.from({length:18},(_,i)=>{const a=i*20*Math.PI/180;return `<circle cx="${(100+85*Math.cos(a)).toFixed(1)}" cy="${(100+85*Math.sin(a)).toFixed(1)}" r="2.2"/>`}).join(''):'';
+  return `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="94" fill="var(--ink)"/><g stroke="var(--paper-3)" stroke-width="3" stroke-opacity=".35">${tr}</g><g fill="var(--paper)" fill-opacity=".85">${studs}</g><circle cx="100" cy="100" r="66" fill="var(--paper-2)" stroke="${col}" stroke-width="5"/><circle cx="100" cy="100" r="18" fill="var(--paper-3)" stroke="var(--rule)" stroke-width="2"/><text x="100" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" font-weight="700" fill="var(--ink-3)" letter-spacing="1.5">R${o.d}</text></svg>`;}
+const tTags=o=>{const[s,c]=SEAS[o.s];return `<span class="tag ${c}">${s}</span>${o.st?'<span class="tag stud">Шипы</span>':o.s==='winter'?'<span class="tag win">Липучка</span>':''}${o.suv?'<span class="tag all">SUV</span>':''}`;};
+const TIRES_PICK=()=>{const f=S.tires,set=(k)=>v=>{f[k]=v;renderAll();};
+  const out=[];
+  const l=document.createElement('span');l.className='mono lbl';l.textContent='Размер';
+  const sn=document.createElement('div');sn.className='size-now';
+  sn.innerHTML=`<b>${f.w??'<em>___</em>'}/${f.p??'<em>__</em>'} R${f.d??'<em>__</em>'}</b>`;
+  if(f.d||f.w||f.p||f.s){const r=document.createElement('button');r.className='reset';r.type='button';r.textContent='Сбросить всё';r.onclick=()=>{Object.keys(f).forEach(k=>f[k]=null);S.q='';renderAll();};sn.appendChild(r);}
+  out.push(l,sn);
+  out.push(...chipRow('Диаметр',uniq(TIRES.map(o=>o.d)).map(v=>[v,'R'+v]),f.d,new Set(TIRES.filter(o=>tMatch(o,'d')).map(o=>o.d)),0,set('d')));
+  out.push(...chipRow('Ширина',uniq(TIRES.map(o=>o.w)).map(v=>[v,v]),f.w,new Set(TIRES.filter(o=>tMatch(o,'w')).map(o=>o.w)),0,set('w')));
+  out.push(...chipRow('Профиль',uniq(TIRES.map(o=>o.p)).map(v=>[v,v]),f.p,new Set(TIRES.filter(o=>tMatch(o,'p')).map(o=>o.p)),0,set('p')));
+  out.push(...chipRow('Сезон',[['winter','Вся зима'],['stud','Шипы'],['fric','Липучка'],['summer','Лето'],['all','Всесезон']],f.s,null,0,set('s'),v=>'txt '+(v==='summer'?'s':v==='all'?'':'w')));
+  out.push(...searchRow('Бренд или модель: Ikon, Pirelli, Ice 9…'));
+  return out;};
+function tiresOut(){
+  const rows=TIRES.filter(o=>tMatch(o));const m=new Map();
+  rows.forEach(o=>{const k=o.b+'|'+o.m+'|'+o.st+'|'+o.s;if(!m.has(k))m.set(k,[]);m.get(k).push(o);});
+  let g=[...m.values()].map(list=>({list,o:list[0],min:Math.min(...list.map(x=>x.pr)),max:Math.max(...list.map(x=>x.pr))}));
+  g=sortList(g,x=>S.sort==='desc'?x.max:x.min,x=>x.o.b+' '+x.o.m);
+  const f=S.tires,full=f.d&&f.w&&f.p;
+  title(rows.length?(full?`${f.w}/${f.p} R${f.d}: `:'')+`${g.length} ${plural(g.length,'модель','модели','моделей')} шин`:'');
+  if(!rows.length)return empty('Такого размера сейчас нет','Привезём под заказ — уточните у продавца. Или уберите один из фильтров.');
+  const html=`<div class="grid">${g.map((x,i)=>{const o=x.o,one=x.list.length===1;
+    const szs=one?'':`<div class="sizes">${x.list.slice(0,6).map(s=>`<span class="sz">${tSize(s)}</span>`).join('')}${x.list.length>6?`<span class="sz">+${x.list.length-6}</span>`:''}</div>`;
+    return `<button class="card" type="button" data-i="${i}"><div class="ph">${tireSvg(o)}<div class="tags">${tTags(o)}</div></div>
+      <div class="cb"><span class="mono brand">${esc(o.b)}${one?' · '+tSize(o):''}</span><span class="model">${esc(o.m)}</span>
+      ${o.a?`<span class="alias">Известна как ${esc(o.a)}</span>`:''}${szs}
+      <div class="price"><b class="tnum">${one?'':'<small>от</small>'}${rub(x.min)}</b><span>${one?`за 4 шт. ${rub(o.pr*4)}<br>${stockHtml(o.q)}`:`${x.list.length} ${plural(x.list.length,'размер','размера','размеров')}`}</span></div></div></button>`;}).join('')}</div>`;
+  return [html,el=>el.querySelectorAll('.card').forEach(b=>b.onclick=()=>tireSheet(g[+b.dataset.i]))];
+}
+function tireSheet(x){const o=x.o;
+  const all=TIRES.filter(r=>r.b===o.b&&r.m===o.m&&r.st===o.st&&r.s===o.s).sort((a,b)=>a.d-b.d||a.w-b.w||a.p-b.p);
+  const hit=new Set(x.list.map(r=>r.id)),f=S.tires;
+  sheet(`<div class="sh-top"><div class="ph">${tireSvg(o)}<div class="tags">${tTags(o)}</div></div><div style="min-width:0">
+    <span class="mono brand">${esc(o.b)}</span><h2 class="model" id="shTitle" style="font-size:clamp(1.8rem,4vw,2.6rem);margin:4px 0 6px">${esc(o.m)}</h2>
+    ${o.a?`<div class="alias">Известна как ${esc(o.a)}</div>`:''}
+    <dl class="facts"><div><dt class="mono">Сезон</dt><dd>${SEAS[o.s][0]}${o.s==='winter'?(o.st?', шипованная':', нешипованная'):''}</dd></div>
+    <div><dt class="mono">Размеров в наличии</dt><dd class="tnum">${all.length}</dd></div>
+    ${o.cy?`<div><dt class="mono">Производство</dt><dd>${esc(o.cy)}</dd></div>`:''}</dl></div></div>
+    <div class="tw"><table><thead><tr><th>Размер</th><th>Индекс</th><th style="text-align:right">За 1 шт.</th><th style="text-align:right">Комплект 4 шт.</th><th style="text-align:right">Наличие</th></tr></thead>
+    <tbody>${all.map(r=>`<tr class="${hit.has(r.id)&&(f.w||f.p||f.d)?'hit':''}"><td class="sz2">${tSize(r)}</td><td>${r.i||'—'}${r.xl?' XL':''}</td><td class="n">${rub(r.pr)}</td><td class="n"><b>${rub(r.pr*4)}</b></td><td class="n">${stockHtml(r.q)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="note">Шиномонтаж и балансировку посчитаем отдельно. Нужного размера нет — привезём под заказ.</p>`);}
+
+/* ---------- ДИСКИ ---------- */
+const DK={cast:'Литые',steel:'Штампованные',odd:'Некомплект'};
+function dMatch(o,skip){const f=S.disks;
+  return (skip==='d'||f.d==null||o.d===f.d)&&(skip==='pcd'||f.pcd==null||(o.pcds||[]).includes(f.pcd))&&(skip==='k'||f.k==null||o.k===f.k)
+   &&qmatch(`${o.m} ${o.pcd} ${o.n}`);}
+function diskSvg(o){
+  const holes=+String(o.pcd||'5').split('×')[0]||5;let inner='';
+  if(o.k==='steel'){for(let i=0;i<8;i++){const a=i*45*Math.PI/180;inner+=`<ellipse cx="${(100+46*Math.cos(a)).toFixed(1)}" cy="${(100+46*Math.sin(a)).toFixed(1)}" rx="9" ry="13" transform="rotate(${i*45+90} ${(100+46*Math.cos(a)).toFixed(1)} ${(100+46*Math.sin(a)).toFixed(1)})" fill="var(--paper-3)"/>`;}}
+  else{const n=holes===4?8:10;for(let i=0;i<n;i++){const a=(i*360/n-90)*Math.PI/180,b=a+Math.PI/n*0.55;
+    inner+=`<path d="M${(100+28*Math.cos(a)).toFixed(1)} ${(100+28*Math.sin(a)).toFixed(1)} L${(100+72*Math.cos(a)).toFixed(1)} ${(100+72*Math.sin(a)).toFixed(1)} A72 72 0 0 1 ${(100+72*Math.cos(b)).toFixed(1)} ${(100+72*Math.sin(b)).toFixed(1)} L${(100+28*Math.cos(b)).toFixed(1)} ${(100+28*Math.sin(b)).toFixed(1)}Z" fill="var(--paper-3)"/>`;}}
+  let bolts='';for(let i=0;i<holes;i++){const a=(i*360/holes-90)*Math.PI/180;bolts+=`<circle cx="${(100+15*Math.cos(a)).toFixed(1)}" cy="${(100+15*Math.sin(a)).toFixed(1)}" r="2.6" fill="var(--ink)"/>`;}
+  return `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="88" fill="${o.k==='steel'?'var(--ink-2)':'var(--ink-3)'}"/><circle cx="100" cy="100" r="78" fill="var(--paper-2)"/>${inner}<circle cx="100" cy="100" r="24" fill="var(--paper-2)" stroke="var(--rule)" stroke-width="2"/>${bolts}<circle cx="100" cy="100" r="6" fill="var(--paper-3)"/></svg>`;}
+const DISKS_PICK=()=>{const f=S.disks,set=k=>v=>{f[k]=v;renderAll();};const out=[];
+  out.push(...chipRow('Тип',[['cast','Литые'],['steel','Штампованные'],['odd','Некомплект']],f.k,new Set(DISKS.filter(o=>dMatch(o,'k')).map(o=>o.k)),0,set('k'),()=>'txt'));
+  out.push(...chipRow('Диаметр',uniq(DISKS.map(o=>o.d)).map(v=>[v,'R'+v]),f.d,new Set(DISKS.filter(o=>dMatch(o,'d')).map(o=>o.d)),0,set('d')));
+  out.push(...chipRow('Разболтовка',uniq(DISKS.flatMap(o=>o.pcds||[])).map(v=>[v,v]),f.pcd,new Set(DISKS.filter(o=>dMatch(o,'pcd')).flatMap(o=>o.pcds||[])),0,set('pcd')));
+  out.push(...searchRow('Марка машины или диска: Kia, Скад, Replica…'));return out;};
+function disksOut(){const rows=sortList(DISKS.filter(o=>dMatch(o)),o=>o.pr,o=>o.m);
+  title(rows.length?`${rows.length} ${plural(rows.length,'диск','диска','дисков')}`:'');
+  if(!rows.length)return empty('Таких дисков сейчас нет','Подберём под заказ по марке машины.');
+  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${diskSvg(o)}<div class="tags"><span class="tag ${o.k==='odd'?'stud':'all'}">${DK[o.k]}</span></div></div>
+    <div class="cb"><span class="mono brand">R${o.d} · ${esc(o.pcd)}</span><span class="model" style="font-size:1.25rem">${esc(o.m)}</span>
+    <span class="spec">${o.w}×${o.d} · ET${o.et} · DIA ${o.dia}</span>
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${o.k==='odd'?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,o.k==='odd'?1:4)}</span></div></div></div>`).join('')}</div>`];}
+
+/* ---------- АКБ ---------- */
+const STD={euro:'Легковые, евро',asia:'Азия',moto:'Мото',truck:'Грузовые'};
+const CAPS=[['s','до 55'],['m','56–65'],['l','66–80'],['xl','81–110'],['xxl','больше 110']];
+const capOf=a=>a<=55?'s':a<=65?'m':a<=80?'l':a<=110?'xl':'xxl';
+function aMatch(o,skip){const f=S.akb;
+  return (skip==='std'||f.std==null||o.std===f.std)&&(skip==='pol'||f.pol==null||o.pol===f.pol)&&(skip==='cap'||f.cap==null||capOf(o.ah)===f.cap)&&qmatch(o.m);}
+function akbSvg(o){const L=o.pol==='rev';
+  return `<svg viewBox="0 0 200 150" aria-hidden="true" style="width:70%"><rect x="20" y="30" width="160" height="100" rx="4" fill="var(--ink)"/>
+  <rect x="${L?140:36}" y="18" width="24" height="14" fill="var(--ink-3)"/><rect x="${L?36:140}" y="18" width="24" height="14" fill="var(--ink-3)"/>
+  <text x="${L?152:48}" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="20" font-weight="700" fill="var(--signal)">+</text>
+  <text x="${L?48:152}" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="20" font-weight="700" fill="var(--paper-3)">−</text>
+  <text x="100" y="104" text-anchor="middle" font-family="Fira Sans Extra Condensed,sans-serif" font-size="34" font-weight="800" fill="var(--paper)">${o.ah||''} А·ч</text></svg>`;}
+const AKB_PICK=()=>{const f=S.akb,set=k=>v=>{f[k]=v;renderAll();};const out=[];
+  out.push(...chipRow('Тип',Object.entries(STD),f.std,new Set(AKB.filter(o=>aMatch(o,'std')).map(o=>o.std)),0,set('std'),()=>'txt'));
+  out.push(...chipRow('Полярность',[['rev','Обратная  − +'],['dir','Прямая  + −']],f.pol,new Set(AKB.filter(o=>aMatch(o,'pol')).map(o=>o.pol)),0,set('pol'),()=>'txt'));
+  out.push(...chipRow('Ёмкость, А·ч',CAPS,f.cap,new Set(AKB.filter(o=>aMatch(o,'cap')).map(o=>capOf(o.ah))),0,set('cap'),()=>'txt'));
+  out.push(...searchRow('Бренд: Зверь, Sebang, AOKLY, EFB, AGM…'));return out;};
+function akbOut(){const rows=sortList(AKB.filter(o=>aMatch(o)),o=>o.pr,o=>o.m);
+  title(rows.length?`${rows.length} ${plural(rows.length,'аккумулятор','аккумулятора','аккумуляторов')}`:'');
+  if(!rows.length)return empty('Такого аккумулятора нет','Привезём под заказ — назовите марку машины.');
+  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${akbSvg(o)}<div class="tags"><span class="tag all">${STD[o.std]}</span>${/AGM/i.test(o.m)?'<span class="tag win">AGM</span>':/EFB/i.test(o.m)?'<span class="tag win">EFB</span>':''}</div></div>
+    <div class="cb"><span class="mono brand">${o.pol==='rev'?'Обратная полярность':o.pol==='dir'?'Прямая полярность':''}</span>
+    <span class="model" style="font-size:1.25rem">${esc(o.m.replace(/^(ASIA|Asia|MOTO)\s+/,'').replace(/^(о\/п|п\/п)\s+/,''))}</span>
+    ${o.en?`<span class="spec">Пусковой ток ${o.en} А</span>`:''}
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${stockHtml(o.q,1)}</span></div></div></div>`).join('')}</div>`];}
+
+/* ---------- КРЕПЁЖ ---------- */
+const FK={nut:'Гайки',bolt:'Болты',lock:'Секретки',ring:'Центровочные кольца',stud:'Шпильки',other:'Ключи и прочее'};
+function fMatch(o,skip){const f=S.fast;return (skip==='k'||f.k==null||o.k===f.k)&&(skip==='th'||f.th==null||o.th===f.th)&&qmatch(o.n);}
+const FAST_PICK=()=>{const f=S.fast,set=k=>v=>{f[k]=v;renderAll();};const out=[];
+  out.push(...chipRow('Что нужно',Object.entries(FK),f.k,new Set(FAST.filter(o=>fMatch(o,'k')).map(o=>o.k)),0,set('k'),()=>'txt'));
+  out.push(...chipRow('Резьба',uniq(FAST.map(o=>o.th)).map(v=>[v,'М'+v]),f.th,new Set(FAST.filter(o=>fMatch(o,'th')).map(o=>o.th)),0,set('th')));
+  out.push(...searchRow('Например: 12*1,5 конус 19, или кольцо 67.1'));return out;};
+function fastOut(){const rows=sortList(FAST.filter(o=>fMatch(o)),o=>o.pr,o=>o.n);
+  title(rows.length?`${rows.length} ${plural(rows.length,'позиция','позиции','позиций')} крепежа`:'');
+  if(!rows.length)return empty('Ничего не нашлось','Попробуйте другую резьбу или уберите фильтр.');
+  return [listHtml(rows,o=>[o.n,[o.th?'М'+o.th:'',o.seat||'',o.ro?`ступица ${o.ri} → диск ${o.ro}`:''].filter(Boolean).join(' · ')])];}
+
+/* ---------- ЕЩЁ ---------- */
+const MG={acc:'Аксессуары',caps:'Колпаки',akbacc:'Для АКБ',chem:'Автохимия',tube:'Камеры',tool:'Инструмент',tireo:'Грузовые и спецшины'};
+function mMatch(o,skip){const f=S.more;return (skip==='g'||f.g==null||o.g===f.g)&&qmatch(o.n);}
+const MORE_PICK=()=>{const f=S.more;const out=[];
+  out.push(...chipRow('Раздел',Object.entries(MG),f.g,new Set(MORE.filter(o=>mMatch(o,'g')).map(o=>o.g)),0,v=>{f.g=v;renderAll();},()=>'txt'));
+  out.push(...searchRow('Компрессор, вентиль, камера 15…'));return out;};
+function moreOut(){const rows=sortList(MORE.filter(o=>mMatch(o)),o=>o.pr,o=>o.n);
+  title(rows.length?`${rows.length} ${plural(rows.length,'позиция','позиции','позиций')}`:'');
+  if(!rows.length)return empty('Ничего не нашлось','Уберите фильтр или измените запрос.');
+  return [listHtml(rows,o=>[o.n,S.more.g?'':MG[o.g]])];}
+
+function listHtml(rows,fn){return `<div class="list">${rows.map(o=>{const[a,b]=fn(o);
+  return `<div class="li"><div class="nm">${esc(a)}${b?`<small>${esc(b)}</small>`:''}</div><span class="pr tnum">${rub(o.pr)}</span>${stockHtml(o.q,1)}</div>`;}).join('')}</div>`;}
+
+/* ---------- каркас ---------- */
+const TABS=[['tires','Шины',TIRES.length,TIRES_PICK,tiresOut],['disks','Диски',DISKS.length,DISKS_PICK,disksOut],['akb','Аккумуляторы',AKB.length,AKB_PICK,akbOut],
+  ['fast','Крепёж',FAST.length,FAST_PICK,fastOut],['more','Ещё',MORE.length,MORE_PICK,moreOut]];
+function title(t){$('#resTitle').textContent=t||'Нет в наличии';}
+function empty(h,p){return [`<div class="empty"><b>${h}</b>${p}</div>`];}
+function renderTabs(){$('#tabs').innerHTML=TABS.map(([k,n,c])=>`<button class="tab" role="tab" type="button" data-k="${k}" aria-selected="${S.tab===k}">${n}<sup>${c}</sup></button>`).join('');
+  $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.k;S.q='';try{history.replaceState(null,'','#'+S.tab);}catch(_){location.hash=S.tab;}renderAll();window.scrollTo({top:0});});}
+function renderPick(){const t=TABS.find(x=>x[0]===S.tab),p=$('#pick');const focusId=document.activeElement&&document.activeElement.id;
+  p.innerHTML='';t[3]().forEach(n=>p.appendChild(n));if(focusId&&focusId.startsWith('q-')){const i=document.getElementById(focusId);if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}}}
+function renderOut(){const t=TABS.find(x=>x[0]===S.tab);const [html,bind]=t[4]();const o=$('#out');o.innerHTML=html;if(bind)bind(o);
+  if(S.tab==='tires')renderPickLite();}
+function renderPickLite(){/* при поиске по шинам доступность фишек меняется — перерисуем без потери фокуса */
+  if(document.activeElement&&document.activeElement.id==='q-tires'){renderPick();}}
+function renderAll(){renderTabs();renderPick();renderOut();}
+
+function sheet(html){$('#shIn').innerHTML=`<button class="close" id="close" type="button" aria-label="Закрыть">×</button>`+html;
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
+  $('#close').onclick=closeSheet;$('#close').focus();}
+function closeSheet(){const sc=$('#scrim'),sh=$('#sheet');sc.classList.remove('on');sh.classList.remove('on');setTimeout(()=>{sc.hidden=true;sh.hidden=true;},380);}
+$('#scrim').onclick=closeSheet;document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSheet();});
+document.querySelectorAll('#sort .tool').forEach(b=>b.onclick=()=>{S.sort=b.dataset.sort;document.querySelectorAll('#sort .tool').forEach(x=>x.setAttribute('aria-pressed',x===b));renderOut();});
+$('#fs').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch(_){}
+  try{if('wakeLock' in navigator)await navigator.wakeLock.request('screen');}catch(_){}};
+const fromHash=()=>{const h=location.hash.slice(1);if(TABS.some(t=>t[0]===h))S.tab=h;};
+addEventListener('hashchange',()=>{fromHash();renderAll();});
+fromHash();renderAll();
+})();
+</script>

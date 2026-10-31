@@ -1,0 +1,9 @@
+# выгрузки CloudShop с себестоимостью в репозиторий не кладём
+*.xlsx
+*.xls
+*.csv
+vitrina/*.json
+vitrina/dist/
+__pycache__/
+.env
+*.sqlite3
