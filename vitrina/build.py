@@ -1,7 +1,9 @@
 """Сборка витрины из выгрузки каталога CloudShop.
 
 Запуск:  python vitrina/build.py путь/к/catalog.xlsx 31.10.2026
-Результат: vitrina/dist/vitrina.html (себестоимость и закупка в файл не попадают).
+Результат: vitrina/dist/vitrina.html — для просмотра в Claude,
+           vitrina/dist/site/index.html — для сайта (папка vitrina на хостинге).
+Себестоимость и закупка в файлы не попадают.
 """
 import json, subprocess, sys, pathlib
 here = pathlib.Path(__file__).parent
@@ -18,4 +20,23 @@ dump = lambda x: json.dumps(x, ensure_ascii=False, separators=(",", ":"))
 html = html.replace("__TIRES__", dump(tires)).replace("__OTHER__", dump(other)).replace("__STAMP__", stamp)
 (here / "dist").mkdir(exist_ok=True)
 (here / "dist" / "vitrina.html").write_text(html)
+
+# версия для сайта: полноценная страница, поисковикам закрыта
+site = html.replace('<p class="note">Прототип. Наличие и цены — из выгрузки каталога CloudShop, фото пока заменены схемами.</p>',
+                    '<p class="note">Цены и наличие на дату выше. Фото моделей появятся позже — пока схемы.</p>')
+site = site.replace('<meta name="claude:viewport-fit-sides" content="cover">\n', '')
+head = """<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#F2EFE8">
+<meta name="mobile-web-app-capable" content="yes">
+"""
+title_end = site.index("</style>") + len("</style>")
+site = head + site[:title_end].replace("*,*::before,*::after{box-sizing:border-box}", "*,*::before,*::after{box-sizing:border-box}\nhtml,body{margin:0}\n[hidden]{display:none!important}", 1) + "\n</head>\n<body>\n" + site[title_end:] + "\n</body>\n</html>\n"
+(here / "dist" / "site").mkdir(exist_ok=True)
+(here / "dist" / "site" / "index.html").write_text(site)
+(here / "dist" / "site" / ".htaccess").write_text('<IfModule mod_headers.c>\n  Header set X-Robots-Tag "noindex, nofollow"\n</IfModule>\nDirectoryIndex index.html\n')
 print("ok:", len(tires), "шин,", len(other), "прочих позиций")

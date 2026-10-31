@@ -373,6 +373,12 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
     </div>
     <div id="sumOut"></div>
     <div id="prizeBox"></div>
+    <h2 class="sec">Резервная копия</h2>
+    <div class="form" style="margin-top:0;margin-bottom:40px">
+      <p class="note" style="grid-column:1/-1;margin:0">Все записи пульта — смены, запись, клиенты, расходы, колесо — одним файлом. Скачивайте раз в неделю и храните у себя: если с хостингом что-то случится, по этому файлу всё восстановим.</p>
+      <div><button class="btn" type="button" id="bkp">Скачать копию</button></div>
+      <p class="pay" id="bkpMsg" style="margin:0"></p>
+    </div>
     <p class="note">Оплата мастеру — 30% от стоимости работ по прайсу, скидки и купоны её не уменьшают. В день «с помощником» снятие и установку колёс оплачивают помощнику (30% от их стоимости), мастер за них не получает. Сладкий бонус: каждые 10 000 ₽ работ мастера по прайсу за месяц — +100 ₽. Результат = получено с клиентов − мастер − бонусы − помощник − текущие расходы. Капитальные расходы показаны отдельно и в результат месяца не входят.</p>
   </section>
 </main>
@@ -950,11 +956,20 @@ async function renderSum(){
     <tbody>${used.map(([r,i])=>row(MONTHS[i][0].toUpperCase()+MONTHS[i].slice(1),r)).join('')}${row('Итого за год',T,'tot')}</tbody></table></div>
     <p class="note">Результат года с учётом капитальных расходов: <b>${rub(T.paid-T.master-T.helper-T.bonus-T.cur-T.cap)}</b>.</p>`;
 }
+function bkpNote(){let t=null;try{t=localStorage.getItem('montazh_bkp');}catch(_){}
+  const el=$('#bkpMsg');if(!el)return;if(!t){el.textContent='На этом устройстве копию ещё не скачивали.';return;}
+  const days=Math.floor((Date.now()-+t)/86400000);el.textContent=`Последняя копия с этого устройства: ${days===0?'сегодня':days+' '+plural(days,'день','дня','дней')+' назад'}.`+(days>=7?' Пора скачать новую.':'');}
+$('#bkp').onclick=async()=>{const b=$('#bkp');b.disabled=true;b.textContent='Готовим…';
+  try{const j=await api('export');const blob=new Blob([JSON.stringify({made:new Date().toISOString(),...j},null,1)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`montazh-kopiya-${iso(new Date())}.json`;document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);try{localStorage.setItem('montazh_bkp',String(Date.now()));}catch(_){}bkpNote();}
+  catch(e){$('#bkpMsg').textContent='Не получилось: '+e.message;}
+  b.disabled=false;b.textContent='Скачать копию';};
 $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.year++;renderSum();};$('#y-refresh').onclick=renderSum;
 
 /* ---------- вкладки ---------- */
 function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();bkpNote();}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}
