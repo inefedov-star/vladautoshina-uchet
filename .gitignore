@@ -7,3 +7,5 @@ vitrina/dist/
 __pycache__/
 .env
 *.sqlite3
+montazh-site/config.php
+montazh-site/data/*.sqlite*
