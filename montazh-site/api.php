@@ -221,14 +221,18 @@ try {
   case 'book_save':
     post(); needRole($role, ['owner', 'master']);
     $b = body();
-    if (!isDay($b['day'] ?? null) || !preg_match('/^\d{2}:\d{2}$/', (string)($b['tm'] ?? ''))) fail('Укажите день и время');
+    $kind = in_array($b['kind'] ?? '', ['time', 'leave', 'task'], true) ? $b['kind'] : 'time';
+    if (!isDay($b['day'] ?? null)) fail('Укажите день');
+    if ($kind === 'time' && !preg_match('/^\d{2}:\d{2}$/', (string)($b['tm'] ?? ''))) fail('Выберите время');
+    if ($kind !== 'time') $b['tm'] = '';
     $id = (int)($b['id'] ?? 0);
     $status = in_array($b['status'] ?? '', ['planned', 'done', 'noshow'], true) ? $b['status'] : 'planned';
-    $keep = clean($b, ['name', 'phone', 'plate', 'note', 'car', 'preset']) + ['d' => isset($b['d']) ? (int)$b['d'] : null, 'est' => max(0, (int)($b['est'] ?? 0))];
+    $keep = clean($b, ['name', 'phone', 'plate', 'note', 'car', 'preset']) + ['d' => isset($b['d']) ? (int)$b['d'] : null, 'est' => max(0, (int)($b['est'] ?? 0)), 'kind' => $kind, 'nodue' => $kind === 'task' && !empty($b['nodue'])];
     $keep['plate'] = mb_strtoupper($keep['plate']);
     $keep['phoneD'] = digits($keep['phone']);
     $keep['sk'] = mb_strtoupper(trim($keep['name'] . ' ' . $keep['plate']));
     $json = json_encode($keep, JSON_UNESCAPED_UNICODE);
+    if (!preg_match('/^(\d{2}:\d{2})?$/', (string)$b['tm'])) fail('Неверное время');
     if ($id) db($cfg)->prepare('UPDATE bookings SET day = ?, tm = ?, status = ?, body = ?, updated = ? WHERE id = ?')->execute([$b['day'], $b['tm'], $status, $json, time(), $id]);
     else { db($cfg)->prepare('INSERT INTO bookings (day, tm, status, body, updated) VALUES (?,?,?,?,?)')->execute([$b['day'], $b['tm'], $status, $json, time()]); $id = (int)db($cfg)->lastInsertId(); }
     logit($cfg, $role, 'book_save', (string)$id);
@@ -247,6 +251,11 @@ try {
     if (!isDay($from) || !isDay($to) || $to < $from) fail('Неверный период');
     if ((strtotime($to) - strtotime($from)) > 45 * 86400) fail('Слишком длинный период');
     out(['bookings' => bookingRows($cfg, 'day BETWEEN ? AND ?', [$from, $to])]);
+
+  case 'queue':
+    // работы без времени, которые ещё не сделаны: «оставили на день» и «когда будет время»
+    needRole($role, ['owner', 'master']);
+    out(['items' => bookingRows($cfg, "status = 'planned' AND tm = ''", [])]);
 
   case 'week':
     // ближайшие дни: сколько записей и на какую сумму

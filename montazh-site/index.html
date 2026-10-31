@@ -319,6 +319,9 @@ body.master .owner-only{display:none!important}
     </div>
     <p class="mono" id="calSum" style="color:var(--ink-3);margin:0 0 10px"></p>
     <div id="calOut"></div>
+    <div class="hd2"><h2>Без времени</h2><span class="mono" style="color:var(--ink-3)">оставили машину · сделать, когда будет время</span></div>
+    <div class="row" style="margin-bottom:10px"><button class="btn ghost" type="button" id="qAddLeave">+ Оставили машину</button><button class="btn ghost" type="button" id="qAddTask">+ Задача на свободное время</button></div>
+    <div class="bks" id="queue" style="margin-bottom:40px"></div>
   </section>
 
   <section id="v-cli" hidden>
@@ -469,11 +472,13 @@ $('#add').onclick=()=>openOrder(null);
 function renderWeekMark(){document.querySelectorAll('#week .wd').forEach(b=>b.setAttribute('aria-current',b.dataset.day===S.day));}
 /* ---------- запись, неделя, игра ---------- */
 S.bookings=[];S.week=[];S.ms=null;
-const PRESET={swap:'Переобувка в сборе',full:'Полный шиномонтаж',repair:'Ремонт прокола',other:'Другое'};
+const PRESET={swap:'Переобувка в сборе',full:'Полный шиномонтаж',mb:'Собрать комплект (монтаж + балансировка)',repair:'Ремонт прокола',other:'Другое'};
+const KIND={time:'На время',leave:'Оставили машину на день',task:'Когда будет свободное время'};
 function presetLines(car,d,p){const b=base(car,d);if(!b)return[];
   const cx=car==='com'?b.cx.all:b.cx, jg=(PR.extras.find(e=>/жгутом/.test(e.n))||{n:'Ремонт прокола жгутом (колесо снято)',p:300});
   if(p==='swap')return[{k:'wheel',n:'Снятие/установка колеса',q:4,p0:b.wheel}];
   if(p==='full')return[{k:'cx',n:'Комплекс 4 колеса',q:1,p0:cx}];
+  if(p==='mb')return[{k:'mount',n:'Демонтаж/монтаж шины',q:4,p0:b.mount},{k:'bal',n:'Балансировка колеса',q:4,p0:b.bal}];
   if(p==='repair')return[{k:'wheel',n:'Снятие/установка колеса',q:1,p0:b.wheel},{k:'x',n:jg.n,q:1,p0:jg.p}];
   return[];}
 function presetEst(car,d,p){const o={car,d,mods:{},lines:presetLines(car,d,p),mode:'full'};return calc(o).list;}
@@ -537,13 +542,14 @@ function renderCal(){const[f,t]=calRange(),m=S.cal.mode,today=iso(new Date());
   const all=S.cal.items.filter(b=>b.status!=='noshow');$('#calSum').textContent=all.length?`${all.length} ${plural(all.length,'запись','записи','записей')} · ~${rub(sumEst(all))}`:'Записей нет';
   const out=$('#calOut');
   if(m==='day'){const day=S.cal.anchor,list=bkOf(day);
-    out.innerHTML=`<div class="cal-day">${slots(day).map(tm=>{const here=list.filter(b=>b.tm===tm);
+    const un=list.filter(b=>!b.tm);
+    out.innerHTML=`<div class="cal-day">${un.length?`<div class="cd-row"><span class="tm" style="font-size:.7rem">БЕЗ<br>ВРЕМЕНИ</span><div class="cd-cell">${un.map(b=>`<button type="button" class="cbk ${b.status}" data-bk="${b.id}"><b>${bkLabel(b)}</b><small>${esc([KIND[b.kind]||'',PRESET[b.preset],b.est?'~'+rub(b.est):''].filter(Boolean).join(' · '))}</small></button>`).join('')}</div></div>`:''}${slots(day).map(tm=>{const here=list.filter(b=>b.tm===tm);
       return `<div class="cd-row"><span class="tm">${tm}</span><div class="cd-cell">${here.map((b,i)=>`<button type="button" class="cbk ${b.status}" data-bk="${b.id}"><b>${bkLabel(b)}</b><small>${esc([PRESET[b.preset],b.est?'~'+rub(b.est):'',b.phone].filter(Boolean).join(' · '))}</small></button>`).join('')}
         <button type="button" class="cfree" data-new="${day}|${tm}" aria-label="Записать на ${tm}">${here.length?'+':'свободно'}</button></div></div>`;}).join('')}</div>`;}
   else if(m==='week'){const days=[];for(let i=0;i<7;i++){const d=new Date(f);d.setDate(f.getDate()+i);days.push(iso(d));}
     const allSlots=slots(days[0]).length>=slots(days[5]).length?slots(days[0]):slots(days[5]);
     out.innerHTML=`<div class="tw"><table class="cal-week"><thead><tr><th></th>${days.map(d=>{const x=fromIso(d),l=bkOf(d);return `<th class="${d===today?'today':''}"><button type="button" class="cwh" data-go="${d}">${WD[x.getDay()]} ${x.getDate()}<small>${l.length?l.length+' · '+rub(sumEst(l)):'—'}</small></button></th>`;}).join('')}</tr></thead>
-      <tbody>${allSlots.map(tm=>`<tr><td class="tm">${tm}</td>${days.map(d=>{const inDay=slots(d).includes(tm),here=bkOf(d).filter(b=>b.tm===tm);
+      <tbody>${days.some(d=>bkOf(d).some(b=>!b.tm))?`<tr><td class="tm" style="font-size:.62rem">БЕЗ ВРЕМ.</td>${days.map(d=>`<td>${bkOf(d).filter(b=>!b.tm).map(b=>`<button type="button" class="cbk sm ${b.status}" data-bk="${b.id}">${b.kind==='task'?'⚙ ':'🚗 '}${bkLabel(b)}</button>`).join('')}</td>`).join('')}</tr>`:''}${allSlots.map(tm=>`<tr><td class="tm">${tm}</td>${days.map(d=>{const inDay=slots(d).includes(tm),here=bkOf(d).filter(b=>b.tm===tm);
         if(!inDay)return `<td class="closed"></td>`;
         return `<td>${here.map(b=>`<button type="button" class="cbk sm ${b.status}" data-bk="${b.id}">${bkLabel(b)}</button>`).join('')||`<button type="button" class="cfree sm" data-new="${d}|${tm}" aria-label="Записать ${d} на ${tm}"></button>`}</td>`;}).join('')}</tr>`).join('')}</tbody></table></div>`;}
   else{const a=fromIso(S.cal.anchor),cells=[];for(let d=new Date(f);d<=t;d.setDate(d.getDate()+1))cells.push(iso(d));
@@ -552,6 +558,20 @@ function renderCal(){const[f,t]=calRange(),m=S.cal.mode,today=iso(new Date());
   out.querySelectorAll('[data-bk]').forEach(b=>b.onclick=()=>calOpen(S.cal.items.find(x=>x.id===+b.dataset.bk)));
   out.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>{const[d,tm]=b.dataset.new.split('|');calNewAt(d,tm);});
   out.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{S.cal.mode='day';S.cal.anchor=b.dataset.go;loadCal();});}
+S.queue=[];
+async function loadQueue(){try{const j=await api('queue');S.queue=j.items||[];}catch(_){S.queue=[];}renderQueue();}
+function renderQueue(){const el=$('#queue');if(!el)return;const today=iso(new Date());
+  const list=S.queue.slice().sort((a,b)=>(a.kind==='leave'?0:1)-(b.kind==='leave'?0:1)||(a.nodue?1:0)-(b.nodue?1:0)||(a.day<b.day?-1:1));
+  if(!list.length){el.innerHTML=`<div class="empty" style="padding:18px"><b style="font-size:1.1rem">Ничего не ждёт</b>Сюда попадают машины, оставленные на день, и задачи без времени — например, собрать комплект.</div>`;return;}
+  el.innerHTML=list.map((b,i)=>{const late=!b.nodue&&b.day<today;const when=b.kind==='leave'?`оставили ${fmtDay(b.day)}`:(b.nodue?'без срока':`к ${fmtDay(b.day)}`);
+    return `<div class="bk"><span class="tm" style="font-size:1.3rem">${b.kind==='task'?'⚙':'🚗'}</span>
+      <span class="who"><b>${esc(b.name||b.plate||(b.note||'Задача').slice(0,50))}${late?' <span class="badge ds">просрочено</span>':''}</b>
+      <small>${esc([KIND[b.kind],when,b.plate,b.car?CAR[b.car]+(b.car!=='com'&&b.d?' R'+b.d:''):'',PRESET[b.preset],b.est?'~'+rub(b.est):'',b.name?b.note:''].filter(Boolean).join(' · '))}</small></span>
+      <span class="act"><button class="btn sig" type="button" data-qgo="${i}">Сделано — оформить</button><button class="btn ghost" type="button" data-qed="${i}">Изменить</button></span></div>`;}).join('');
+  el.querySelectorAll('[data-qgo]').forEach(x=>x.onclick=()=>arrive(list[+x.dataset.qgo]));
+  el.querySelectorAll('[data-qed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.qed]));}
+$('#qAddLeave').onclick=()=>openBk(null,{kind:'leave',day:iso(new Date())});
+$('#qAddTask').onclick=()=>openBk(null,{kind:'task',nodue:true,preset:'mb',day:iso(new Date())});
 $('#calPrev').onclick=()=>calShift(-1);$('#calNext').onclick=()=>calShift(1);
 $('#calToday').onclick=()=>{S.cal.anchor=iso(new Date());loadCal();};
 document.querySelectorAll('#calMode .chip').forEach(c=>c.onclick=()=>{S.cal.mode=c.dataset.m;loadCal();});
@@ -644,16 +664,16 @@ async function renderPrizes(){const box=$('#prizeBox');if(!box)return;let st;try
 
 
 /* список записи */
-function renderBookings(){const el=$('#bks'),list=S.bookings.slice().sort((a,b)=>a.tm<b.tm?-1:1);
+function renderBookings(){const el=$('#bks'),list=S.bookings.slice().sort((a,b)=>(a.tm||'00')<(b.tm||'00')?-1:1);
   const planned=list.filter(b=>b.status==='planned');$('#bkSum').textContent=planned.length?`${planned.length} ${plural(planned.length,'запись','записи','записей')} · ~${rub(planned.reduce((a,b)=>a+(b.est||0),0))}`:'';
   if(!list.length){el.innerHTML=`<div class="empty" style="padding:18px"><b style="font-size:1.1rem">Записи нет</b>«+ Запись» — записать клиента на время.</div>`;return;}
-  el.innerHTML=list.map((b,i)=>`<div class="bk ${b.status}"><span class="tm">${b.tm}</span>
-    <span class="who"><b>${esc(b.name||b.plate||'Клиент')}${b.status==='done'?' <span class="badge cp">приехал</span>':b.status==='noshow'?' <span class="badge ds">не приехал</span>':''}</b>
+  el.innerHTML=list.map((b,i)=>`<div class="bk ${b.status}"><span class="tm">${b.tm||(b.kind==='task'?'задача':'на день')}</span>
+    <span class="who"><b>${esc(b.name||b.plate||(b.note?b.note.slice(0,40):'Клиент'))}${b.status==='done'?' <span class="badge cp">приехал</span>':b.status==='noshow'?' <span class="badge ds">не приехал</span>':''}</b>
     <small>${esc([b.phone,b.plate,CAR[b.car]+(b.car!=='com'&&b.d?' R'+b.d:''),PRESET[b.preset]||'',b.est?'~'+rub(b.est):'',b.note].filter(Boolean).join(' · '))}</small></span>
     <span class="act">${b.status==='planned'?`<button class="btn sig" type="button" data-go="${i}">Приехал</button>`:''}<button class="btn ghost" type="button" data-ed="${i}">Изменить</button></span></div>`).join('');
   el.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>arrive(list[+x.dataset.go]));
   el.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.ed]));}
-function arrive(b){if(b.day&&b.day!==S.day){S.day=b.day;loadDay();}if(S.view!=='day')show('day');openOrder(null,{day:b.day,name:b.name||'',phone:b.phone||'',plate:b.plate||'',car:b.car||'car',d:b.d||16,note:b.note||'',bookingId:b.id,lines:presetLines(b.car||'car',b.d||16,b.preset)});}
+function arrive(b){const dd=b.tm?b.day:iso(new Date());if(dd!==S.day){S.day=dd;loadDay();}if(S.view!=='day')show('day');openOrder(null,{day:dd,name:b.name||'',phone:b.phone||'',plate:b.plate||'',car:b.car||'car',d:b.d||16,note:b.note||'',bookingId:b.id,lines:presetLines(b.car||'car',b.d||16,b.preset)});}
 
 /* лист записи */
 let B=null;
@@ -663,8 +683,11 @@ function renderBk(){const busy=new Set((B.day===S.day?S.bookings:(B._others||[])
   const diam=[13,14,15,16,17,18,19,20,21,22];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${B.id?'Запись':'Новая запись'}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
   <div class="sh-grid"><div>
-    <div class="blk"><label><span class="mono lbl">День</span><input class="inp" type="date" id="b-day" value="${B.day}" style="max-width:220px"></label></div>
-    <div class="blk"><span class="mono lbl">Время</span><div class="slots">${slots(B.day).map(t=>`<button type="button" class="chip ${busy.has(t)?'busy':''}" data-tm="${t}" aria-pressed="${B.tm===t}" title="${busy.has(t)?'Уже есть запись':''}">${t}</button>`).join('')}</div></div>
+    <div class="blk"><span class="mono lbl">Как</span><div class="row">${Object.entries(KIND).map(([k,t])=>`<button type="button" class="chip" data-kind="${k}" aria-pressed="${(B.kind||'time')===k}">${t}</button>`).join('')}</div></div>
+    <div class="blk"><span class="mono lbl">${B.kind==='task'?'К какому дню':'День'}</span><div class="row" style="align-items:center">
+      <input class="inp" type="date" id="b-day" value="${B.day}" style="max-width:220px" ${B.kind==='task'&&B.nodue?'disabled':''}>
+      ${B.kind==='task'?`<button type="button" class="chip" id="b-nodue" aria-pressed="${!!B.nodue}">Без срока</button>`:''}</div></div>
+    ${(B.kind||'time')==='time'?`<div class="blk"><span class="mono lbl">Время</span><div class="slots">${slots(B.day).map(t=>`<button type="button" class="chip ${busy.has(t)?'busy':''}" data-tm="${t}" aria-pressed="${B.tm===t}" title="${busy.has(t)?'Уже есть запись':''}">${t}</button>`).join('')}</div></div>`:''}
     <div class="blk"><span class="mono lbl">Тип</span><div class="row">${Object.entries(CAR).map(([k,t])=>`<button type="button" class="chip" data-car="${k}" aria-pressed="${B.car===k}">${t}</button>`).join('')}</div></div>
     ${B.car!=='com'?`<div class="blk"><span class="mono lbl">Диаметр</span><div class="row">${diam.map(d=>`<button type="button" class="chip m" data-d="${d}" aria-pressed="${B.d===d}">R${d}</button>`).join('')}</div></div>`:''}
     <div class="blk"><span class="mono lbl">Что будем делать</span><div class="row">${Object.entries(PRESET).map(([k,t])=>`<button type="button" class="chip" data-pr="${k}" aria-pressed="${B.preset===k}">${t}</button>`).join('')}</div></div>
@@ -687,6 +710,8 @@ function rerBk(){keepBk();const sc=$('#sheet').scrollTop;renderBk();$('#sheet').
 function bindBk(){$('#close').onclick=closeSheet;
   $('#b-day').onchange=async()=>{keepBk();if(B.day!==S.day){try{const j=await api('day',null,{day:B.day});B._others=j.bookings||[];}catch(_){B._others=[];}}rerBk();};
   document.querySelectorAll('[data-tm]').forEach(x=>x.onclick=()=>{B.tm=x.dataset.tm;rerBk();});
+  document.querySelectorAll('[data-kind]').forEach(x=>x.onclick=()=>{B.kind=x.dataset.kind;if(B.kind==='task'&&B.preset==='swap')B.preset='mb';rerBk();});
+  const nd=document.getElementById('b-nodue');if(nd)nd.onclick=()=>{keepBk();B.nodue=!B.nodue;rerBk();};
   document.querySelectorAll('[data-car]').forEach(x=>x.onclick=()=>{B.car=x.dataset.car;rerBk();});
   document.querySelectorAll('[data-d]').forEach(x=>x.onclick=()=>{B.d=+x.dataset.d;rerBk();});
   document.querySelectorAll('[data-pr]').forEach(x=>x.onclick=()=>{B.preset=x.dataset.pr;rerBk();});
@@ -696,12 +721,12 @@ function bindBk(){$('#close').onclick=closeSheet;
   const go=document.getElementById('b-go');if(go)go.onclick=()=>{keepBk();const b={...B};closeSheet();setTimeout(()=>arrive(b),400);};
   const no=document.getElementById('b-no');if(no)no.onclick=()=>saveBk('noshow');
   const del=document.getElementById('b-del');if(del)del.onclick=()=>{$('#bDelBox').innerHTML=`<div class="confirm">Удалить запись? <button class="btn danger" type="button" id="b-del2">Да</button><button class="btn ghost" type="button" id="b-del0">Нет</button></div>`;
-    $('#b-del0').onclick=rerBk;$('#b-del2').onclick=async()=>{try{await api('book_del',{id:B.id});closeSheet();loadDay();loadWeek();if(S.view==='cal')loadCal();}catch(e){bkErr(e.message);}};};}
+    $('#b-del0').onclick=rerBk;$('#b-del2').onclick=async()=>{try{await api('book_del',{id:B.id});closeSheet();loadDay();loadWeek();loadQueue();if(S.view==='cal')loadCal();}catch(e){bkErr(e.message);}};};}
 function bkErr(t){const e=$('#b-err');e.textContent=t;e.hidden=false;}
-async function saveBk(status){keepBk();if(!B.tm)return bkErr('Выберите время.');if(!B.name&&!B.phone&&!B.plate)return bkErr('Впишите имя, телефон или госномер — чтобы узнать клиента.');
-  try{await api('book_save',{id:B.id,day:B.day,tm:B.tm,status,name:B.name,phone:B.phone,plate:B.plate,note:B.note,car:B.car,d:B.car==='com'?null:B.d,preset:B.preset,est:B.est});
-    closeSheet();if(S.view==='cal'){loadCal();}else if(B.day!==S.day){S.day=B.day;}loadDay();loadWeek();}catch(e){bkErr('Не сохранилось: '+e.message);}}
-function openBk(b,pre){B=b?JSON.parse(JSON.stringify(b)):Object.assign({day:S.day,tm:'',car:'car',d:16,preset:'swap',est:0,name:'',phone:'',plate:'',note:'',status:'planned'},pre||{});
+async function saveBk(status){keepBk();const kind=B.kind||'time';if(kind==='time'&&!B.tm)return bkErr('Выберите время.');if(!B.name&&!B.phone&&!B.plate&&!B.note)return bkErr('Впишите клиента или что сделать в комментарии.');if(kind==='task'&&B.nodue)B.day=iso(new Date());
+  try{await api('book_save',{id:B.id,day:B.day,tm:kind==='time'?B.tm:'',kind,nodue:!!B.nodue,status,name:B.name,phone:B.phone,plate:B.plate,note:B.note,car:B.car,d:B.car==='com'?null:B.d,preset:B.preset,est:B.est});
+    closeSheet();loadQueue();if(S.view==='cal'){loadCal();}else if(B.day!==S.day){S.day=B.day;}loadDay();loadWeek();}catch(e){bkErr('Не сохранилось: '+e.message);}}
+function openBk(b,pre){B=b?JSON.parse(JSON.stringify(b)):Object.assign({day:S.day,tm:'',kind:'time',nodue:false,car:'car',d:16,preset:'swap',est:0,name:'',phone:'',plate:'',note:'',status:'planned'},pre||{});if(!B.kind)B.kind=B.tm?'time':'leave';
   renderBk();const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 $('#addBk').onclick=()=>openBk(null);
 
@@ -770,11 +795,6 @@ function renderSheet(){
   <div class="sh-grid"><div>
     <div class="blk"><span class="mono lbl">Тип</span><div class="row">${Object.entries(CAR).map(([k,t])=>`<button type="button" class="chip" data-car="${k}" aria-pressed="${O.car===k}">${t}</button>`).join('')}</div></div>
     ${O.car!=='com'?`<div class="blk"><span class="mono lbl">Диаметр</span><div class="row">${diam.map(d=>`<button type="button" class="chip m" data-d="${d}" aria-pressed="${O.d===d}">R${d}</button>`).join('')}</div></div>`:''}
-    <div class="blk"><span class="mono lbl">Надбавки</span><div class="row">
-      <button type="button" class="chip" data-mod="lp" aria-pressed="${O.mods.lp}">Низкий профиль, монтаж +50%</button>
-      <button type="button" class="chip" data-mod="rf" aria-pressed="${O.mods.rf}">RunFlat, монтаж +100%</button>
-      <button type="button" class="chip" data-season="peak" aria-pressed="${O.mods.season==='peak'}">Пик +15%</button>
-      <button type="button" class="chip" data-season="off" aria-pressed="${O.mods.season==='off'}">Межсезонье −15%</button></div></div>
     <div class="blk"><span class="mono lbl">Быстро</span><div class="quick">
       <button type="button" class="btn ghost" data-q="swap">Переобувка в сборе (4 колеса)</button>
       <button type="button" class="btn ghost" data-q="full">Полный шиномонтаж (4)</button>
@@ -782,6 +802,9 @@ function renderSheet(){
     <div class="blk"><span class="mono lbl">Работы</span><div class="works">${tiles(0,nMain)}</div></div>
     <details class="more blk" ${anyExtra?'open':''}><summary>Ремонт и дополнительные работы</summary><div class="works" style="margin-top:8px">${tiles(nMain,nMain+nEx)}</div></details>
     <details class="more blk" ${O.lines.some(l=>/Правка/.test(l.n))?'open':''}><summary>Правка дисков</summary><div class="works" style="margin-top:8px">${tiles(nMain+nEx,WORKS.length)}</div></details>
+    <details class="more blk" ${O.mods.lp||O.mods.rf?'open':''}><summary>Надбавки — низкий профиль, RunFlat</summary><div class="row" style="margin-top:8px">
+      <button type="button" class="chip" data-mod="lp" aria-pressed="${O.mods.lp}">Низкий профиль, монтаж +50%</button>
+      <button type="button" class="chip" data-mod="rf" aria-pressed="${O.mods.rf}">RunFlat, монтаж +100%</button></div></details>
   </div>
   <aside class="side">
     <div class="lines">${c.lines.length?c.lines.map(l=>`<div><span>${esc(l.n)}${l.q>1?' ×'+l.q:''}</span><span class="tnum">${rub(l.p*l.q)}</span></div>`).join(''):'<span class="pay">Отметьте работы слева</span>'}</div>
@@ -842,7 +865,7 @@ async function save(){keepInputs();
     list:c.list,h:c.h,mode:O.mode,paid:c.paid,pay:O.mode==='coupon'?null:O.pay,plate:(O.plate||'').trim().toUpperCase(),phone:(O.phone||'').trim(),note:(O.note||'').trim(),name:(O.name||'').trim(),...(O.bookingId?{bookingId:O.bookingId}:{})};
   const btn=$('#o-save');btn.disabled=true;btn.textContent='Сохраняем…';
   if(O.id)doc.id=O.id;
-  try{await api('save',doc);closeSheet();loadDay();afterSave();if(doc.bookingId)loadWeek();}
+  try{await api('save',doc);closeSheet();loadDay();afterSave();if(doc.bookingId){loadWeek();loadQueue();}}
   catch(e){btn.disabled=false;btn.textContent='Сохранить';showErr('Не сохранилось: '+e.message);}}
 function openOrder(o,pre){O=o?JSON.parse(JSON.stringify(o)):Object.assign(blank(),pre||{});if(!O.mods)O.mods={lp:false,rf:false,season:null};
   renderSheet();const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;
@@ -903,7 +926,7 @@ $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.yea
 
 /* ---------- вкладки ---------- */
 function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal')loadCal();$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}
