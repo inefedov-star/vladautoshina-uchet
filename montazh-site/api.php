@@ -81,12 +81,12 @@ function db(array $cfg): PDO {
   $cols = array_column($pdo->query('PRAGMA table_info(docs)')->fetchAll(), 'name');
   if (!in_array('wh', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN wh TEXT NOT NULL DEFAULT 'shop'");
   if (!in_array('cancel_reason', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN cancel_reason TEXT");
-  // продажа/возврат: телефон покупателя, способ оплаты, ссылка возврата на продажу; выдача с ответхранения: % магазину
+  // продажа/возврат: телефон покупателя, способ оплаты, ссылка возврата на продажу; fee не используется
   if (!in_array('phone', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN phone TEXT NOT NULL DEFAULT ''");
   if (!in_array('pay', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN pay TEXT NOT NULL DEFAULT ''");
   if (!in_array('base_id', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN base_id INTEGER");
   if (!in_array('fee', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN fee REAL NOT NULL DEFAULT 0");
-  // приход: сколько оплачено бонусами поставщика (уменьшает закупочную цену строк)
+  // зарезервировано (бонусы поставщика решили не учитывать отдельно, 02.11)
   if (!in_array('bonus', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN bonus REAL NOT NULL DEFAULT 0");
   $mcols = array_column($pdo->query('PRAGMA table_info(moves)')->fetchAll(), 'name');
   // цена по прайсу на момент продажи — чтобы видеть скидку
@@ -161,17 +161,6 @@ function docWh(string $t, string $wh): string { return $t === 'iss' ? 'custody' 
 function returnedMap(array $cfg, int $saleId, int $exceptId = 0): array {
   $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(m.qty) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.type = 'ret' AND d.status = 'posted' AND d.base_id = ? AND d.id != ? GROUP BY m.product_id");
   $st->execute([$saleId, $exceptId]); $o = []; foreach ($st->fetchAll() as $r) $o[(int)$r['pid']] = (float)$r['q']; return $o;
-}
-// бонусы в кабинетах поставщиков: начисляются за выдачу с ответхранения, тратятся в приходе
-function bonusMap(array $cfg, int $exceptDoc = 0): array {
-  $o = [];
-  $acc = function ($name, $add, $spend) use (&$o) { $n = trim((string)$name); if ($n === '') $n = 'Без поставщика'; $k = mb_strtoupper($n);
-    if (!isset($o[$k])) $o[$k] = ['name' => $n, 'acc' => 0.0, 'spent' => 0.0]; $o[$k]['acc'] += $add; $o[$k]['spent'] += $spend; };
-  foreach (db($cfg)->query("SELECT d.partner, d.fee, SUM(ABS(m.qty) * COALESCE(m.price, 0)) v FROM docs d JOIN moves m ON m.doc_id = d.id WHERE d.type = 'iss' AND d.status = 'posted' GROUP BY d.id")->fetchAll() as $r) $acc($r['partner'], (float)$r['v'] * (float)$r['fee'] / 100, 0);
-  $st = db($cfg)->prepare("SELECT partner, bonus FROM docs WHERE type = 'in' AND status = 'posted' AND bonus > 0 AND id != ?"); $st->execute([$exceptDoc]);
-  foreach ($st->fetchAll() as $r) $acc($r['partner'], 0, (float)$r['bonus']);
-  foreach ($o as &$x) { $x['acc'] = round($x['acc'], 2); $x['spent'] = round($x['spent'], 2); $x['left'] = round($x['acc'] - $x['spent'], 2); } unset($x);
-  return array_values($o);
 }
 function post(): void { if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Нужен POST', 405); }
 
@@ -646,8 +635,7 @@ try {
     if (!isDay($b['day'] ?? null)) fail('Укажите дату');
     $wh = docWh($type, ($b['wh'] ?? 'shop') === 'custody' ? 'custody' : 'shop'); $sign = docSign($type);
     $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'sbp', 'bank'], true) ? $b['pay'] : '';
-    $base = (int)($b['base_id'] ?? 0) ?: null; $fee = $type === 'iss' ? max(0, min(100, (float)($b['fee'] ?? 5))) : 0;
-    $bonus = $type === 'in' && $wh === 'shop' ? max(0, round((float)($b['bonus'] ?? 0), 2)) : 0;
+    $base = (int)($b['base_id'] ?? 0) ?: null; $fee = 0; $bonus = 0;
     $id = (int)($b['id'] ?? 0); $p = db($cfg);
     if ($id) { $st = $p->prepare('SELECT status FROM docs WHERE id = ?'); $st->execute([$id]); $stt = $st->fetchColumn(); if ($stt === false) fail('Документ не найден', 404); if ($stt !== 'draft') fail('Документ уже проведён — его можно отменить и создать исправленную копию', 409); }
     $p->beginTransaction();
@@ -660,8 +648,8 @@ try {
     foreach (array_slice((array)($b['lines'] ?? []), 0, 500) as $l) { $pid = (int)($l['product_id'] ?? 0); $q = abs((float)($l['qty'] ?? 0)); if (!$pid || $q <= 0) continue; $chk->execute([$pid]); $cp = $chk->fetchColumn(); if ($cp === false) continue;
       // себестоимость продажи и выдачи считается при проведении; в приходе — из строки
       $cost = $type === 'in' ? (float)$num($l['cost'] ?? 0) : 0;
-      // в продаже list — цена по прайсу; в приходе — цена по накладной до бонусов
-      $list = $type === 'sale' ? ($num($l['list'] ?? null) ?? (float)$cp) : ($type === 'in' ? $cost : null);
+      // в продаже list — цена по прайсу на момент продажи (для расчёта скидки)
+      $list = $type === 'sale' ? ($num($l['list'] ?? null) ?? (float)$cp) : null;
       $ins->execute([$id, $pid, $wh, $sign * $q, $cost, $num($l['price'] ?? null), $list]); }
     $p->commit(); logit($cfg, $role, 'doc_save', (string)$id);
     out(['id' => $id]);
@@ -674,12 +662,7 @@ try {
     $l = $p->prepare('SELECT product_id, qty, cost, price FROM moves WHERE doc_id = ?'); $l->execute([$id]); $lines = $l->fetchAll(); if (!$lines) fail('В документе нет строк');
     if ($d['type'] === 'in' && $d['wh'] === 'shop') foreach ($lines as $x) if ((float)$x['cost'] <= 0) fail('Не у всех строк указана цена закупки');
     $force = !empty(body()['force']); $setCost = [];
-    $applyBonus = null;
-    if ($d['type'] === 'in' && $d['wh'] === 'shop' && (float)$d['bonus'] > 0) {
-      $tot = 0; foreach ($lines as $x) $tot += (float)$x['qty'] * (float)$x['cost'];
-      if ((float)$d['bonus'] > $tot - 0.01) fail('Бонусами можно оплатить меньше, чем сумма прихода');
-      $applyBonus = 1 - (float)$d['bonus'] / $tot;
-    }
+
     if (in_array($d['type'], ['sale', 'iss'], true)) {
       // списываем по средней себестоимости на момент проведения; проверяем, хватает ли товара
       $sm = stockMap($cfg, $d['wh']); $last = lastCosts($cfg); $need = []; $short = [];
@@ -705,8 +688,6 @@ try {
     }
     $p->beginTransaction();
     if ($setCost) { $uc = $p->prepare('UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ?'); foreach ($setCost as $pid => $c) $uc->execute([$c, $id, $pid]); }
-    // бонусы поставщика уменьшают закупочную цену строк пропорционально сумме; цена по накладной остаётся в list
-    if ($applyBonus !== null) $p->prepare('UPDATE moves SET list = cost, cost = ROUND(cost * ?, 2) WHERE doc_id = ?')->execute([$applyBonus, $id]);
     if (in_array($d['type'], ['sale', 'ret'], true) && $d['phone'] !== '') touchClient($cfg, $d['phone'], trim((string)$d['partner']), '');
     if ($d['type'] === 'in' && $d['wh'] === 'shop') { $up = $p->prepare('UPDATE products SET price = ?, updated = ? WHERE id = ? AND price != ?'); foreach ($lines as $x) if ($x['price'] !== null && (float)$x['price'] > 0) $up->execute([(float)$x['price'], time(), $x['product_id'], (float)$x['price']]); }
     $p->prepare("UPDATE docs SET status = 'posted', posted_at = ? WHERE id = ?")->execute([time(), $id]);
@@ -730,10 +711,6 @@ try {
     db($cfg)->prepare("UPDATE docs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?")->execute([time(), $role, $reason, $id]);
     logit($cfg, $role, 'doc_cancel', $id . ': ' . $reason);
     out(['ok' => true]);
-
-  case 'bonuses':
-    needRole($role, ['owner']);
-    out(['bonuses' => bonusMap($cfg)]);
 
   case 'price_set':
     // цена продажи в карточке
