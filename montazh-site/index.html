@@ -176,6 +176,24 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
 .areas button{border:0;background:transparent;padding:0 12px;min-height:40px;font-weight:700;font-size:.9rem;color:var(--ink-2)}
 .areas button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 .tab.off-area{display:none}
+.shell{display:block}
+.smenu{display:none}
+body.area-s .tabs,body.area-s #stSubs,body.area-s #stWh,body.area-s #stImport{display:none!important}
+body.area-s .smenu{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:10px 16px;border-bottom:1.5px solid var(--ink);background:var(--paper-2)}
+.smenu .sg{display:contents}.smenu .sgh{display:none}
+.smenu button{flex:none;border:1.5px solid var(--rule);background:var(--paper);border-radius:3px;padding:0 12px;min-height:42px;font-weight:700;font-size:.92rem;color:var(--ink-2);text-align:left}
+.smenu button[aria-current="page"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+@media (min-width:900px){
+  body.area-s .shell{display:flex;align-items:flex-start}
+  body.area-s .shell>main{flex:1;min-width:0;max-width:none;margin:0}
+  body.area-s .smenu{display:block;position:sticky;top:var(--hdr,96px);height:calc(100vh - var(--hdr,96px));width:236px;flex:none;overflow-y:auto;padding:14px 0 30px;border-bottom:0;border-right:1.5px solid var(--ink);background:var(--ink)}
+  .smenu .sg{display:block;margin-bottom:14px}
+  .smenu .sgh{display:block;padding:0 20px 4px;font-family:var(--f-mono);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--signal)}
+  .smenu button{display:block;width:100%;border:0;border-left:4px solid transparent;border-radius:0;background:transparent;color:var(--paper);opacity:.82;padding:0 16px;min-height:40px;font-size:.95rem;font-weight:600}
+  .smenu button:hover{opacity:1;background:rgba(255,255,255,.06)}
+  .smenu button[aria-current="page"]{background:rgba(255,255,255,.1);color:var(--paper);opacity:1;border-left-color:var(--signal)}
+}
+body.master .smenu .owner-only{display:none!important}
 @media (max-width:520px){.areas button{padding:0 9px;font-size:.82rem}}
 .dhead{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:12px}
 .dadd{display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap}.dadd .inp{flex:1;min-width:220px}
@@ -345,6 +363,15 @@ details.bdgs summary .mono{color:var(--ink-3)}
   </div>
 </header>
 
+<div class="shell">
+<aside id="side" class="smenu" aria-label="Меню магазина">
+  <div class="sg owner-only"><span class="sgh">Продажи</span><button type="button" data-p="sale">Продажи</button><button type="button" data-p="ret">Возвраты</button></div>
+  <div class="sg owner-only"><span class="sgh">Закупки</span><button type="button" data-p="in">Закупки</button><button type="button" data-p="iss">Выдача с ответхранения</button></div>
+  <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" data-p="custody">Ответхранение</button></div>
+  <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
+  <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="month">Итоги месяца</button></div>
+  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button></div>
+</aside>
 <main class="wrap">
   <section id="v-day">
     <div class="dayhd">
@@ -388,7 +415,7 @@ details.bdgs summary .mono{color:var(--ink-3)}
 
   <section id="v-stock" hidden>
     <div class="calbar">
-      <h1>Склад</h1>
+      <h1 id="stH1">Склад</h1>
       <div class="spacer"></div>
       <button class="btn ghost owner-only" type="button" id="stImport">Загрузить каталог из CloudShop</button>
     </div>
@@ -408,7 +435,8 @@ details.bdgs summary .mono{color:var(--ink-3)}
         <button class="arrow" type="button" id="dlPrev" aria-label="Предыдущий месяц">‹</button><h2 class="sec" id="dlTitle" style="margin:0 8px"></h2><button class="arrow" type="button" id="dlNext" aria-label="Следующий месяц">›</button>
         <div class="spacer"></div>
       </div>
-      <div class="row" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Приход</button><button class="btn ghost" type="button" data-newdoc="ret">+ Возврат</button><button class="btn ghost" type="button" data-newdoc="iss">+ Выдача с ответхранения</button></div>
+      <div id="dlPartner"></div>
+      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Приход</button><button class="btn ghost" type="button" data-newdoc="ret">+ Возврат</button><button class="btn ghost" type="button" data-newdoc="iss">+ Выдача с ответхранения</button></div>
       <div class="tiles" id="dlTiles" style="margin-top:0"></div>
       <div class="row" id="dlTypes" style="margin-bottom:12px"><button type="button" class="chip" data-t="sale">Продажи</button><button type="button" class="chip" data-t="ret">Возвраты</button><button type="button" class="chip" data-t="in">Приход</button><button type="button" class="chip" data-t="iss">Выдача</button><button type="button" class="chip" data-t="open">Ввод остатков</button></div>
       <div id="dlOut" style="margin-bottom:40px"></div>
@@ -460,7 +488,23 @@ details.bdgs summary .mono{color:var(--ink-3)}
     </div>
     <p class="note">Оплата мастеру — 30% от стоимости работ по прайсу, скидки и купоны её не уменьшают. В день «с помощником» снятие и установку колёс оплачивают помощнику (30% от их стоимости), мастер за них не получает. Сладкий бонус: каждые 10 000 ₽ работ мастера по прайсу за месяц — +100 ₽. Выручка включает возмещение по купонам производителя. Результат = выручка − мастер − бонусы − помощник − текущие расходы. Капитальные расходы показаны отдельно и в результат месяца не входят.</p>
   </section>
+  <section id="v-rep" hidden>
+    <div class="calbar"><h1>Продажи по товарам</h1></div>
+    <div class="row" style="align-items:center;margin-bottom:10px">
+      <button class="arrow" type="button" id="rpPrev" aria-label="Предыдущий месяц">‹</button><h2 class="sec" id="rpTitle" style="margin:0 8px"></h2><button class="arrow" type="button" id="rpNext" aria-label="Следующий месяц">›</button>
+      <input class="inp" type="search" id="rpQ" placeholder="Фильтр: R17, Ikon, АКБ…" autocomplete="off" style="flex:1;min-width:200px;margin-left:8px">
+    </div>
+    <div class="tiles" id="rpTiles" style="margin-top:0"></div>
+    <div id="rpOut" style="margin-bottom:40px"></div>
+  </section>
+
+  <section id="v-sup" hidden>
+    <div class="calbar"><h1>Поставщики</h1></div>
+    <p class="note" style="margin:0 0 10px">По проведённым приходам. Нажмите на поставщика — откроются его закупки.</p>
+    <div id="supOut" style="margin-bottom:40px"></div>
+  </section>
 </main>
+</div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="scrim" id="scrim" hidden></div>
@@ -886,7 +930,14 @@ async function loadDocs(){const[y,m]=S.dl.month.split('-').map(Number);$('#dlTit
     <div class="tile"><span class="mono">Скидки</span><b class="tnum">${rub(disc)}</b></div>
     <div class="tile"><span class="mono">Приход (закупка)</span><b class="tnum">${rub(inn)}</b></div>
     ${issq?`<div class="tile"><span class="mono">Выдано с ответхранения</span><b class="tnum">${fmtQty(issq)} шт.</b></div>`:''}`;
+  const fixed=S.area==='s'&&S.dl.type!=='';$('#dlTiles').hidden=fixed;$('#dlTypes').hidden=fixed;
+  document.querySelectorAll('#dlBtns [data-newdoc]').forEach(b=>b.hidden=fixed&&b.dataset.newdoc!==S.dl.type);
   S.dl.docs=S.dl.type?all.filter(d=>d.type===S.dl.type):all;
+  if(S.dl.partner)S.dl.docs=S.dl.docs.filter(d=>(d.partner||'').trim().toUpperCase()===S.dl.partner.toUpperCase());
+  $('#dlPartner').innerHTML=S.dl.partner?`<div class="row" style="margin-bottom:10px"><button type="button" class="chip" aria-pressed="true" id="dlPx">Поставщик: ${esc(S.dl.partner)} ×</button></div>`:'';
+  const px=document.getElementById('dlPx');if(px)px.onclick=()=>{S.dl.partner='';loadDocs();};
+  if(fixed){const ps=S.dl.docs.filter(d=>d.status==='posted');const tot=ps.reduce((a,d)=>a+(d.type==='in'?(d.wh==='custody'?0:d.cost):d.type==='iss'?d.qty:d.rev),0);
+    $('#dlPartner').insertAdjacentHTML('beforeend',`<p class="mono" style="color:var(--ink-3);margin:0 0 10px">Проведено: ${ps.length} · ${S.dl.type==='iss'?fmtQty(tot)+' шт.':S.dl.type==='in'?'закупка на '+rub(tot)+(ps.some(d=>d.wh==='custody')?' (без ответхранения)':''):rub(tot)}${S.dl.type==='sale'?' · прибыль '+rub(ps.reduce((a,d)=>a+d.rev-d.cost,0)):''}</p>`);}
   const el=$('#dlOut');if(!S.dl.docs.length){el.innerHTML=`<div class="empty"><b>Документов нет</b>«+ Продажа» или «+ Приход» — оформить первый.</div>`;return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th style="text-align:left">Кто</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>
     ${S.dl.docs.map(d=>`<tr data-d="${d.id}" class="${d.status==='cancelled'?'cxl':''}"><td>${fmtDay(d.day)}</td><td style="text-align:left">${esc(d.label)} № ${d.id}${d.num&&d.type!=='open'?' <span class="pay">('+esc(d.num)+')</span>':''}${d.base_id?' <span class="pay">по продаже № '+d.base_id+'</span>':''} <span class="badge ${DOC_ST[d.status][1]}">${stLbl(d.type,d.status)}</span>${d.type==='in'&&d.wh==='custody'?' <span class="badge cp">ответхранение</span>':''}</td>
@@ -1523,20 +1574,62 @@ $('#cpnSave').onclick=async()=>{try{const j=await api('coupon_set',{value:+$('#c
 $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.year++;renderSum();};$('#y-refresh').onclick=renderSum;
 
 /* ---------- разделы: шиномонтаж и магазин (одна база, общие клиенты) ---------- */
-function setArea(a,first){S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}
+function setArea(a,first){S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');
   document.querySelectorAll('[data-area]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.area===a));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('off-area',!t.dataset.a.includes(a)));
   $('#areaName').textContent=a==='s'?'Магазин':'Шиномонтаж';document.title=(a==='s'?'Магазин':'Шиномонтаж')+' IVANOR';
   const cur=document.querySelector(`.tab[data-v="${S.view}"]`);
-  if(first||!cur||!cur.dataset.a.includes(a))show(a==='s'?'stock':'day');}
+  if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
+  else if(first||!cur||!cur.dataset.a.includes(a))show('day');
+  setHdr();}
+function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
+window.addEventListener('resize',setHdr);
+/* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
+const PAGES={sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',month:'Итоги месяца'};
+function page(p){if(p==='import'){openImport();return;}
+  if(!PAGES[p])p='goods';if(S.role!=='owner'&&!['goods','custody','cli'].includes(p))p='goods';
+  S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
+  document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
+  if(p==='cli'){show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}
+  $('#stH1').textContent=PAGES[p];
+  if(p==='goods'||p==='custody'){S.st.wh=p==='custody'?'custody':'shop';document.querySelectorAll('#stWh .chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.w===S.st.wh));show('stock');stSub('goods');}
+  else{if(S.dl.type!==(p==='month'?'':p))S.dl.partner='';S.dl.type=p==='month'?'':p;show('stock');stSub('docs');}
+  window.scrollTo(0,0);}
+document.querySelectorAll('#side [data-p]').forEach(b=>b.onclick=()=>page(b.dataset.p));
 document.querySelectorAll('[data-area]').forEach(b=>b.onclick=()=>setArea(b.dataset.area));
 function startArea(){const h=location.hash.slice(1),q=location.search;
   if(/shop|magazin/.test(q)||h==='stock')return 's';if(['day','cal','exp','sum'].includes(h))return 'm';
   try{return localStorage.getItem('ivanor_area')==='s'?'s':'m';}catch(_){return 'm';}}
 
+/* ---------- отчёт «Продажи по товарам» ---------- */
+S.rp={month:iso(new Date()).slice(0,7),rows:[],checks:0};
+async function loadRep(){const[y,m]=S.rp.month.split('-').map(Number);$('#rpTitle').textContent=`${MONTHS[m-1]} ${y}`;
+  const from=S.rp.month+'-01',to=iso(new Date(y,m,0));try{const j=await api('rep_sales',null,{from,to});S.rp.rows=j.rows;S.rp.checks=j.checks;}catch(e){S.rp.rows=[];}renderRep();}
+function renderRep(){const q=$('#rpQ').value.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const hit=(n,t)=>{const m=t.match(/^[RР](\d{2})$/);if(m)return new RegExp('/'+m[1]+'(\\b|/)|[RР]'+m[1]+'\\b').test(n);return n.includes(t)||n.replace(/\//g,' ').includes(t);};
+  const R=S.rp.rows.filter(r=>{const n=r.name.toUpperCase();return q.every(t=>hit(n,t));});
+  const T=R.reduce((a,r)=>({q:a.q+r.q,rev:a.rev+r.rev,cost:a.cost+r.cost,disc:a.disc+r.disc}),{q:0,rev:0,cost:0,disc:0}),pr=T.rev-T.cost;
+  $('#rpTiles').innerHTML=`<div class="tile"><span class="mono">Выручка</span><b class="tnum">${rub(T.rev)}</b>${q.length?'':`<small class="pay">${S.rp.checks} ${plural(S.rp.checks,'продажа','продажи','продаж')}${S.rp.checks?' · средняя '+rub(T.rev/S.rp.checks):''}</small>`}</div>
+    <div class="tile"><span class="mono">Себестоимость</span><b class="tnum">${rub(T.cost)}</b></div>
+    <div class="tile acc"><span class="mono">Прибыль</span><b class="tnum">${rub(pr)}</b><small class="pay">маржа ${T.rev?Math.round(pr/T.rev*100):0}%</small></div>
+    <div class="tile"><span class="mono">Продано, шт.</span><b class="tnum">${fmtQty(T.q)}</b>${T.disc?`<small class="pay">скидки ${rub(T.disc)}</small>`:''}</div>`;
+  if(!R.length){$('#rpOut').innerHTML=`<div class="empty"><b>Продаж нет</b>${q.length?'Ничего не подошло под фильтр.':'За этот месяц продажи не проведены.'}</div>`;return;}
+  $('#rpOut').innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Товар</th><th>Продано</th><th>Выручка</th><th>Себестоимость</th><th>Прибыль</th><th>Маржа</th></tr></thead><tbody>
+    ${R.map(r=>`<tr data-p="${r.id}"><td style="text-align:left;white-space:normal">${esc(r.name)}${r.retq?` <span class="pay">(возврат ${fmtQty(r.retq)})</span>`:''}</td><td>${fmtQty(r.q)}</td><td>${rub(r.rev)}</td><td>${rub(r.cost)}</td><td>${rub(r.profit)}</td><td>${r.rev?Math.round(r.profit/r.rev*100)+'%':'—'}</td></tr>`).join('')}</tbody></table></div>`;
+  $('#rpOut').querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
+$('#rpPrev').onclick=()=>{const[y,m]=S.rp.month.split('-').map(Number);S.rp.month=iso(new Date(y,m-2,1)).slice(0,7);loadRep();};
+$('#rpNext').onclick=()=>{const[y,m]=S.rp.month.split('-').map(Number);S.rp.month=iso(new Date(y,m,1)).slice(0,7);loadRep();};
+$('#rpQ').addEventListener('input',renderRep);
+/* ---------- поставщики ---------- */
+async function loadSup(){let L=[];try{L=(await api('suppliers')).suppliers;}catch(_){}
+  if(!L.length){$('#supOut').innerHTML=`<div class="empty"><b>Поставщиков пока нет</b>Они появятся после первого проведённого прихода.</div>`;return;}
+  $('#supOut').innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Поставщик</th><th>Приходов</th><th>Закуплено, шт.</th><th>На сумму</th><th>Ответхранение, шт.</th><th>Последний</th></tr></thead><tbody>
+    ${L.map((x,i)=>`<tr data-s="${i}"><td style="text-align:left">${esc(x.name)}</td><td>${x.n}</td><td>${fmtQty(x.qty)}</td><td>${rub(x.sum)}</td><td>${x.custody?fmtQty(x.custody):'—'}</td><td>${fmtDay(x.last)}</td></tr>`).join('')}</tbody></table></div>`;
+  $('#supOut').querySelectorAll('tr[data-s]').forEach(tr=>tr.onclick=()=>{const x=L[+tr.dataset.s];page('in');S.dl.partner=x.name==='Без поставщика'?'':x.name;S.dl.month=x.last.slice(0,7);loadDocs();});}
+
 /* ---------- вкладки ---------- */
 function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}

@@ -723,6 +723,34 @@ try {
     logit($cfg, $role, 'doc_cancel', $id . ': ' . $reason);
     out(['ok' => true]);
 
+  case 'rep_sales':
+    // отчёт «Продажи по товарам» за период: продано минус возвращено, выручка, себестоимость, прибыль
+    needRole($role, ['owner']);
+    $from = (string)($_GET['from'] ?? ''); $to = (string)($_GET['to'] ?? ''); if (!isDay($from) || !isDay($to)) fail('Укажите период');
+    $st = db($cfg)->prepare("SELECT m.product_id pid, p.name, p.kind, d.type, SUM(ABS(m.qty)) q, SUM(ABS(m.qty) * COALESCE(m.price, 0)) rev, SUM(ABS(m.qty) * m.cost) cost, SUM(ABS(m.qty) * COALESCE(m.list, m.price, 0)) lst, COUNT(DISTINCT d.id) nd FROM moves m JOIN docs d ON d.id = m.doc_id JOIN products p ON p.id = m.product_id WHERE d.status = 'posted' AND d.type IN ('sale','ret') AND d.day >= ? AND d.day <= ? GROUP BY m.product_id, d.type");
+    $st->execute([$from, $to]); $rows = [];
+    foreach ($st->fetchAll() as $r) { $k = (int)$r['pid']; $sg = $r['type'] === 'ret' ? -1 : 1;
+      if (!isset($rows[$k])) $rows[$k] = ['id' => $k, 'name' => $r['name'], 'kind' => $r['kind'], 'q' => 0, 'rev' => 0, 'cost' => 0, 'disc' => 0, 'retq' => 0];
+      $rows[$k]['q'] += $sg * (float)$r['q']; $rows[$k]['rev'] += $sg * (float)$r['rev']; $rows[$k]['cost'] += $sg * (float)$r['cost'];
+      if ($sg > 0) $rows[$k]['disc'] += max(0, (float)$r['lst'] - (float)$r['rev']); else $rows[$k]['retq'] += (float)$r['q']; }
+    $rows = array_values(array_map(function ($x) { foreach (['rev', 'cost', 'disc'] as $f) $x[$f] = round($x[$f], 2); $x['profit'] = round($x['rev'] - $x['cost'], 2); return $x; }, $rows));
+    usort($rows, fn($a, $b) => $b['rev'] <=> $a['rev']);
+    $c = db($cfg)->prepare("SELECT COUNT(*) FROM docs WHERE status = 'posted' AND type = 'sale' AND day >= ? AND day <= ?"); $c->execute([$from, $to]);
+    out(['rows' => $rows, 'checks' => (int)$c->fetchColumn()]);
+
+  case 'suppliers':
+    // поставщики из приходов: сколько приходов, на какую сумму, когда последний
+    needRole($role, ['owner']);
+    $o = [];
+    foreach (db($cfg)->query("SELECT d.id, d.partner, d.day, d.wh, SUM(m.qty * m.cost) s, SUM(m.qty) q FROM docs d LEFT JOIN moves m ON m.doc_id = d.id WHERE d.type = 'in' AND d.status = 'posted' GROUP BY d.id")->fetchAll() as $r) {
+      $n = trim((string)$r['partner']); if ($n === '') $n = 'Без поставщика'; $k = mb_strtoupper($n);
+      if (!isset($o[$k])) $o[$k] = ['name' => $n, 'n' => 0, 'sum' => 0, 'qty' => 0, 'custody' => 0, 'last' => ''];
+      $o[$k]['n']++; if ($r['wh'] === 'custody') $o[$k]['custody'] += (float)$r['q']; else { $o[$k]['sum'] += (float)$r['s']; $o[$k]['qty'] += (float)$r['q']; }
+      if ($r['day'] > $o[$k]['last']) $o[$k]['last'] = $r['day'];
+    }
+    $o = array_values($o); usort($o, fn($a, $b) => strcmp($b['last'], $a['last']));
+    out(['suppliers' => array_map(function ($x) { $x['sum'] = round($x['sum'], 2); return $x; }, $o)]);
+
   case 'price_set':
     // цена продажи в карточке
     post(); needRole($role, ['owner']);
