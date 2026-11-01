@@ -871,12 +871,14 @@ async function loadDocs(){const[y,m]=S.dl.month.split('-').map(Number);$('#dlTit
   let all=[];try{all=(await api('docs',null,{month:S.dl.month})).docs;}catch(e){}
   const P=all.filter(d=>d.status==='posted'),sum=(t,f)=>P.filter(d=>d.type===t).reduce((a,d)=>a+f(d),0);
   const sale=sum('sale',d=>d.rev),ret=sum('ret',d=>d.rev),prof=sum('sale',d=>d.rev-d.cost)-sum('ret',d=>d.rev-d.cost),disc=sum('sale',d=>Math.max(0,d.list-d.rev));
-  const inn=P.filter(d=>d.type==='in'&&d.wh==='shop').reduce((a,d)=>a+d.cost,0),iss=sum('iss',d=>d.rev),fee=sum('iss',d=>d.rev*d.fee/100);
+  const inn=P.filter(d=>d.type==='in'&&d.wh==='shop').reduce((a,d)=>a+d.cost,0),iss=sum('iss',d=>d.rev),fee=sum('iss',d=>d.rev*d.fee/100),bspent=sum('in',d=>d.bonus||0);
+  try{S.bon=(await api('bonuses')).bonuses;}catch(_){S.bon=S.bon||[];}const bl=S.bon.filter(b=>Math.abs(b.left)>=1);
   $('#dlTiles').innerHTML=`<div class="tile"><span class="mono">Продажи</span><b class="tnum">${rub(sale-ret)}</b>${ret?`<small class="pay">возвраты −${rub(ret)}</small>`:''}</div>
     <div class="tile acc"><span class="mono">Прибыль</span><b class="tnum">${rub(prof)}</b>${sale?`<small class="pay">${Math.round(prof/Math.max(1,sale-ret)*100)}% от продаж</small>`:''}</div>
     <div class="tile"><span class="mono">Скидки</span><b class="tnum">${rub(disc)}</b></div>
-    <div class="tile"><span class="mono">Приход (закупка)</span><b class="tnum">${rub(inn)}</b></div>
-    ${iss?`<div class="tile"><span class="mono">Выдано с ответхранения</span><b class="tnum">${rub(iss)}</b><small class="pay">магазину ${rub(fee)}</small></div>`:''}`;
+    <div class="tile"><span class="mono">Приход (закупка)</span><b class="tnum">${rub(inn)}</b>${bspent?`<small class="pay">и ещё бонусами ${rub(bspent)}</small>`:''}</div>
+    ${iss?`<div class="tile"><span class="mono">Выдано с ответхранения</span><b class="tnum">${rub(iss)}</b><small class="pay">бонус у поставщика ${rub(fee)}</small></div>`:''}
+    ${bl.length?`<div class="tile"><span class="mono">Бонусы у поставщиков · остаток</span><b class="tnum">${rub(bl.reduce((a,b)=>a+b.left,0))}</b>${bl.map(b=>`<small class="pay" style="display:block">${esc(b.name)}: ${rub(b.left)}</small>`).join('')}</div>`:''}`;
   S.dl.docs=S.dl.type?all.filter(d=>d.type===S.dl.type):all;
   const el=$('#dlOut');if(!S.dl.docs.length){el.innerHTML=`<div class="empty"><b>Документов нет</b>«+ Продажа» или «+ Приход» — оформить первый.</div>`;return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th style="text-align:left">Кто</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>
@@ -892,34 +894,36 @@ document.querySelectorAll('[data-newdoc]').forEach(b=>b.onclick=()=>openDoc(null
 let D=null,dDirty=false,partners=null;
 async function openDoc(id,init){
   if(!partners){try{partners=(await api('partners')).names;}catch(_){partners=[];}}
+  try{S.bon=(await api('bonuses')).bonuses;}catch(_){S.bon=S.bon||[];}
   if(id){try{const j=await api('doc',null,{id});D={...j.doc,base_id:j.doc.base_id?+j.doc.base_id:null,returns:j.returns||[],lines:j.lines.map(l=>({...l}))};}catch(e){toast('<b>Не открылся</b>'+esc(e.message));return;}}
-  else{const t=(init&&init.type)||'in';D=Object.assign({id:null,type:t,day:iso(new Date()),wh:'shop',partner:'',num:'',note:'',phone:'',pay:t==='sale'||t==='ret'?'card':'',fee:5,base_id:null,status:'draft',returns:[],lines:[]},init||{});}
+  else{const t=(init&&init.type)||'in';D=Object.assign({id:null,type:t,day:iso(new Date()),wh:'shop',partner:'',num:'',note:'',phone:'',pay:t==='sale'||t==='ret'?'card':'',fee:5,bonus:0,base_id:null,status:'draft',returns:[],lines:[]},init||{});}
   dDirty=false;renderDoc();const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
   if(D.status==='draft')setTimeout(()=>{const f=$('#dSearch');if(f)f.focus();},400);}
 function docTotals(){const L=D.lines,q=l=>+l.qty||0;const t={n:L.length,q:L.reduce((a,l)=>a+q(l),0)};
-  if(D.type==='in'){t.s=L.reduce((a,l)=>a+q(l)*(+l.cost||0),0);return t;}
+  if(D.type==='in'){t.s=L.reduce((a,l)=>a+q(l)*(+(D.status!=='draft'&&l.list!=null?l.list:l.cost)||0),0);return t;}
   t.s=L.reduce((a,l)=>a+q(l)*(+l.price||0),0);
   if(D.type==='sale'){t.list=L.reduce((a,l)=>a+q(l)*(+(l.list??l.cur_price)||0),0);const posted=D.status!=='draft';
     t.cost=L.reduce((a,l)=>a+q(l)*(posted?+l.cost||0:+(l.avg??l.last)||0),0);t.est=!posted;t.noCost=!posted&&L.some(l=>l.avg==null&&l.last==null);}
   if(D.type==='iss')t.fee=t.s*(+D.fee||0)/100;
   return t;}
 function totLine(t){const T=D.type;
-  if(T==='in')return `<span>Строк: <b>${t.n}</b></span><span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span><span>Сумма закупки: <b class="tnum">${rub(t.s)}</b></span>`;
+  if(T==='in'){const bo=D.wh==='shop'?+D.bonus||0:0;return `<span>Строк: <b>${t.n}</b></span><span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span><span>${bo?'По накладной':'Сумма закупки'}: <b class="tnum">${rub(t.s)}</b></span>${bo?`<span>Бонусами: <b class="tnum">−${rub(bo)}</b></span><span>К оплате поставщику: <b class="tnum" style="font-size:1.25rem">${rub(t.s-bo)}</b></span>`:''}`;}
   if(T==='sale'){const disc=t.list-t.s;return `<span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span>${disc>0.5?`<span>По прайсу: <b class="tnum">${rub(t.list)}</b></span><span>Скидка: <b class="tnum">${rub(disc)}</b></span>`:''}<span>К оплате: <b class="tnum" style="font-size:1.25rem">${rub(t.s)}</b></span><span>Прибыль${t.est?' (оценка)':''}: <b class="tnum">${t.noCost?'—':rub(t.s-t.cost)}</b></span>`;}
   if(T==='ret')return `<span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span><span>Вернуть покупателю: <b class="tnum" style="font-size:1.25rem">${rub(t.s)}</b></span>`;
-  return `<span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span><span>Сумма по оценке: <b class="tnum">${rub(t.s)}</b></span><span>Магазину ${fmtQty(+D.fee||0)}%: <b class="tnum" style="font-size:1.25rem">${rub(t.fee)}</b></span>`;}
+  return `<span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span><span>Сумма по оценке: <b class="tnum">${rub(t.s)}</b></span><span>Бонус в кабинете поставщика ${fmtQty(+D.fee||0)}%: <b class="tnum" style="font-size:1.25rem">${rub(t.fee)}</b></span>`;}
 function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh==='custody',t=docTotals(),st=DOC_ST[D.status],dis=ro?'disabled':'';
   const pl=(partners||[]).map(n=>`<option value="${esc(n)}">`).join('');
   let head=`<label><span class="mono lbl">Дата</span><input class="inp" type="date" id="dDay" value="${D.day}" ${dis}></label>`;
   if(T==='in')head+=`<div><span class="mono lbl">Куда</span><div class="row"><button type="button" class="chip" data-wh="shop" aria-pressed="${!cust}" ${dis}>Наш склад</button><button type="button" class="chip" data-wh="custody" aria-pressed="${cust}" ${dis}>Ответхранение</button></div></div>
     <label><span class="mono lbl">Поставщик</span><input class="inp" id="dPartner" list="dPartners" value="${esc(D.partner||'')}" ${dis} autocomplete="off"><datalist id="dPartners">${pl}</datalist></label>
-    <label><span class="mono lbl">${cust?'№ акта МХ-1':'№ накладной поставщика'}</span><input class="inp" id="dNum" value="${esc(D.num||'')}" ${dis}></label>`;
+    <label><span class="mono lbl">${cust?'№ акта МХ-1':'№ накладной поставщика'}</span><input class="inp" id="dNum" value="${esc(D.num||'')}" ${dis}></label>
+    ${cust?'':`<label><span class="mono lbl">Оплачено бонусами поставщика, ₽</span><input class="inp tnum" id="dBonus" type="number" inputmode="decimal" min="0" step="0.01" value="${+D.bonus||''}" placeholder="0" ${dis}><small class="pay" id="dBonHint">${bonHint()}</small></label>`}`;
   if(T==='sale'||T==='ret')head+=`<label><span class="mono lbl">Телефон покупателя — можно пусто</span><input class="inp" id="dPhone" type="tel" inputmode="tel" placeholder="+7 900 000-00-00" value="${D.phone?esc(fmtPhone(D.phone)):''}" ${dis} autocomplete="off"></label>
     <label><span class="mono lbl">Имя или организация</span><input class="inp" id="dPartner" value="${esc(D.partner||'')}" ${dis} autocomplete="off"></label>
     <div style="grid-column:1/-1"><span class="mono lbl">${T==='ret'?'Как вернули деньги':'Оплата'}</span><div class="row">${Object.entries(DPAY).map(([k,v])=>`<button type="button" class="chip" data-pay="${k}" aria-pressed="${D.pay===k}" ${dis}>${v}</button>`).join('')}</div></div>`;
   if(T==='iss')head+=`<label><span class="mono lbl">Поставщик (чей товар)</span><input class="inp" id="dPartner" list="dPartners" value="${esc(D.partner||'')}" ${dis} autocomplete="off"><datalist id="dPartners">${pl}</datalist></label>
     <label><span class="mono lbl">№ документа поставщика</span><input class="inp" id="dNum" value="${esc(D.num||'')}" ${dis}></label>
-    <label><span class="mono lbl">Магазину, % от оценки</span><input class="inp tnum" id="dFee" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="${D.fee}" ${dis}></label>`;
+    <label><span class="mono lbl">Бонус у поставщика, % от оценки</span><input class="inp tnum" id="dFee" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="${D.fee}" ${dis}></label>`;
   head+=`<label style="grid-column:1/-1"><span class="mono lbl">${T==='ret'?'Причина возврата':'Комментарий'}</span><input class="inp" id="dNote" value="${esc(D.note||'')}" ${dis}></label>`;
   const ph={in:'Штрихкод (сканер) или название: 205 55 16 ikon',sale:'Сканируйте товар или ищите: 205 55 16',ret:'Сканируйте возвращаемый товар или ищите по названию',iss:'Товар с ответхранения: штрихкод или название'}[T];
   const cols=T==='in'?['Кол-во',cust?'Оценка, ₽':'Закупка, ₽','Сумма',...(cust?[]:['Цена продажи'])]:T==='sale'?['Кол-во','Цена, ₽','Сумма']:T==='ret'?['Кол-во','Цена возврата, ₽','Сумма']:['Кол-во','Оценка, ₽','Сумма'];
@@ -928,8 +932,8 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${D.id?DT[T].t+' № '+D.id:DT[T].n} <span class="badge ${st[1]}" style="vertical-align:6px">${stLbl(T,D.status)}</span></h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
   ${D.status==='cancelled'?`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)">Отменён ${D.cancelled_at?new Date(D.cancelled_at*1000).toLocaleString('ru-RU'):''}. Причина: ${esc(D.cancel_reason||'—')}. Остатки по нему не считаются.</div>`:''}
   <div class="dhead">${head}</div>${retInfo}${saleRets}
-  ${cust?'<p class="note" style="margin:0 0 10px">Товар поставщика на ответхранении: в стоимость нашего склада не входит, цена — оценка поставщика (для расчёта % с выдачи).</p>':''}
-  ${T==='iss'?'<p class="note" style="margin:0 0 10px">Товар уходит с ответхранения. Магазину начисляется процент от оценки поставщика — он виден в итогах месяца.</p>':''}
+  ${cust?'<p class="note" style="margin:0 0 10px">Товар поставщика на ответхранении: в стоимость нашего склада не входит, цена — оценка поставщика (от неё считается бонус за выдачу).</p>':''}
+  ${T==='iss'?'<p class="note" style="margin:0 0 10px">Товар отдаём клиенту поставщика, денег не получаем. Поставщик начисляет бонус в личном кабинете — это не доход: им оплачивается часть следующего прихода (поле «Оплачено бонусами»), и закупка становится дешевле.</p>':''}
   ${ro?'':`<div class="dadd"><input class="inp" id="dSearch" placeholder="${ph}" autocomplete="off">${T==='in'?'<button class="btn ghost" type="button" id="dNew">+ Новая карточка</button>':''}</div><div id="dFound"></div>`}
   <div class="tw"><table class="dtab"><thead><tr><th style="text-align:left">Товар</th>${cols.map(c=>`<th>${c}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
     <tbody id="dLines">${D.lines.map((l,i)=>docLine(l,i,ro)).join('')||`<tr><td colspan="6" class="pay" style="text-align:center;padding:18px">Добавьте товары — отсканируйте штрихкод или найдите по названию</td></tr>`}</tbody></table></div>
@@ -939,6 +943,8 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
     :`<button class="btn sig" type="button" id="dPost">Провести</button><button class="btn ghost" type="button" id="dSave">Сохранить черновик</button>${D.id?'<button class="btn danger" type="button" id="dDel">Удалить черновик</button>':''}`}</div>
   <div id="dCancelBox"></div>`;
   bindDoc();}
+function bonHint(){const k=String(D.partner||'').trim().toUpperCase();if(!k)return '';const b=(S.bon||[]).find(x=>x.name.toUpperCase()===k);
+  if(!b)return 'бонусов у этого поставщика пока нет';const left=b.left+(D.status==='posted'?+D.bonus||0:0);return `доступно: ${rub(left)}`;}
 function mkText(l,ro){const m=l.cost>0&&l.price>0?Math.round((l.price/l.cost-1)*100):null;
   return (m!=null?(m<0?'<b style="color:var(--signal-deep)">ниже закупки!</b>':'наценка '+m+'%'):'')+(!ro&&l.price!=l.cur_price&&l.cur_price?' · было '+rub(l.cur_price):'');}
 function saleText(l,ro){const list=+(l.list??l.cur_price)||0,pr=+l.price||0,c=ro?+l.cost||0:+(l.avg??l.last)||0;let s='';
@@ -951,7 +957,7 @@ function docLine(l,i,ro){const T=D.type,cust=T==='in'&&D.wh==='custody',q=+l.qty
   const inp=(f,v,ph,cls)=>`<input class="inp tnum din ${cls||''}" type="number" inputmode="decimal" min="0" step="${f==='qty'?1:0.01}" data-f="${f}" value="${v===''||v==null?'':v}" placeholder="${ph||''}">`;
   const nm=`<td class="nm">${esc(l.name)}${l.barcode?`<small class="pay" style="display:block">${esc(l.barcode)}</small>`:''}${ro?'':stockText(l)}${T==='ret'&&l.maxq!=null?`<small class="pay" style="display:block">можно вернуть до ${fmtQty(l.maxq)}</small>`:''}${ro&&T==='sale'&&l.returned?`<small class="pay" style="display:block">возвращено ${fmtQty(l.returned)}</small>`:''}</td>`;
   const qtyC=`<td>${ro?fmtQty(q):inp('qty',l.qty)}</td>`,rm=ro?'':`<td><button type="button" class="arrow" data-rm="${i}" aria-label="Убрать строку" style="width:40px;height:40px">×</button></td>`;
-  if(T==='in')return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.cost):inp('cost',l.cost,l.last?Math.round(l.last):'')}</td><td class="lsum tnum">${rub(q*(+l.cost||0))}</td>
+  if(T==='in')return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.list!=null?l.list:l.cost)+(l.list!=null&&l.cost<l.list-0.005?`<small class="pay" style="display:block">с бонусом ${rub(l.cost)}</small>`:''):inp('cost',l.cost,l.last?Math.round(l.last):'')}</td><td class="lsum tnum">${rub(q*(+(ro&&l.list!=null?l.list:l.cost)||0))}</td>
     ${cust?'':`<td>${ro?rub(l.price||0):inp('price',l.price,'',l.price!=l.cur_price?'chg':'')}<small class="pay mk" style="display:block">${mkText(l,ro)}</small></td>`}${rm}</tr>`;
   const prof=T==='sale'?(()=>{const c=ro?+l.cost||0:+(l.avg??l.last)||0;return c?`<small class="pay lprof" style="display:block">прибыль ${rub(q*((+l.price||0)-c))}</small>`:'';})():'';
   return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.price||0):inp('price',l.price)}${T==='sale'?`<small class="pay mk" style="display:block">${saleText(l,ro)}</small>`:''}</td><td class="tnum"><span class="lsum">${rub(q*(+l.price||0))}</span>${prof}</td>${rm}</tr>`;}
@@ -964,14 +970,14 @@ function addLine(p){const T=D.type,ex=D.lines.findIndex(l=>l.product_id===p.id);
   toast(`<b>${ex>=0?'+1':'Добавлено'}</b>${esc(p.name)}${short?'<br>По учёту на складе '+fmtQty(l.stock)+' — проверьте':''}`);}
 function readHead(){const v=id=>{const e=document.getElementById(id);return e?e.value:null;};
   [['day','dDay'],['partner','dPartner'],['num','dNum'],['note','dNote']].forEach(([k,id])=>{const x=v(id);if(x!==null)D[k]=x;});
-  const ph=v('dPhone');if(ph!==null)D.phone=phoneKey(ph)||'';const fe=v('dFee');if(fe!==null)D.fee=+fe||0;}
+  const ph=v('dPhone');if(ph!==null)D.phone=phoneKey(ph)||'';const fe=v('dFee');if(fe!==null)D.fee=+fe||0;const bo=v('dBonus');if(bo!==null)D.bonus=+bo||0;}
 let dfT=null;
 function bindDoc(){const T=D.type;
   $('#close').onclick=async()=>{if(D.status==='draft'&&dDirty&&D.lines.length){await saveDoc(false);}closeSheet();if(S.st.sub==='docs')loadDocs();else loadStock();};
   document.querySelectorAll('[data-wh]').forEach(b=>b.onclick=()=>{readHead();D.wh=b.dataset.wh;dDirty=true;renderDoc();});
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{D.pay=b.dataset.pay;dDirty=true;document.querySelectorAll('[data-pay]').forEach(x=>x.setAttribute('aria-pressed',x===b));});
   document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openDoc(+b.dataset.open));
-  ['dDay','dPartner','dNum','dNote','dPhone','dFee'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{dDirty=true;if(id==='dFee'){readHead();$('#dTot').innerHTML=totLine(docTotals());}});});
+  ['dDay','dPartner','dNum','dNote','dPhone','dFee','dBonus'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{dDirty=true;if(id==='dFee'||id==='dBonus'||id==='dPartner'){readHead();$('#dTot').innerHTML=totLine(docTotals());const h=document.getElementById('dBonHint');if(h)h.textContent=bonHint();}});});
   const dp=document.getElementById('dPhone');if(dp&&!dp.disabled)dp.addEventListener('input',async()=>{const k=phoneKey(dp.value);const nm=$('#dPartner');if(!k||nm.value.trim())return;
     try{const j=await api('clients',null,{q:k});const c=(j.clients||{})[k];if(c&&c.name&&!nm.value.trim()){nm.value=c.name;D.partner=c.name;toast('<b>Знакомый клиент</b>'+esc(c.name));}}catch(_){}});
   document.querySelectorAll('.din').forEach(inp=>inp.addEventListener('input',()=>{const tr=inp.closest('tr'),i=+tr.dataset.i,l=D.lines[i];l[inp.dataset.f]=inp.value===''?'':+inp.value;dDirty=true;
@@ -1005,14 +1011,15 @@ function bindDoc(){const T=D.type;
     $('#dCx2').onclick=()=>go(false);};
   const rt=document.getElementById('dRet');if(rt)rt.onclick=()=>openDoc(null,{type:'ret',base_id:D.id,phone:D.phone,partner:D.partner,pay:D.pay,
     lines:D.lines.filter(l=>l.qty-(l.returned||0)>0).map(l=>({product_id:l.product_id,name:l.name,barcode:l.barcode,unit:l.unit,qty:l.qty-(l.returned||0),maxq:l.qty-(l.returned||0),price:l.price,cur_price:l.cur_price}))});
-  const cp=document.getElementById('dCopy');if(cp)cp.onclick=()=>openDoc(null,{type:T,wh:D.wh,partner:D.partner,num:D.num,note:D.note||'',phone:D.phone,pay:D.pay,fee:D.fee,base_id:D.base_id,
-    lines:D.lines.map(l=>({product_id:l.product_id,name:l.name,barcode:l.barcode,unit:l.unit,qty:l.qty,cost:T==='in'?l.cost:'',price:l.price,list:l.list,cur_price:l.cur_price}))});}
+  const cp=document.getElementById('dCopy');if(cp)cp.onclick=()=>openDoc(null,{type:T,wh:D.wh,partner:D.partner,num:D.num,note:D.note||'',phone:D.phone,pay:D.pay,fee:D.fee,bonus:D.bonus,base_id:D.base_id,
+    lines:D.lines.map(l=>({product_id:l.product_id,name:l.name,barcode:l.barcode,unit:l.unit,qty:l.qty,cost:T==='in'?(l.list!=null?l.list:l.cost):'',price:l.price,list:l.list,cur_price:l.cur_price}))});}
 function docErr(t){const e=$('#dErr');e.innerHTML=t;e.hidden=false;}
-async function saveDoc(show){readHead();try{const j=await api('doc_save',{id:D.id,type:D.type,day:D.day,wh:D.wh,partner:D.partner,num:D.num,note:D.note,phone:D.phone,pay:D.pay,fee:D.fee,base_id:D.base_id,
+async function saveDoc(show){readHead();try{const j=await api('doc_save',{id:D.id,type:D.type,day:D.day,wh:D.wh,partner:D.partner,num:D.num,note:D.note,phone:D.phone,pay:D.pay,fee:D.fee,bonus:D.type==='in'&&D.wh==='shop'?D.bonus:0,base_id:D.base_id,
       lines:D.lines.map(l=>({product_id:l.product_id,qty:l.qty,cost:l.cost,price:D.type==='in'&&D.wh!=='shop'?null:l.price,list:l.list}))});
     D.id=j.id;dDirty=false;if(show){const sc=$('#sheet').scrollTop;renderDoc();$('#sheet').scrollTop=sc;}return true;}catch(e){docErr('Не сохранилось: '+esc(e.message));return false;}}
 async function postDoc(force){readHead();const T=D.type;if(!D.lines.length)return docErr('Добавьте хотя бы одну строку.');
   if(T==='in'&&D.wh==='shop'&&D.lines.some(l=>!(+l.cost>0)))return docErr('Укажите цену закупки во всех строках.');
+  if(T==='in'&&D.wh==='shop'&&+D.bonus>=docTotals().s)return docErr('Бонусами можно оплатить меньше, чем сумма прихода.');
   if(D.lines.some(l=>!(+l.qty>0)))return docErr('Количество во всех строках должно быть больше нуля.');
   if(T!=='in'&&D.lines.some(l=>l.price===''||l.price==null))return docErr('Укажите цену во всех строках.');
   if(T==='ret'&&D.lines.some(l=>l.maxq!=null&&+l.qty>l.maxq))return docErr('Возвращают больше, чем было продано.');
