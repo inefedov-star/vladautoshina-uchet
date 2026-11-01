@@ -399,13 +399,24 @@ try {
         'lines' => array_map(fn($l) => ['k' => $l['k'] ?? 'x', 'n' => $l['n'] ?? '', 'q' => (int)($l['q'] ?? 1), 'p0' => (int)($l['p0'] ?? 0), 'n6' => !empty($l['n6'])], $b['lines'] ?? []), 'mods' => $b['mods'] ?? new stdClass()];
     }
     $bk = array_values(array_filter(bookingRows($cfg, implode(' OR ', $conds), $cargs), $match));
+    // 3) покупки в магазине (проведённые продажи и возвраты) — те же клиенты, что и на шиномонтаже
+    $buys = []; $bid = [];
+    foreach (db($cfg)->query("SELECT id, type, day, phone, partner FROM docs WHERE type IN ('sale','ret') AND status = 'posted' ORDER BY day DESC, id DESC LIMIT 5000")->fetchAll() as $r) {
+      $k = (string)$r['phone'];
+      if (!(($k !== '' && isset($phones[$k])) || ($r['partner'] !== '' && mb_strpos(mb_strtoupper($r['partner']), $Q) !== false) || (strlen($dq) >= 4 && $k !== '' && strpos($k, $dq) !== false))) continue;
+      $buys[(int)$r['id']] = ['id' => (int)$r['id'], 'type' => $r['type'], 'day' => $r['day'], 'phone' => $k, 'name' => (string)$r['partner'], 'items' => [], 'sum' => 0.0];
+      if (count($buys) >= 200) break;
+    }
+    if ($buys) { $ids = array_keys($buys); $mv = db($cfg)->prepare('SELECT m.doc_id, m.qty, m.price, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY m.id'); $mv->execute($ids);
+      foreach ($mv->fetchAll() as $m) { $x = &$buys[(int)$m['doc_id']]; $q = abs((float)$m['qty']); $x['items'][] = $m['name'] . ($q != 1 ? ' ×' . (0 + $q) : ''); $x['sum'] += ($x['type'] === 'ret' ? -1 : 1) * $q * (float)$m['price']; unset($x); } }
+    $buys = array_values(array_map(function ($x) { $x['items'] = implode(', ', $x['items']); $x['sum'] = round($x['sum'], 2); return $x; }, $buys));
     // справочник по всем найденным телефонам
-    $all = array_merge($orders, $bk); $keys = [];
+    $all = array_merge($orders, $bk, $buys); $keys = [];
     foreach ($all as $x) { $k = phoneKey($x['phone'] ?? ''); if ($k) $keys[$k] = true; }
     foreach ($phones as $k => $_) $keys[$k] = true;
     $map = [];
     if ($keys) { $kk = array_keys($keys); $st = db($cfg)->prepare('SELECT phone, name, model FROM clients WHERE phone IN (' . implode(',', array_fill(0, count($kk), '?')) . ')'); $st->execute($kk); foreach ($st->fetchAll() as $c) $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model']]; }
-    out(['orders' => $orders, 'bookings' => $bk, 'clients' => $map ?: new stdClass()]);
+    out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'clients' => $map ?: new stdClass()]);
 
   case 'client_set':
     // имя и машина клиента — как вам удобнее его называть
