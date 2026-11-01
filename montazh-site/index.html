@@ -821,7 +821,10 @@ async function openProduct(id){let j;try{j=await api('product',null,{id});}catch
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 
 /* ---- загрузка каталога из CloudShop (собственник) ---- */
-function loadXlsxLib(){return new Promise((ok,no)=>{if(window.XLSX)return ok();const s=document.createElement('script');s.src='lib/xlsx.full.min.js';s.onload=()=>ok();s.onerror=()=>no(new Error('Не загрузился модуль чтения Excel (lib/xlsx.full.min.js). Проверьте, что папка lib загружена на сайт.'));document.head.appendChild(s);});}
+/* модуль Excel: сначала с нашего сайта (папка lib), если его там нет — с запасных адресов */
+function loadXlsxLib(){const urls=['lib/xlsx.full.min.js','https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js','https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js'];
+  return new Promise((ok,no)=>{if(window.XLSX)return ok();let i=0;const next=()=>{if(i>=urls.length)return no(new Error('Не загрузился модуль чтения Excel. Проверьте, что в папке montazh на сайте есть папка lib с файлом xlsx.full.min.js.'));
+    const s=document.createElement('script');s.src=urls[i++];s.onload=()=>window.XLSX?ok():next();s.onerror=()=>{s.remove();next();};document.head.appendChild(s);};next();});}
 const NUM=v=>{const x=parseFloat(String(v??'').replace(/\s/g,'').replace(',','.'));return isFinite(x)?x:0;};
 async function openImport(){let st;try{st=await api('cat_state');}catch(e){toast('<b>Ошибка</b>'+esc(e.message));return;}
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Каталог из CloudShop</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
