@@ -172,6 +172,16 @@ h2.sec{font-family:var(--f-display);font-weight:800;font-size:1.5rem;text-transf
 .keys button:active{background:var(--paper-3)}
 .out{border:0;background:none;color:var(--ink-3);font-weight:600;min-height:44px;padding:0 6px}
 body.master .owner-only,body.cashier .owner-only{display:none!important}
+.dhead{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:12px}
+.dadd{display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap}.dadd .inp{flex:1;min-width:220px}
+.found{display:flex;flex-direction:column;border:1.5px solid var(--ink);border-radius:3px;max-height:360px;overflow:auto;margin-bottom:12px;background:var(--paper)}
+.fnd{display:block;text-align:left;border:0;border-bottom:1px solid var(--rule);background:transparent;padding:10px 12px;min-height:48px}
+.fnd:hover{background:var(--paper-2)}.fnd span{display:block;font-weight:600}.fnd small{color:var(--ink-3)}
+.dtab td{vertical-align:middle;white-space:normal}.dtab td.nm{text-align:left;min-width:240px}
+.dtab .din{width:110px;min-height:42px;text-align:right}
+.din.chg{border-color:var(--signal);background:var(--signal-tint)}
+.dtot{display:flex;gap:22px;flex-wrap:wrap;padding:10px 0;border-bottom:1.5px solid var(--ink);font-size:1rem}
+tr.cxl td{text-decoration:line-through;color:var(--ink-3)}
 .sttab td{white-space:normal}
 .sttab td.nm{text-align:left;min-width:260px}
 .sttab tr[data-p]{cursor:pointer}
@@ -376,6 +386,9 @@ details.bdgs summary .mono{color:var(--ink-3)}
       <div class="spacer"></div>
       <button class="btn ghost owner-only" type="button" id="stImport">Загрузить каталог из CloudShop</button>
     </div>
+    <div class="row owner-only" id="stSubs" style="margin-bottom:12px"><button type="button" class="chip" data-s="goods" aria-pressed="true">Товары</button><button type="button" class="chip" data-s="docs" aria-pressed="false">Документы</button></div>
+    <div id="stGoods">
+    <div class="row" id="stWh" style="margin-bottom:10px"><button type="button" class="chip" data-w="shop" aria-pressed="true">Наш склад</button><button type="button" class="chip" data-w="custody" aria-pressed="false">Ответхранение поставщика</button></div>
     <div class="tiles" id="stTiles" style="margin-top:0"></div>
     <div class="row" style="margin-bottom:10px;align-items:center">
       <input class="inp" type="search" id="stQ" placeholder="Поиск: 205 55 R16, Ikon, штрихкод…" autocomplete="off" style="flex:1;min-width:220px">
@@ -383,6 +396,15 @@ details.bdgs summary .mono{color:var(--ink-3)}
     </div>
     <div class="row" id="stKinds" style="margin-bottom:12px"><button type="button" class="chip" data-k="tire">Шины</button><button type="button" class="chip" data-k="disk">Диски</button><button type="button" class="chip" data-k="akb">АКБ</button><button type="button" class="chip" data-k="fast">Крепёж</button><button type="button" class="chip" data-k="other">Прочее</button></div>
     <div id="stOut" style="margin-bottom:40px"></div>
+    </div>
+    <div id="stDocs" hidden>
+      <div class="row" style="align-items:center;margin-bottom:10px">
+        <button class="arrow" type="button" id="dlPrev" aria-label="Предыдущий месяц">‹</button><h2 class="sec" id="dlTitle" style="margin:0 8px"></h2><button class="arrow" type="button" id="dlNext" aria-label="Следующий месяц">›</button>
+        <div class="spacer"></div><button class="btn sig" type="button" id="dlAddIn">+ Приход</button>
+      </div>
+      <div class="row" id="dlTypes" style="margin-bottom:12px"><button type="button" class="chip" data-t="in">Приход</button><button type="button" class="chip" data-t="open">Ввод остатков</button></div>
+      <div id="dlOut" style="margin-bottom:40px"></div>
+    </div>
   </section>
 
   <section id="v-cli" hidden>
@@ -749,7 +771,7 @@ const KIND_RU={tire:'Шины',disk:'Диски',akb:'АКБ',fast:'Крепёж
 const KIND_ONE={tire:'шина',tireo:'грузовая/спец',disk:'диск',akb:'АКБ',fast:'крепёж',tube:'камера',tool:'инструмент',acc:'аксессуар',svc:'услуга'};
 S.st={kind:'',q:'',only:true,rows:[],total:null,more:false};
 let stT=null;
-async function loadStock(){const el=$('#stOut');try{const j=await api('stock',null,{q:S.st.q,kind:S.st.kind,instock:S.st.only?'1':'0',limit:150});S.st.rows=j.rows;S.st.total=j.total;S.st.more=j.more;renderStock();}
+async function loadStock(){const el=$('#stOut');try{const j=await api('stock',null,{q:S.st.q,kind:S.st.kind,instock:S.st.only?'1':'0',limit:150,wh:S.st.wh||'shop'});S.st.rows=j.rows;S.st.total=j.total;S.st.more=j.more;renderStock();}
   catch(e){if(e.code!=='auth')el.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;}}
 function renderStock(){const t=S.st.total||{},own=S.role==='owner';
   document.querySelectorAll('#stKinds .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.k===S.st.kind));
@@ -757,7 +779,7 @@ function renderStock(){const t=S.st.total||{},own=S.role==='owner';
   $('#stTiles').innerHTML=`<div class="tile"><span class="mono">Позиций</span><b class="tnum">${(t.n||0).toLocaleString('ru-RU')}</b></div>
     <div class="tile"><span class="mono">Штук</span><b class="tnum">${Math.round(t.qty||0).toLocaleString('ru-RU')}</b></div>
     <div class="tile"><span class="mono">В рознице</span><b class="tnum">${rub(t.retail||0)}</b></div>
-    ${own?`<div class="tile acc"><span class="mono">По себестоимости</span><b class="tnum">${rub(t.cost||0)}</b></div>`:''}`;
+    ${own?`<div class="tile acc"><span class="mono">${S.st.wh==='custody'?'Оценка поставщика':'По себестоимости'}</span><b class="tnum">${rub(t.cost||0)}</b></div>`:''}`;
   const el=$('#stOut');
   if(!S.st.rows.length){el.innerHTML=`<div class="empty"><b>${S.st.q||S.st.kind?'Ничего не нашлось':'Склад пуст'}</b>${S.st.q||S.st.kind?'Измените поиск или уберите фильтр.':(own?'Загрузите каталог из CloudShop кнопкой выше.':'Собственник ещё не загрузил каталог.')}</div>`;return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Товар</th><th>Остаток</th><th>Цена</th>${own?'<th>Себест.</th><th>Наценка</th>':''}</tr></thead><tbody>
@@ -765,7 +787,7 @@ function renderStock(){const t=S.st.total||{},own=S.role==='owner';
       ${own?`<td>${r.cost!=null?rub(r.cost):'—'}</td><td>${r.cost?Math.round((r.price/r.cost-1)*100)+'%':'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>
     ${S.st.more?`<p class="note">Показаны первые ${S.st.rows.length} из ${t.n}. Уточните поиск, например «205 55 R16» или бренд.</p>`:''}`;
   el.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
-const fmtQty=q=>Number.isInteger(q)?String(q):q.toFixed(2).replace('.',',');
+const fmtQty=q=>{q=+q||0;return Number.isInteger(q)?String(q):q.toFixed(2).replace('.',',');};
 $('#stQ').addEventListener('input',()=>{clearTimeout(stT);stT=setTimeout(()=>{S.st.q=$('#stQ').value.trim();loadStock();},350);});
 document.querySelectorAll('#stKinds .chip').forEach(c=>c.onclick=()=>{S.st.kind=S.st.kind===c.dataset.k?'':c.dataset.k;loadStock();});
 $('#stOnly').onclick=()=>{S.st.only=!S.st.only;loadStock();};
@@ -778,12 +800,15 @@ function attrLines(k,a){if(!a)return[];const L=[];
 async function openProduct(id){let j;try{j=await api('product',null,{id});}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}
   const p=j.product,own=S.role==='owner';
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle" style="font-size:1.35rem;text-transform:none">${esc(p.name)}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Остаток</span><b class="tnum">${fmtQty(j.qty)} ${esc(p.unit||'')}</b></div><div class="tile"><span class="mono">Цена</span><b class="tnum">${rub(p.price)}</b></div>
+  <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Остаток</span><b class="tnum">${fmtQty(j.qty)} ${esc(p.unit||'')}</b>${j.custody?`<small class="pay">+ ${fmtQty(j.custody)} на ответхранении</small>`:''}</div><div class="tile"><span class="mono">Цена</span><b class="tnum" id="pcPrice">${rub(p.price)}</b>${own?'<button type="button" class="out" id="pcEdit" style="padding:0;min-height:30px">Изменить цену</button>':''}</div>
     ${own?`<div class="tile"><span class="mono">Себестоимость</span><b class="tnum">${j.cost!=null?rub(j.cost):'—'}</b></div><div class="tile acc"><span class="mono">Наценка</span><b class="tnum">${j.cost?Math.round((p.price/j.cost-1)*100)+'%':'—'}</b></div>`:''}</div>
   <dl class="facts">${[...attrLines(p.kind,p.attrs),['Вид',KIND_ONE[p.kind]||p.kind],['Группа CloudShop',p.grp||'—'],['Штрихкод',p.barcode||'—'],['Артикул',p.article||'—'],...(own&&p.supplier?[['Поставщик',p.supplier]]:[]),...(p.country?[['Страна',p.country]]:[])].map(([k,v])=>`<div><dt class="mono">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
   <h2 class="sec" style="font-size:1.1rem">Движение</h2>
-  ${j.moves.length?`<div class="tw"><table><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th>Кол-во</th>${own?'<th>Цена прихода</th>':''}</tr></thead><tbody>${j.moves.map(m=>`<tr><td>${fmtDay(m.day)}</td><td style="text-align:left">${esc(m.label)}${m.num?' № '+esc(m.num):''}${m.partner?' · '+esc(m.partner):''}</td><td class="${m.qty<0?'neg':''}">${m.qty>0?'+':''}${fmtQty(+m.qty)}</td>${own?`<td>${m.qty>0?rub(+m.cost):'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>`:'<p class="note">Движений пока нет.</p>'}`;
-  $('#close').onclick=closeSheet;const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
+  ${j.moves.length?`<div class="tw"><table><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th>Кол-во</th>${own?'<th>Цена прихода</th>':''}</tr></thead><tbody>${j.moves.map(m=>`<tr><td>${fmtDay(m.day)}</td><td style="text-align:left">${esc(m.label)} № ${m.doc}${m.num&&m.type!=='open'?' (накл. '+esc(m.num)+')':''}${m.partner?' · '+esc(m.partner):''}${m.wh==='custody'?' · ответхранение':''}</td><td class="${m.qty<0?'neg':''}">${m.qty>0?'+':''}${fmtQty(+m.qty)}</td>${own?`<td>${m.qty>0?rub(+m.cost):'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>`:'<p class="note">Движений пока нет.</p>'}`;
+  $('#close').onclick=closeSheet;
+  const pe=document.getElementById('pcEdit');if(pe)pe.onclick=()=>{pe.outerHTML=`<span class="row" style="margin-top:6px"><input class="inp tnum" id="pcNew" type="number" inputmode="decimal" min="0" value="${p.price}" style="max-width:130px"><button class="btn" type="button" id="pcSave" style="min-height:42px">Сохранить</button></span>`;
+    $('#pcSave').onclick=async()=>{try{await api('price_set',{id:p.id,price:+$('#pcNew').value});toast('<b>Цена изменена</b>'+rub(+$('#pcNew').value));openProduct(p.id);loadStock();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};};
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 
 /* ---- загрузка каталога из CloudShop (собственник) ---- */
 function loadXlsxLib(){return new Promise((ok,no)=>{if(window.XLSX)return ok();const s=document.createElement('script');s.src='lib/xlsx.full.min.js';s.onload=()=>ok();s.onerror=()=>no(new Error('Не загрузился модуль чтения Excel (lib/xlsx.full.min.js). Проверьте, что папка lib загружена на сайт.'));document.head.appendChild(s);});}
@@ -822,6 +847,124 @@ async function openImport(){let st;try{st=await api('cat_state');}catch(e){toast
         catch(err){b.disabled=false;prog.textContent='Ошибка: '+err.message+'. Можно нажать ещё раз — уже загруженное не задвоится.';}};
     }catch(err){out.innerHTML=`<p class="err">${esc(err.message)}</p>`;}};}
 $('#stImport').onclick=openImport;
+/* ---------- склад: подвкладки, склад ответхранения ---------- */
+S.st.wh='shop';S.st.sub='goods';S.dl={month:iso(new Date()).slice(0,7),type:'',docs:[]};
+function stSub(v){S.st.sub=v;document.querySelectorAll('#stSubs .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.s===v));
+  $('#stGoods').hidden=v!=='goods';$('#stDocs').hidden=v!=='docs';if(v==='docs')loadDocs();else loadStock();}
+document.querySelectorAll('#stSubs .chip').forEach(c=>c.onclick=()=>stSub(c.dataset.s));
+document.querySelectorAll('#stWh .chip').forEach(c=>c.onclick=()=>{S.st.wh=c.dataset.w;document.querySelectorAll('#stWh .chip').forEach(x=>x.setAttribute('aria-pressed',x===c));loadStock();});
+
+/* ---------- список документов ---------- */
+const DOC_ST={draft:['черновик','ds'],posted:['проведён','cp'],cancelled:['отменён','ds']};
+async function loadDocs(){const[y,m]=S.dl.month.split('-').map(Number);$('#dlTitle').textContent=`${MONTHS[m-1]} ${y}`;
+  document.querySelectorAll('#dlTypes .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.t===S.dl.type));
+  try{const j=await api('docs',null,{month:S.dl.month,type:S.dl.type});S.dl.docs=j.docs;}catch(e){S.dl.docs=[];}
+  const el=$('#dlOut');if(!S.dl.docs.length){el.innerHTML=`<div class="empty"><b>Документов за месяц нет</b>«+ Приход» — оформить поступление товара.</div>`;return;}
+  el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th style="text-align:left">Поставщик</th><th>Строк</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>
+    ${S.dl.docs.map((d,i)=>`<tr data-d="${d.id}" class="${d.status==='cancelled'?'cxl':''}"><td>${fmtDay(d.day)}</td><td style="text-align:left">${esc(d.label)} № ${d.id}${d.num&&d.type!=='open'?' <span class="pay">(накл. '+esc(d.num)+')</span>':''} <span class="badge ${DOC_ST[d.status][1]}">${DOC_ST[d.status][0]}</span>${d.wh==='custody'?' <span class="badge cp">ответхранение</span>':''}</td>
+      <td style="text-align:left">${esc(d.partner||'—')}</td><td>${d.n}</td><td>${fmtQty(d.qty)}</td><td>${rub(d.sum)}</td></tr>`).join('')}</tbody></table></div>`;
+  el.querySelectorAll('tr[data-d]').forEach(tr=>tr.onclick=()=>openDoc(+tr.dataset.d));}
+$('#dlPrev').onclick=()=>{const[y,m]=S.dl.month.split('-').map(Number);S.dl.month=iso(new Date(y,m-2,1)).slice(0,7);loadDocs();};
+$('#dlNext').onclick=()=>{const[y,m]=S.dl.month.split('-').map(Number);S.dl.month=iso(new Date(y,m,1)).slice(0,7);loadDocs();};
+document.querySelectorAll('#dlTypes .chip').forEach(c=>c.onclick=()=>{S.dl.type=S.dl.type===c.dataset.t?'':c.dataset.t;loadDocs();});
+$('#dlAddIn').onclick=()=>openDoc(null);
+
+/* ---------- документ «Приход» ---------- */
+let D=null,dDirty=false,partners=null;
+async function openDoc(id,copyFrom){
+  if(!partners){try{partners=(await api('partners')).names;}catch(_){partners=[];}}
+  if(id){try{const j=await api('doc',null,{id});D={...j.doc,lines:j.lines.map(l=>({...l}))};}catch(e){toast('<b>Не открылся</b>'+esc(e.message));return;}}
+  else D=Object.assign({id:null,type:'in',day:iso(new Date()),wh:'shop',partner:'',num:'',note:'',status:'draft',lines:[]},copyFrom||{});
+  dDirty=!!copyFrom;renderDoc();const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
+  if(D.status==='draft')setTimeout(()=>{const f=$('#dSearch');if(f)f.focus();},400);}
+function docTotals(){const L=D.lines;return{n:L.length,q:L.reduce((a,l)=>a+(+l.qty||0),0),s:L.reduce((a,l)=>a+(+l.qty||0)*(+l.cost||0),0)};}
+function renderDoc(){const ro=D.status!=='draft',cust=D.wh==='custody',t=docTotals();
+  const st=DOC_ST[D.status];
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${D.id?'Приход № '+D.id:'Новый приход'} <span class="badge ${st[1]}" style="vertical-align:6px">${st[0]}</span></h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  ${D.status==='cancelled'?`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)">Отменён ${D.cancelled_at?new Date(D.cancelled_at*1000).toLocaleString('ru-RU'):''}. Причина: ${esc(D.cancel_reason||'—')}. Остатки по нему не считаются.</div>`:''}
+  <div class="dhead">
+    <label><span class="mono lbl">Дата</span><input class="inp" type="date" id="dDay" value="${D.day}" ${ro?'disabled':''}></label>
+    <div><span class="mono lbl">Куда</span><div class="row"><button type="button" class="chip" data-wh="shop" aria-pressed="${!cust}" ${ro?'disabled':''}>Наш склад</button><button type="button" class="chip" data-wh="custody" aria-pressed="${cust}" ${ro?'disabled':''}>Ответхранение</button></div></div>
+    <label><span class="mono lbl">Поставщик</span><input class="inp" id="dPartner" list="dPartners" value="${esc(D.partner||'')}" ${ro?'disabled':''} autocomplete="off"><datalist id="dPartners">${(partners||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist></label>
+    <label><span class="mono lbl">${cust?'№ акта МХ-1':'№ накладной поставщика'}</span><input class="inp" id="dNum" value="${esc(D.num||'')}" ${ro?'disabled':''}></label>
+    <label style="grid-column:1/-1"><span class="mono lbl">Комментарий</span><input class="inp" id="dNote" value="${esc(D.note||'')}" ${ro?'disabled':''}></label>
+  </div>
+  ${cust?'<p class="note" style="margin:0 0 10px">Товар поставщика на ответхранении: в стоимость нашего склада не входит, цена — оценка поставщика (для расчёта 5% с выдачи).</p>':''}
+  ${ro?'':`<div class="dadd"><input class="inp" id="dSearch" placeholder="Штрихкод (сканер) или название: 205 55 16 ikon" autocomplete="off"><button class="btn ghost" type="button" id="dNew">+ Новая карточка</button></div><div id="dFound"></div>`}
+  <div class="tw"><table class="dtab"><thead><tr><th style="text-align:left">Товар</th><th>Кол-во</th><th>${cust?'Оценка, ₽':'Закупка, ₽'}</th><th>Сумма</th>${cust?'':'<th>Цена продажи</th>'}${ro?'':'<th></th>'}</tr></thead>
+    <tbody id="dLines">${D.lines.map((l,i)=>docLine(l,i,ro,cust)).join('')||`<tr><td colspan="6" class="pay" style="text-align:center;padding:18px">Добавьте товары — отсканируйте штрихкод или найдите по названию</td></tr>`}</tbody></table></div>
+  <div class="dtot" id="dTot">${totLine(t)}</div>
+  <p class="err" id="dErr" hidden></p>
+  <div class="row" style="margin:14px 0 40px">${ro?`${D.status==='posted'?'<button class="btn danger" type="button" id="dCancel">Отменить проведение</button>':''}<button class="btn ghost" type="button" id="dCopy">Создать копию</button>`
+    :`<button class="btn sig" type="button" id="dPost">Провести</button><button class="btn ghost" type="button" id="dSave">Сохранить черновик</button>${D.id?'<button class="btn danger" type="button" id="dDel">Удалить черновик</button>':''}`}</div>
+  <div id="dCancelBox"></div>`;
+  bindDoc();}
+function totLine(t){return `<span>Строк: <b>${t.n}</b></span><span>Штук: <b class="tnum">${fmtQty(t.q)}</b></span><span>Сумма: <b class="tnum">${rub(t.s)}</b></span>`;}
+function mkText(l,ro){const m=l.cost>0&&l.price>0?Math.round((l.price/l.cost-1)*100):null;
+  return (m!=null?(m<0?'<b style="color:var(--signal-deep)">ниже закупки!</b>':'наценка '+m+'%'):'')+(!ro&&l.price!=l.cur_price&&l.cur_price?' · было '+rub(l.cur_price):'');}
+function docLine(l,i,ro,cust){
+  return `<tr data-i="${i}"><td class="nm">${esc(l.name)}${l.barcode?`<small class="pay" style="display:block">${esc(l.barcode)}</small>`:''}</td>
+    <td>${ro?fmtQty(l.qty):`<input class="inp tnum din" type="number" inputmode="decimal" min="0" step="1" data-f="qty" value="${l.qty}">`}</td>
+    <td>${ro?rub(l.cost):`<input class="inp tnum din" type="number" inputmode="decimal" min="0" step="0.01" data-f="cost" value="${l.cost||''}" placeholder="${l.last?Math.round(l.last):''}">`}</td>
+    <td class="lsum tnum">${rub((+l.qty||0)*(+l.cost||0))}</td>
+    ${cust?'':`<td>${ro?rub(l.price||0):`<input class="inp tnum din ${l.price!=l.cur_price?'chg':''}" type="number" inputmode="decimal" min="0" step="1" data-f="price" value="${l.price||''}">`}<small class="pay mk" style="display:block">${mkText(l,ro)}</small></td>`}
+    ${ro?'':`<td><button type="button" class="arrow" data-rm="${i}" aria-label="Убрать строку" style="width:40px;height:40px">×</button></td>`}</tr>`;}
+function addLine(p){const ex=D.lines.findIndex(l=>l.product_id===p.id);
+  if(ex>=0){D.lines[ex].qty=(+D.lines[ex].qty||0)+1;}else D.lines.push({product_id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,qty:1,cost:p.last?Math.round(p.last*100)/100:'',last:p.last,price:p.price,cur_price:p.price});
+  dDirty=true;const sc=$('#sheet').scrollTop;readHead();renderDoc();$('#sheet').scrollTop=sc;const f=$('#dSearch');if(f)f.focus();
+  toast(`<b>${ex>=0?'+1':'Добавлено'}</b>${esc(p.name)}`);}
+function readHead(){const v=id=>{const e=document.getElementById(id);return e?e.value:null;};['day','partner','num','note'].forEach(k=>{const x=v('d'+k[0].toUpperCase()+k.slice(1));if(x!==null)D[k]=x;});}
+let dfT=null;
+function bindDoc(){$('#close').onclick=async()=>{if(D.status==='draft'&&dDirty&&D.lines.length){await saveDoc(false);}closeSheet();if(S.st.sub==='docs')loadDocs();};
+  document.querySelectorAll('[data-wh]').forEach(b=>b.onclick=()=>{readHead();D.wh=b.dataset.wh;dDirty=true;renderDoc();});
+  ['dDay','dPartner','dNum','dNote'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{dDirty=true;});});
+  document.querySelectorAll('.din').forEach(inp=>inp.addEventListener('input',()=>{const tr=inp.closest('tr'),i=+tr.dataset.i,l=D.lines[i];l[inp.dataset.f]=inp.value===''?'':+inp.value;dDirty=true;
+    tr.querySelector('.lsum').textContent=rub((+l.qty||0)*(+l.cost||0));const mk=tr.querySelector('.mk');if(mk)mk.innerHTML=mkText(l,false);
+    if(inp.dataset.f==='price')inp.classList.toggle('chg',l.price!=l.cur_price);$('#dTot').innerHTML=totLine(docTotals());}));
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{readHead();D.lines.splice(+b.dataset.rm,1);dDirty=true;renderDoc();});
+  const sf=$('#dSearch');
+  if(sf){const run=async(enter)=>{const q=sf.value.trim();const out=$('#dFound');if(q.length<2){out.innerHTML='';return;}
+      let j;try{j=await api('prod_find',null,{q});}catch(_){return;}
+      if(enter&&(j.exact.length===1||(!j.exact.length&&j.rows.length===1))){sf.value='';out.innerHTML='';addLine(j.exact[0]||j.rows[0]);return;}
+      const list=[...j.exact,...j.rows];
+      out.innerHTML=list.length?`<div class="found">${list.map((p,i)=>`<button type="button" class="fnd" data-f="${i}"><span>${esc(p.name)}</span><small>${p.barcode?esc(p.barcode)+' · ':''}остаток ${fmtQty(p.qty)} · цена ${rub(p.price)}${p.last?' · закупка '+rub(p.last):''}</small></button>`).join('')}</div>`
+        :`<p class="note">Не нашли «${esc(q)}». <button type="button" class="btn ghost" id="dNew2" style="min-height:36px">Создать карточку</button></p>`;
+      out.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{sf.value='';out.innerHTML='';addLine(list[+b.dataset.f]);});
+      const n2=document.getElementById('dNew2');if(n2)n2.onclick=()=>newCard(q);};
+    sf.addEventListener('input',()=>{clearTimeout(dfT);dfT=setTimeout(()=>run(false),300);});
+    sf.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();clearTimeout(dfT);run(true);}});}
+  const nb=document.getElementById('dNew');if(nb)nb.onclick=()=>newCard(($('#dSearch')||{}).value||'');
+  const sv=document.getElementById('dSave');if(sv)sv.onclick=async()=>{if(await saveDoc(true)){toast('<b>Черновик сохранён</b>Приход № '+D.id);}};
+  const ps=document.getElementById('dPost');if(ps)ps.onclick=postDoc;
+  const dl=document.getElementById('dDel');if(dl)dl.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="confirm">Удалить черновик? <button class="btn danger" type="button" id="dDel2">Да, удалить</button><button class="btn ghost" type="button" id="dDel0">Нет</button></div>`;
+    $('#dDel0').onclick=()=>$('#dCancelBox').innerHTML='';$('#dDel2').onclick=async()=>{try{await api('doc_cancel',{id:D.id,reason:'удалён черновик'});dDirty=false;closeSheet();loadDocs();}catch(e){docErr(e.message);}};};
+  const cx=document.getElementById('dCancel');if(cx)cx.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="form" style="margin:0 0 40px"><label style="grid-column:1/-1"><span class="mono lbl">Причина отмены — обязательно</span><input class="inp" id="dReason" placeholder="Например: ошибка в количестве, поставщик заменил накладную"></label>
+      <div class="row"><button class="btn danger" type="button" id="dCx2">Отменить проведение</button><button class="btn ghost" type="button" id="dCx0">Не отменять</button></div><p class="err" id="dCxErr" hidden></p></div>`;
+    $('#dCx0').onclick=()=>$('#dCancelBox').innerHTML='';
+    const go=async force=>{const r=$('#dReason').value.trim();const er=$('#dCxErr');if(!r){er.textContent='Напишите причину.';er.hidden=false;return;}
+      try{const j=await api('doc_cancel',{id:D.id,reason:r,force});if(j.needForce){er.innerHTML=`Остаток уйдёт в минус: ${j.negative.map(esc).join('; ')}. Скорее всего, часть товара уже продана. <button class="btn danger" type="button" id="dCx3" style="min-height:36px">Всё равно отменить</button>`;er.hidden=false;document.getElementById('dCx3').onclick=()=>go(true);return;}
+        toast('<b>Проведение отменено</b>Остатки пересчитаны');openDoc(D.id);loadDocs();}catch(e){er.textContent=e.message;er.hidden=false;}};
+    $('#dCx2').onclick=()=>go(false);};
+  const cp=document.getElementById('dCopy');if(cp)cp.onclick=()=>openDoc(null,{type:D.type,wh:D.wh,partner:D.partner,num:D.num,note:D.note?D.note:'',lines:D.lines.map(l=>({...l,cur_price:l.cur_price}))});}
+function docErr(t){const e=$('#dErr');e.textContent=t;e.hidden=false;}
+async function saveDoc(show){readHead();try{const j=await api('doc_save',{id:D.id,type:D.type,day:D.day,wh:D.wh,partner:D.partner,num:D.num,note:D.note,lines:D.lines.map(l=>({product_id:l.product_id,qty:l.qty,cost:l.cost,price:D.wh==='shop'?l.price:null}))});
+    D.id=j.id;dDirty=false;if(show){const sc=$('#sheet').scrollTop;renderDoc();$('#sheet').scrollTop=sc;}return true;}catch(e){docErr('Не сохранилось: '+e.message);return false;}}
+async function postDoc(){readHead();if(!D.lines.length)return docErr('Добавьте хотя бы одну строку.');
+  if(D.wh==='shop'&&D.lines.some(l=>!(+l.cost>0)))return docErr('Укажите цену закупки во всех строках.');
+  if(D.lines.some(l=>!(+l.qty>0)))return docErr('Количество во всех строках должно быть больше нуля.');
+  if(!await saveDoc(false))return;
+  try{await api('doc_post',{id:D.id});toast(`<b>Приход № ${D.id} проведён</b>${fmtQty(docTotals().q)} шт. на ${rub(docTotals().s)}`);openDoc(D.id);loadDocs();}catch(e){docErr('Не провёлся: '+e.message);}}
+function newCard(q){const looksBc=/^\d{8,14}$/.test(q.trim());
+  $('#dFound').innerHTML=`<div class="form" style="margin:0 0 12px"><label style="grid-column:1/-1"><span class="mono lbl">Название — как в CloudShop, например «205/55/16 Ikon Character Ice 8 94T XL шип.»</span><input class="inp" id="ncName" value="${looksBc?'':esc(q)}"></label>
+    <label><span class="mono lbl">Цена продажи, ₽</span><input class="inp tnum" id="ncPrice" type="number" inputmode="decimal" min="0"></label>
+    <label><span class="mono lbl">Штрихкод</span><input class="inp" id="ncBc" value="${looksBc?esc(q.trim()):''}"></label>
+    <div class="row"><button class="btn" type="button" id="ncGo">Создать и добавить</button><button class="btn ghost" type="button" id="nc0">Отмена</button></div><p class="err" id="ncErr" hidden></p></div>`;
+  $('#ncName').focus();$('#nc0').onclick=()=>$('#dFound').innerHTML='';
+  $('#ncGo').onclick=async()=>{const name=$('#ncName').value.trim(),price=+$('#ncPrice').value||0,barcode=$('#ncBc').value.trim(),c=classify(name,'','',0);
+    try{const j=await api('prod_create',{name,price,barcode,kind:c.kind==='svc'?'acc':c.kind,attrs:c.attrs});
+      $('#dFound').innerHTML='';addLine({id:j.id,name,unit:'шт',barcode,price,last:null});}
+    catch(e){const er=document.getElementById('ncErr');if(er){er.textContent=e.message;er.hidden=false;}else toast('<b>Ошибка</b>'+esc(e.message||''));}};}
+
 /* ---------- календарь записи ---------- */
 S.cal={mode:'day',anchor:iso(new Date()),items:[]};
 function monday(d){const x=new Date(d);const wd=(x.getDay()+6)%7;x.setDate(x.getDate()-wd);return x;}
