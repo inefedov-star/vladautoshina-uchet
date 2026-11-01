@@ -88,9 +88,10 @@ function touchClient(array $cfg, string $key, string $name, string $model): void
   if ($key === '') return;
   $st = db($cfg)->prepare('SELECT name, model FROM clients WHERE phone = ?'); $st->execute([$key]); $c = $st->fetch();
   if (!$c) { db($cfg)->prepare('INSERT INTO clients (phone, name, model, updated) VALUES (?,?,?,?)')->execute([$key, $name, $model, time()]); return; }
-  // имя, которое вы задали клиенту, не перетираем — только заполняем пустое
-  if (($c['name'] === '' && $name !== '') || ($c['model'] === '' && $model !== ''))
-    db($cfg)->prepare('UPDATE clients SET name = ?, model = ?, updated = ? WHERE phone = ?')->execute([$c['name'] !== '' ? $c['name'] : $name, $c['model'] !== '' ? $c['model'] : $model, time(), $key]);
+  // действует последняя правка: новое имя или марка заменяют старые; пустое поле ничего не стирает
+  $n2 = $name !== '' ? $name : $c['name']; $m2 = $model !== '' ? $model : $c['model'];
+  if ($n2 !== $c['name'] || $m2 !== $c['model'])
+    db($cfg)->prepare('UPDATE clients SET name = ?, model = ?, updated = ? WHERE phone = ?')->execute([$n2, $m2, time(), $key]);
 }
 function withClients(array $cfg, array $rows): array {
   $keys = array_values(array_unique(array_filter(array_map(fn($r) => phoneKey($r['phone'] ?? ''), $rows))));
@@ -185,14 +186,14 @@ try {
       $mode = $prev['mode'] ?? 'full';
       $o['mode'] = $mode;
       $o['coupon'] = (int)($prev['coupon'] ?? 0);
-      $o['extra'] = $mode === 'coupon' ? max(0, $list - $o['coupon']) : 0; // мастер поменял работы — доплата пересчитывается
+      $o['extra'] = 0; // по купону клиент не платит
       $o['paid'] = $mode === 'coupon' ? $o['coupon'] + $o['extra'] : ($mode === 'disc' ? (int)($prev['paid'] ?? 0) : $list);
       if ($mode === 'full') $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','transfer'], true) ? $o['pay'] : 'card';
     } else {
       $o['mode'] = in_array($o['mode'] ?? '', ['full','disc','coupon'], true) ? $o['mode'] : 'full';
-      // купон: производитель возмещает фиксированную сумму, клиент доплачивает разницу
+      // купон: производитель возмещает фиксированную сумму, клиент не платит; разница с прайсом — наш плюс или минус
       $o['coupon'] = $o['mode'] === 'coupon' ? max(0, (int)($o['coupon'] ?? couponValue($cfg))) : 0;
-      $o['extra'] = $o['mode'] === 'coupon' ? max(0, (int)($o['extra'] ?? 0)) : 0;
+      $o['extra'] = 0;
       $o['paid'] = $o['mode'] === 'coupon' ? $o['coupon'] + $o['extra'] : ($o['mode'] === 'disc' ? max(0, (int)($o['paid'] ?? 0)) : $list);
     }
     $o['t'] = (int)($prev['t'] ?? ($o['t'] ?? round(microtime(true) * 1000)));

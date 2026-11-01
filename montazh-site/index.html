@@ -448,10 +448,10 @@ function unit(o,line){
 function calc(o){let list=0,h=0;const lines=o.lines.filter(l=>l.q>0).map(l=>{const u=unit(o,l);list+=u.p*l.q;h+=u.h*l.q;return{...l,p:u.p,h:u.h};});
   list=Math.round(list);h=o.noHelper?0:Math.round(h);
   const coupon=o.mode==='coupon'?Math.max(0,Math.round(o.coupon??S.coupon)):0;
-  const extra=o.mode==='coupon'?(o.extraSet?Math.max(0,Math.round(+o.extra||0)):Math.max(0,list-coupon)):0;
+  const extra=0; /* по купону клиент не платит */
   const paid=o.mode==='coupon'?coupon+extra:o.mode==='disc'?Math.max(0,Math.round(+o.paid||0)):list;
   return{lines,list,h,paid,coupon,extra};}
-/* что платит сам клиент на кассе: при купоне — только доплата */
+/* что платит сам клиент на кассе: по купону — ничего */
 const needsPay=o=>o.mode!=='coupon'||(o.extra||0)>0;
 const clientDue=o=>o.mode==='coupon'?(o.extra||0):(o.paid||0);
 function payout(order,helperDay){const h=helperDay?order.h:0;return{master:Math.round((order.list-h)*.3),helper:Math.round(h*.3)};}
@@ -516,7 +516,7 @@ function renderDay(){
     const canPay=S.role!=='master'&&needsPay(o);
     return `<div class="ordw ${o.paidOk||!needsPay(o)?'isPaid':'unpaid'}"><button class="ord" type="button" data-i="${i}"><span class="tm">${tm?pad(tm.getHours())+':'+pad(tm.getMinutes()):''}</span>
       <span class="what"><b>${esc([who(o),carOf(o),o.plate].filter(Boolean).join(' · ')||(o.phone||'Без номера'))} · ${CAR[o.car]}${o.car!=='com'?' R'+o.d:''}${badge}${st}</b><small>${esc(works)}${hd&&o.noHelper?' · без помощника':''}</small></span>
-      <span class="sum"><b class="tnum">${rub(o.paid)}</b>${o.mode==='coupon'?`<span class="pay">купон ${rub(o.coupon||0)}${o.extra?' + доплата '+rub(o.extra):''}</span>`:o.paid!==o.list?`<s>${rub(o.list)}</s>`:`<span class="pay">${PAY[o.pay]||''}</span>`}</span></button>${canPay?`<button class="paybtn ${o.paidOk?'ok':''}" type="button" data-pay-i="${i}">${o.paidOk?'✓ Оплачено':'Оплачено'}</button>`:''}</div>`;}).join('');
+      <span class="sum"><b class="tnum">${rub(o.paid)}</b>${o.mode==='coupon'?`<span class="pay">купон${o.list!==o.paid?' · прайс '+rub(o.list):''}</span>`:o.paid!==o.list?`<s>${rub(o.list)}</s>`:`<span class="pay">${PAY[o.pay]||''}</span>`}</span></button>${canPay?`<button class="paybtn ${o.paidOk?'ok':''}" type="button" data-pay-i="${i}">${o.paidOk?'✓ Оплачено':'Оплачено'}</button>`:''}</div>`;}).join('');
   el.querySelectorAll('.ord').forEach(b=>b.onclick=()=>openOrder(S.orders[+b.dataset.i]));
   el.querySelectorAll('[data-pay-i]').forEach(b=>b.onclick=()=>{const o=S.orders[+b.dataset.payI];setPaid(o,!o.paidOk,o.pay);});
 }
@@ -709,7 +709,7 @@ function openCheck(o){const c=calc(o);const mods=(o.mods&&(o.mods.lp||o.mods.rf|
         <div>${x.code?eanSvg(x.code):'<span class="err">нет штрихкода в CloudShop</span>'}</div></div>`).join('')}
       ${o.mode==='disc'?`<p class="pay">Затем скидка в чеке: <b>${rub(c.list-c.paid)}</b>.</p>`:''}</div>`;
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Для кассы</h2><button class="btn ghost" type="button" id="ckPrint">Печать</button><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-    ${o.mode==='coupon'?`<div class="hint" style="margin-bottom:12px">Купон производителя: возмещение ${rub(c.coupon)}. ${c.extra?`Клиент доплачивает <b>${rub(c.extra)}</b> — пробейте одной строкой на эту сумму.`:'Клиент не доплачивает — чек на работы не нужен.'}</div>`:''}
+    ${o.mode==='coupon'?`<div class="hint" style="margin-bottom:12px">Купон производителя — клиент не платит, чек на работы не нужен. Возмещение ${rub(c.coupon)} придёт от производителя.</div>`:''}
     <div class="sh-grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">${exact&&o.mode!=='disc'?per+one:one+per}</div>
     <p class="note">Если сканер не берёт код с экрана планшета — нажмите «Печать» или наберите цифры под штрихкодом на кассе вручную.</p>`;
   $('#close').onclick=closeSheet;$('#ckPrint').onclick=()=>window.print();
@@ -944,9 +944,8 @@ function renderSheet(){
       <button type="button" class="chip" data-mode="disc" aria-pressed="${O.mode==='disc'}">Скидка</button>
       <button type="button" class="chip" data-mode="coupon" aria-pressed="${O.mode==='coupon'}">Купон</button></div></div>
     ${O.mode==='disc'?`<label><span class="mono lbl">Взяли с клиента, ₽</span><input class="inp tnum" id="o-paid" type="number" inputmode="numeric" min="0" value="${O.paid||''}"></label>`:''}
-    ${O.mode==='coupon'?`<div class="owner-only" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label><span class="mono lbl">Возмещение, ₽</span><input class="inp tnum" id="o-cpn" type="number" inputmode="numeric" min="0" value="${c.coupon}"></label>
-      <label><span class="mono lbl">Доплата клиента, ₽</span><input class="inp tnum" id="o-extra" type="number" inputmode="numeric" min="0" value="${c.extra}"></label></div>
-      <span class="pay">Купон производителя: ${rub(c.coupon)} возместят нам${c.extra?`, клиент доплачивает ${rub(c.extra)}`:', клиент не доплачивает'}. Мастер получает свои 30% от прайса.</span>`:''}
+    ${O.mode==='coupon'?`<label class="owner-only"><span class="mono lbl">Возмещение по купону, ₽</span><input class="inp tnum" id="o-cpn" type="number" inputmode="numeric" min="0" value="${c.coupon}"></label>
+      <span class="pay">Клиент не платит. Производитель возместит ${rub(c.coupon)}${c.list!==c.coupon?` — это ${c.coupon>c.list?'на '+rub(c.coupon-c.list)+' больше':'на '+rub(c.list-c.coupon)+' меньше'} прайса`:''}. Мастер получает свои 30% от прайса.</span>`:''}
     ${O.id&&needsPay(c.mode?c:{...O,extra:c.extra})?(S.role==='master'
       ?`<div class="release ${O.paidOk?'ok':'wait'}">${O.paidOk?'Оплачено — можно отпускать':'Ждёт оплаты на кассе'}</div>`
       :`<button type="button" class="paybig ${O.paidOk?'ok':''}" id="o-paid-btn">${O.paidOk?'✓ Оплачено':'Оплачено'}</button>`):''}
@@ -979,7 +978,6 @@ function bindSheet(){
   document.querySelectorAll('[data-season]').forEach(b=>b.onclick=()=>{O.mods.season=O.mods.season===b.dataset.season?null:b.dataset.season;rer();});
   document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{O.mode=b.dataset.mode;if(O.mode==='disc'&&!O.paid)O.paid=calc(O).list;if(O.mode==='coupon'){O.coupon=S.coupon;O.extraSet=false;}rer();});
   const cpn=document.getElementById('o-cpn');if(cpn)cpn.onchange=()=>{O.coupon=+cpn.value||0;O.extraSet=false;rer();};
-  const ex=document.getElementById('o-extra');if(ex)ex.onchange=()=>{O.extra=+ex.value||0;O.extraSet=true;rer();};
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{O.pay=b.dataset.pay;rer();});
   document.querySelectorAll('.step button').forEach(b=>b.onclick=()=>{const w=WORKS[+b.dataset.w];const l=O.lines.find(x=>x.k===w.k&&x.n===w.n);
     const q=(l?l.q:0)+(b.dataset.a==='+'?1:-1);setQty(w.k,w.n,q,w.p,w.x);rer();});
