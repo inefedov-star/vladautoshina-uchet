@@ -71,6 +71,13 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE INDEX IF NOT EXISTS bookings_day ON bookings(day)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS spins (id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT NOT NULL, t INTEGER NOT NULL, prize TEXT NOT NULL, given INTEGER NOT NULL DEFAULT 0)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+  // ---- склад: товары, документы, движения. Остаток = сумма движений проведённых документов
+  $pdo->exec('CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, ext_id TEXT UNIQUE, name TEXT NOT NULL, grp TEXT, cat TEXT, kind TEXT, attrs TEXT, barcode TEXT, article TEXT, unit TEXT, price REAL, supplier TEXT, country TEXT, archived INTEGER NOT NULL DEFAULT 0, created INTEGER, updated INTEGER)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS products_kind ON products(kind)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS docs (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, num TEXT, day TEXT NOT NULL, partner TEXT, note TEXT, status TEXT NOT NULL DEFAULT \'draft\', author TEXT, created INTEGER, posted_at INTEGER, cancelled_at INTEGER, cancelled_by TEXT)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS moves (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_id INTEGER NOT NULL, product_id INTEGER NOT NULL, wh TEXT NOT NULL DEFAULT \'shop\', qty REAL NOT NULL, cost REAL NOT NULL DEFAULT 0, price REAL)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS moves_prod ON moves(product_id)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS moves_doc ON moves(doc_id)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS weather (day TEXT PRIMARY KEY, tmax REAL, tmin REAL, prec REAL, code INTEGER, updated INTEGER)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
   return $pdo;
@@ -120,6 +127,14 @@ function spinState(array $cfg, string $month): array {
   return ['earned' => $earned + $bonusSpins, 'used' => count($won), 'left' => max(0, $earned + $bonusSpins - count($won)), 'won' => $won, 'prizes' => prizes($cfg)];
 }
 function couponValue(array $cfg): int { $v = db($cfg)->query("SELECT v FROM settings WHERE k = 'coupon'")->fetchColumn(); return $v !== false ? (int)$v : 2600; }
+/* остатки и средняя себестоимость по проведённым документам */
+function stockMap(array $cfg, string $wh = 'shop'): array {
+  $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(m.qty) q, SUM(m.qty * m.cost) c FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND m.wh = ? GROUP BY m.product_id");
+  $st->execute([$wh]); $out = [];
+  foreach ($st->fetchAll() as $r) $out[(int)$r['pid']] = ['q' => (float)$r['q'], 'c' => (float)$r['c']];
+  return $out;
+}
+function docLabel(string $t): string { return ['open' => 'Ввод остатков', 'in' => 'Приход', 'sale' => 'Продажа', 'ret' => 'Возврат', 'off' => 'Списание', 'inv' => 'Инвентаризация', 'rin' => 'Возврат поставщику'][$t] ?? $t; }
 function post(): void { if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Нужен POST', 405); }
 
 try {
@@ -443,11 +458,97 @@ try {
     $st = db($cfg)->prepare('SELECT day, tmax, tmin, prec, code FROM weather WHERE day BETWEEN ? AND ?'); $st->execute([$from, $to]);
     out(['days' => $st->fetchAll()]);
 
+  // ======================= СКЛАД =======================
+  case 'cat_state':
+    // есть ли уже товары и введены ли стартовые остатки
+    needRole($role, ['owner']);
+    $n = (int)db($cfg)->query('SELECT COUNT(*) FROM products')->fetchColumn();
+    $open = db($cfg)->query("SELECT id, day, posted_at FROM docs WHERE type = 'open' AND status = 'posted' ORDER BY id LIMIT 1")->fetch();
+    out(['products' => $n, 'open' => $open ?: null]);
+
+  case 'cat_import':
+    // загрузка каталога из выгрузки CloudShop порциями: создаёт новые карточки, обновляет названия и цены
+    post(); needRole($role, ['owner']);
+    $rows = (array)(body()['rows'] ?? []); if (count($rows) > 1000) fail('Слишком большая порция');
+    $p = db($cfg); $p->beginTransaction(); $new = 0; $upd = 0; $now = time();
+    $sel = $p->prepare('SELECT id FROM products WHERE ext_id = ?');
+    $ins = $p->prepare('INSERT INTO products (ext_id, name, grp, cat, kind, attrs, barcode, article, unit, price, supplier, country, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    $up = $p->prepare('UPDATE products SET name = ?, grp = ?, cat = ?, kind = ?, attrs = ?, barcode = ?, article = ?, unit = ?, price = ?, supplier = ?, country = ?, updated = ? WHERE id = ?');
+    foreach ($rows as $r) {
+      $ext = mb_substr(trim((string)($r['ext_id'] ?? '')), 0, 64); $name = mb_substr(trim((string)($r['name'] ?? '')), 0, 300);
+      if ($ext === '' || $name === '') continue;
+      $vals = [$name, mb_substr((string)($r['grp'] ?? ''), 0, 200), mb_substr((string)($r['cat'] ?? ''), 0, 200), mb_substr((string)($r['kind'] ?? 'acc'), 0, 20),
+        json_encode($r['attrs'] ?? new stdClass(), JSON_UNESCAPED_UNICODE), mb_substr((string)($r['barcode'] ?? ''), 0, 64), mb_substr((string)($r['article'] ?? ''), 0, 64),
+        mb_substr((string)($r['unit'] ?? 'шт'), 0, 20), (float)($r['price'] ?? 0), mb_substr((string)($r['supplier'] ?? ''), 0, 200), mb_substr((string)($r['country'] ?? ''), 0, 60)];
+      $sel->execute([$ext]); $id = $sel->fetchColumn();
+      if ($id) { $up->execute(array_merge($vals, [$now, $id])); $upd++; }
+      else { $ins->execute(array_merge([$ext], $vals, [$now, $now])); $new++; }
+    }
+    $p->commit();
+    logit($cfg, $role, 'cat_import', "$new+$upd");
+    out(['new' => $new, 'updated' => $upd]);
+
+  case 'open_start':
+    // документ «Ввод остатков» — один раз, на дату старта учёта
+    post(); needRole($role, ['owner']);
+    $b = body(); if (!isDay($b['day'] ?? null)) fail('Укажите дату');
+    $ex = db($cfg)->query("SELECT id, status FROM docs WHERE type = 'open' AND status != 'cancelled' ORDER BY id LIMIT 1")->fetch();
+    if ($ex && $ex['status'] === 'posted') fail('Стартовые остатки уже введены. Изменить их можно только инвентаризацией.', 409);
+    if ($ex) { db($cfg)->prepare('DELETE FROM moves WHERE doc_id = ?')->execute([$ex['id']]); db($cfg)->prepare('UPDATE docs SET day = ? WHERE id = ?')->execute([$b['day'], $ex['id']]); out(['id' => (int)$ex['id']]); }
+    db($cfg)->prepare("INSERT INTO docs (type, num, day, partner, note, status, author, created) VALUES ('open', '1', ?, '', 'Перенос остатков из CloudShop', 'draft', ?, ?)")->execute([$b['day'], $role, time()]);
+    out(['id' => (int)db($cfg)->lastInsertId()]);
+
+  case 'open_lines':
+    post(); needRole($role, ['owner']);
+    $b = body(); $doc = (int)($b['doc'] ?? 0); $lines = (array)($b['lines'] ?? []);
+    $d = db($cfg)->prepare("SELECT status FROM docs WHERE id = ? AND type = 'open'"); $d->execute([$doc]); if ($d->fetchColumn() !== 'draft') fail('Документ уже проведён или не найден', 409);
+    $p = db($cfg); $p->beginTransaction(); $n = 0;
+    $sel = $p->prepare('SELECT id, price FROM products WHERE ext_id = ?'); $ins = $p->prepare("INSERT INTO moves (doc_id, product_id, wh, qty, cost, price) VALUES (?,?, 'shop', ?,?,?)");
+    foreach (array_slice($lines, 0, 1000) as $l) { $q = (float)($l['qty'] ?? 0); if ($q == 0) continue; $sel->execute([(string)($l['ext_id'] ?? '')]); $pr = $sel->fetch(); if (!$pr) continue;
+      $ins->execute([$doc, $pr['id'], $q, max(0, (float)($l['cost'] ?? 0)), $pr['price']]); $n++; }
+    $p->commit(); out(['lines' => $n]);
+
+  case 'open_post':
+    post(); needRole($role, ['owner']);
+    $doc = (int)(body()['doc'] ?? 0);
+    db($cfg)->prepare("UPDATE docs SET status = 'posted', posted_at = ? WHERE id = ? AND type = 'open' AND status = 'draft'")->execute([time(), $doc]);
+    logit($cfg, $role, 'open_post', (string)$doc);
+    out(['ok' => true]);
+
+  case 'stock':
+    // список товаров с остатками; себестоимость — только собственнику
+    needRole($role, ['owner', 'master', 'cashier']);
+    $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); $kind = (string)($_GET['kind'] ?? ''); $only = ($_GET['instock'] ?? '1') === '1';
+    $lim = min(300, max(20, (int)($_GET['limit'] ?? 120)));
+    $sm = stockMap($cfg); $owner = $role === 'owner';
+    $toks = array_values(array_filter(preg_split('/[\s\/]+/u', str_replace(['*', '×', 'х'], ' ', $q))));
+    $rows = []; $tot = ['n' => 0, 'qty' => 0, 'cost' => 0, 'retail' => 0];
+    foreach (db($cfg)->query("SELECT id, name, kind, attrs, barcode, article, price, unit FROM products WHERE archived = 0 AND kind != 'svc' ORDER BY name")->fetchAll() as $p) {
+      $s = $sm[(int)$p['id']] ?? ['q' => 0, 'c' => 0]; if ($only && $s['q'] <= 0) continue;
+      if ($kind !== '' && $p['kind'] !== $kind && !($kind === 'other' && in_array($p['kind'], ['acc', 'tube', 'tool', 'tireo'], true))) continue;
+      if ($toks) { $hay = mb_strtoupper(str_replace('/', ' ', $p['name'])) . ' ' . $p['barcode'] . ' ' . mb_strtoupper($p['article']); $a = json_decode($p['attrs'], true) ?: [];
+        $ok = true; foreach ($toks as $t) { if (preg_match('/^[RР](\d{2})$/u', $t, $m)) { if ((int)($a['d'] ?? 0) !== (int)$m[1]) { $ok = false; break; } continue; } if (mb_strpos($hay, $t) === false) { $ok = false; break; } } if (!$ok) continue; }
+      $tot['n']++; $tot['qty'] += max(0, $s['q']); $tot['retail'] += max(0, $s['q']) * (float)$p['price']; if ($owner) $tot['cost'] += max(0, $s['c']);
+      if (count($rows) < $lim) $rows[] = ['id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null];
+    }
+    if (!$owner) unset($tot['cost']);
+    out(['rows' => $rows, 'total' => $tot, 'more' => $tot['n'] > count($rows)]);
+
+  case 'product':
+    needRole($role, ['owner', 'master', 'cashier']);
+    $id = (int)($_GET['id'] ?? 0); $st = db($cfg)->prepare('SELECT * FROM products WHERE id = ?'); $st->execute([$id]); $p = $st->fetch(); if (!$p) fail('Товар не найден', 404);
+    $p['attrs'] = json_decode($p['attrs'], true) ?: new stdClass(); $owner = $role === 'owner';
+    if (!$owner) unset($p['supplier']);
+    $mv = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.num, d.partner, m.qty, m.cost, m.wh FROM moves m JOIN docs d ON d.id = m.doc_id WHERE m.product_id = ? AND d.status = 'posted' ORDER BY d.day DESC, d.id DESC LIMIT 100");
+    $mv->execute([$id]); $moves = array_map(function ($r) use ($owner) { $r['label'] = docLabel($r['type']); if (!$owner) { unset($r['cost']); $r['partner'] = ''; } return $r; }, $mv->fetchAll());
+    $s = stockMap($cfg)[$id] ?? ['q' => 0, 'c' => 0];
+    out(['product' => $p, 'qty' => $s['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'moves' => $moves]);
+
   case 'export':
     // полная выгрузка для переноса в будущую систему (только собственник)
     needRole($role, ['owner']);
     $p = db($cfg);
-    out(['weather' => $p->query('SELECT * FROM weather')->fetchAll(), 'clients' => $p->query('SELECT * FROM clients')->fetchAll(), 'spins' => $p->query('SELECT * FROM spins')->fetchAll(), 'settings' => $p->query('SELECT * FROM settings')->fetchAll(), 'bookings' => $p->query('SELECT * FROM bookings')->fetchAll(), 'orders' => $p->query('SELECT id, day, body FROM orders ORDER BY day, t')->fetchAll(), 'days' => $p->query('SELECT * FROM days')->fetchAll(), 'expenses' => $p->query('SELECT * FROM expenses')->fetchAll()]);
+    out(['products' => $p->query('SELECT * FROM products')->fetchAll(), 'docs' => $p->query('SELECT * FROM docs')->fetchAll(), 'moves' => $p->query('SELECT * FROM moves')->fetchAll(), 'weather' => $p->query('SELECT * FROM weather')->fetchAll(), 'clients' => $p->query('SELECT * FROM clients')->fetchAll(), 'spins' => $p->query('SELECT * FROM spins')->fetchAll(), 'settings' => $p->query('SELECT * FROM settings')->fetchAll(), 'bookings' => $p->query('SELECT * FROM bookings')->fetchAll(), 'orders' => $p->query('SELECT id, day, body FROM orders ORDER BY day, t')->fetchAll(), 'days' => $p->query('SELECT * FROM days')->fetchAll(), 'expenses' => $p->query('SELECT * FROM expenses')->fetchAll()]);
 
   default:
     fail('Неизвестное действие', 404);

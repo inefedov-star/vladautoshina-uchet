@@ -172,6 +172,13 @@ h2.sec{font-family:var(--f-display);font-weight:800;font-size:1.5rem;text-transf
 .keys button:active{background:var(--paper-3)}
 .out{border:0;background:none;color:var(--ink-3);font-weight:600;min-height:44px;padding:0 6px}
 body.master .owner-only,body.cashier .owner-only{display:none!important}
+.sttab td{white-space:normal}
+.sttab td.nm{text-align:left;min-width:260px}
+.sttab tr[data-p]{cursor:pointer}
+.sttab tr[data-p]:hover td{background:var(--paper-2)}
+.kb{display:inline-block;font-family:var(--f-mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);border:1px solid var(--rule);border-radius:2px;padding:.1em .4em;margin-right:6px;vertical-align:1px}
+.facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:1.5px;background:var(--rule);border:1.5px solid var(--rule);margin:0 0 10px}
+.facts div{background:var(--paper);padding:10px 12px;min-width:0}.facts dt{color:var(--ink-3)}.facts dd{margin:3px 0 0;font-weight:600;overflow-wrap:anywhere}
 .msgbox{display:flex;flex-direction:column;gap:14px;max-width:640px;padding-bottom:30px}
 .msgbox textarea{min-height:150px;padding:10px 12px;line-height:1.45;resize:vertical}
 .msgbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
@@ -315,6 +322,7 @@ details.bdgs summary .mono{color:var(--ink-3)}
       <button class="tab" role="tab" type="button" data-v="day" aria-selected="true">Смена</button>
       <button class="tab" role="tab" type="button" data-v="cal" aria-selected="false">Запись</button>
       <button class="tab" role="tab" type="button" data-v="cli" aria-selected="false">Клиенты</button>
+      <button class="tab" role="tab" type="button" data-v="stock" aria-selected="false">Склад</button>
       <button class="tab owner-only" role="tab" type="button" data-v="exp" aria-selected="false">Расходы</button>
       <button class="tab owner-only" role="tab" type="button" data-v="sum" aria-selected="false">Итоги</button>
     </nav>
@@ -360,6 +368,21 @@ details.bdgs summary .mono{color:var(--ink-3)}
     <div class="row" style="margin-bottom:10px"><button class="btn ghost" type="button" id="qAddLive">+ Живая очередь</button><button class="btn ghost" type="button" id="qAddLeave">+ Оставили машину</button><button class="btn ghost" type="button" id="qAddTask">+ В свободное время</button></div>
     <div class="bks" id="queue" style="margin-bottom:12px"></div>
     <p class="note" style="margin-bottom:40px">Погода во Владимире — <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">open-meteo.com</a>, прогноз на 16 дней.</p>
+  </section>
+
+  <section id="v-stock" hidden>
+    <div class="calbar">
+      <h1>Склад</h1>
+      <div class="spacer"></div>
+      <button class="btn ghost owner-only" type="button" id="stImport">Загрузить каталог из CloudShop</button>
+    </div>
+    <div class="tiles" id="stTiles" style="margin-top:0"></div>
+    <div class="row" style="margin-bottom:10px;align-items:center">
+      <input class="inp" type="search" id="stQ" placeholder="Поиск: 205 55 R16, Ikon, штрихкод…" autocomplete="off" style="flex:1;min-width:220px">
+      <button class="switch" type="button" role="switch" id="stOnly" aria-checked="true"><span class="knob"></span>Только в наличии</button>
+    </div>
+    <div class="row" id="stKinds" style="margin-bottom:12px"><button type="button" class="chip" data-k="tire">Шины</button><button type="button" class="chip" data-k="disk">Диски</button><button type="button" class="chip" data-k="akb">АКБ</button><button type="button" class="chip" data-k="fast">Крепёж</button><button type="button" class="chip" data-k="other">Прочее</button></div>
+    <div id="stOut" style="margin-bottom:40px"></div>
   </section>
 
   <section id="v-cli" hidden>
@@ -682,6 +705,123 @@ function openMsg({phone,text,title,what,id,after}){const k=phoneKey(phone);
     else hint(copied?'Текст скопирован — вставьте его в любой мессенджер.':'Не получилось скопировать — выделите текст выше вручную.');});
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 function remindBooking(b){openMsg({phone:b.phone,text:msgFor(b),title:'Напомнить клиенту',what:'booking',id:b.id,after:()=>{loadDay();loadQueue();if(S.view==='cal')loadCal();}});}
+/* ---------- разбор карточек CloudShop по полям (как в витрине) ---------- */
+const BRAND_FIX={'кама':'КАМА','linglong':'LingLong','ikon':'Ikon','nortec':'NorTec','tracmax':'Tracmax','general':'General'};
+function parseTire(n,g,cat){const m=n.match(/^\s*(\d{3})\/(\d{2})\/(\d{2})\s*([Cc])?\s+(.*)$/);if(!m)return null;
+  const [,w,p,d,cflag,rest]=m;const low=rest.toLowerCase();const stud=/шип/.test(low);
+  let season=(/Зим/.test(g)||/Зим/.test(cat))?'winter':((/Лет/.test(g)||/Лет/.test(cat))?'summer':'all');
+  if(/all.?season|4 seasons|всесез/.test(low))season='all';if(stud)season='winter';
+  const xl=/\bXL\b/.test(rest);const ms=[...rest.matchAll(/\b(\d{2,3}(?:\/\d{2,3})?)([HJKLMNPQRSTUVWYZ])\b/g)];const last=ms.length?ms[ms.length-1]:null;
+  const idx=last?last[1]+last[2]:null;const am=rest.match(/\(([^)]*)\)/);const alias=am&&!/шип|\d{3}\s/.test(am[1])?am[1]:null;
+  let model=last?rest.slice(0,last.index)+rest.slice(last.index+last[0].length):rest;
+  model=model.replace(/\([^)]*\)/g,'').replace(/\b(XL|TL|ставленные|M\+S|3PMSF|\d+PR)\b/gi,'').replace(/шип\.?/gi,'').replace(/\s+/g,' ').replace(/^[\s.,-]+|[\s.,-]+$/g,'');
+  const sp=model.indexOf(' ');let brand=sp>0?model.slice(0,sp):model,mdl=sp>0?model.slice(sp+1):'';brand=BRAND_FIX[brand.toLowerCase()]||brand;
+  if(brand==='Hankook'&&/^laufen/i.test(mdl)){brand='Laufenn';mdl=mdl.includes(' ')?mdl.slice(mdl.indexOf(' ')+1):mdl;}
+  return{w:+w,p:+p,d:+d,c:!!cflag||/Легкогруз/.test(cat),brand,model:mdl,alias,season,stud,xl,index:idx,suv:/SUV/.test(rest)||/AT\/MT/.test(g)||/at и mt/i.test(cat)};}
+function parseDisk(n,cat){const m=n.match(/^\s*(\d{2})\s+(\d+(?:[.,]\d+)?)\s*[/ ]\s*(\d)\s*[*хx×]\s*(\d+(?:[.,]\d*)?(?:\s*\/\s*(?:\d\s*[*хx×]\s*)?\d+(?:[.,]\d+)?)?)\s*ET\s*(-?\d+(?:[.,]\d+)?)\s*(?:dia|d)\s*([\d.,?]+)\s*(.*)$/i);
+  const type={'Диски литые':'cast','Диски штампованые':'steel','Диски некомплект':'odd','Диски в окнах':'cast'}[cat]||'cast';
+  if(!m)return{type};const[,d,w,h,pcd0,et,dia,rest]=m;let pcd=pcd0.replace(/\s/g,'').replace(/,/g,'.').replace(/\.$/,'').replace(/[*хx]/g,'×');
+  const parts=pcd.split('/').map(x=>x.includes('×')?x:`${h}×${x}`);
+  return{type,d:+d,w:w.replace(',','.'),pcd:parts[0],pcds:parts,et:et.replace(',','.'),dia:dia.replace(',','.').replace(/\.$/,''),model:rest.trim()};}
+function parseAkb(n){const low=n.toLowerCase();const m=n.match(/(\d{1,3})\s*а\/?ч/i);const ah=m?+m[1]:null;
+  const pol=/о\/п|обр/.test(low)?'rev':(/п\/п|прям/.test(low)?'dir':null);
+  const std=/moto/.test(low)?'moto':(ah||0)>=140?'truck':/asia|jis|\b\d{2,3}d\d{2}|b19|d2[36]|d31/.test(low)?'asia':'euro';
+  const e=n.match(/(?:EN|en|CCA)\s*(\d{3,4})|(\d{3,4})\s*[AА]\b/);return{ah,pol,std,en:e?+(e[1]||e[2]):null};}
+function parseFast(n){const low=n.toLowerCase();const m=n.match(/(?<!\d)М?(1[024])\s*[*х×x]\s*(1[,.]25|1[,.]5)/);
+  const r=n.match(/Кольцо центровочное\s*([\d.]+)\s*-\s*([\d.]+)/);
+  return{thread:m?m[1]+'×'+m[2].replace('.',','):null,ring:r?{out:r[1],in:r[2]}:null,seat:/сфер/.test(low)?'сфера':/плоск/.test(low)?'плоская':/конус/.test(low)?'конус':null,
+    type:/секрет/.test(low)?'lock':/кольц/.test(low)?'ring':/гайк/.test(low)?'nut':/болт/.test(low)?'bolt':/шпильк/.test(low)?'stud':'other'};}
+function classify(n,g,cat,qty){n=String(n||'').replace(/\s+/g,' ').trim();g=String(g||'');cat=String(cat||'');const low=n.toLowerCase();
+  /* «Услуги» с остатком на складе (пакеты для колёс) — это товар */
+  if(/Услуг/.test(g))return qty>0?{kind:'acc',attrs:{group:'consumable'}}:{kind:'svc',attrs:{}};
+  const t=parseTire(n,g,cat);if(t)return{kind:'tire',attrs:t};
+  if(/колпак/.test(low))return{kind:'acc',attrs:{group:'caps'}};
+  if(/клемм|тестер акб|зарядное/.test(low))return{kind:'acc',attrs:{group:'akbacc'}};
+  if(/Диски/.test(cat)||/^Диски/.test(g))return{kind:'disk',attrs:parseDisk(n,cat)};
+  if(/Аккумулятор/.test(cat)&&!/электроинструмент/.test(low)&&!/для электроинструмента/.test(low))return{kind:'akb',attrs:parseAkb(n)};
+  if(/Крепеж/.test(cat)||/Крепеж/.test(g))return{kind:'fast',attrs:parseFast(n)};
+  if(/шин/i.test(cat)||/шин/i.test(g))return{kind:'tireo',attrs:{}};
+  if(/Камеры/.test(cat))return{kind:'tube',attrs:{}};
+  if(/электроинструмент/i.test(cat)||/электроинструмент/.test(low))return{kind:'tool',attrs:{}};
+  return{kind:'acc',attrs:{group:/Автохимия/.test(cat)?'chem':'acc'}};}
+/* ======================= СКЛАД ======================= */
+const KIND_RU={tire:'Шины',disk:'Диски',akb:'АКБ',fast:'Крепёж',other:'Прочее'};
+const KIND_ONE={tire:'шина',tireo:'грузовая/спец',disk:'диск',akb:'АКБ',fast:'крепёж',tube:'камера',tool:'инструмент',acc:'аксессуар',svc:'услуга'};
+S.st={kind:'',q:'',only:true,rows:[],total:null,more:false};
+let stT=null;
+async function loadStock(){const el=$('#stOut');try{const j=await api('stock',null,{q:S.st.q,kind:S.st.kind,instock:S.st.only?'1':'0',limit:150});S.st.rows=j.rows;S.st.total=j.total;S.st.more=j.more;renderStock();}
+  catch(e){if(e.code!=='auth')el.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;}}
+function renderStock(){const t=S.st.total||{},own=S.role==='owner';
+  document.querySelectorAll('#stKinds .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.k===S.st.kind));
+  $('#stOnly').setAttribute('aria-checked',S.st.only);
+  $('#stTiles').innerHTML=`<div class="tile"><span class="mono">Позиций</span><b class="tnum">${(t.n||0).toLocaleString('ru-RU')}</b></div>
+    <div class="tile"><span class="mono">Штук</span><b class="tnum">${Math.round(t.qty||0).toLocaleString('ru-RU')}</b></div>
+    <div class="tile"><span class="mono">В рознице</span><b class="tnum">${rub(t.retail||0)}</b></div>
+    ${own?`<div class="tile acc"><span class="mono">По себестоимости</span><b class="tnum">${rub(t.cost||0)}</b></div>`:''}`;
+  const el=$('#stOut');
+  if(!S.st.rows.length){el.innerHTML=`<div class="empty"><b>${S.st.q||S.st.kind?'Ничего не нашлось':'Склад пуст'}</b>${S.st.q||S.st.kind?'Измените поиск или уберите фильтр.':(own?'Загрузите каталог из CloudShop кнопкой выше.':'Собственник ещё не загрузил каталог.')}</div>`;return;}
+  el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Товар</th><th>Остаток</th><th>Цена</th>${own?'<th>Себест.</th><th>Наценка</th>':''}</tr></thead><tbody>
+    ${S.st.rows.map((r,i)=>`<tr data-p="${r.id}"><td class="nm"><span class="kb">${KIND_ONE[r.kind]||''}</span>${esc(r.name)}</td><td class="${r.qty<=0?'neg':''}">${fmtQty(r.qty)} ${esc(r.unit||'')}</td><td>${rub(r.price)}</td>
+      ${own?`<td>${r.cost!=null?rub(r.cost):'—'}</td><td>${r.cost?Math.round((r.price/r.cost-1)*100)+'%':'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>
+    ${S.st.more?`<p class="note">Показаны первые ${S.st.rows.length} из ${t.n}. Уточните поиск, например «205 55 R16» или бренд.</p>`:''}`;
+  el.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
+const fmtQty=q=>Number.isInteger(q)?String(q):q.toFixed(2).replace('.',',');
+$('#stQ').addEventListener('input',()=>{clearTimeout(stT);stT=setTimeout(()=>{S.st.q=$('#stQ').value.trim();loadStock();},350);});
+document.querySelectorAll('#stKinds .chip').forEach(c=>c.onclick=()=>{S.st.kind=S.st.kind===c.dataset.k?'':c.dataset.k;loadStock();});
+$('#stOnly').onclick=()=>{S.st.only=!S.st.only;loadStock();};
+function attrLines(k,a){if(!a)return[];const L=[];
+  if(k==='tire'){L.push(['Размер',`${a.w}/${a.p} R${a.d}${a.c?'C':''}`],['Бренд, модель',[a.brand,a.model].filter(Boolean).join(' ')+(a.alias?` (${a.alias})`:'')],['Сезон',{winter:'Зима',summer:'Лето',all:'Всесезон'}[a.season]+(a.season==='winter'?(a.stud?', шипы':', липучка'):'')],['Индексы',(a.index||'—')+(a.xl?' XL':'')]);}
+  else if(k==='disk'){L.push(['Тип',{cast:'литой',steel:'штампованный',odd:'некомплект'}[a.type]||''],['Размер',a.d?`${a.w}×${a.d}`:'—'],['Разболтовка',(a.pcds||[a.pcd]).filter(Boolean).join(' / ')||'—'],['Вылет, ЦО',a.et?`ET${a.et} · DIA ${a.dia}`:'—']);}
+  else if(k==='akb'){L.push(['Ёмкость',a.ah?a.ah+' А·ч':'—'],['Полярность',{rev:'обратная',dir:'прямая'}[a.pol]||'—'],['Тип',{euro:'евро',asia:'Азия',moto:'мото',truck:'грузовой'}[a.std]||'—'],['Пусковой ток',a.en?a.en+' А':'—']);}
+  else if(k==='fast'){L.push(['Вид',{nut:'гайка',bolt:'болт',lock:'секретка',ring:'центровочное кольцо',stud:'шпилька',other:'прочее'}[a.type]||'—'],['Резьба',a.thread?'М'+a.thread:'—'],['Посадка',a.seat||'—']);}
+  return L;}
+async function openProduct(id){let j;try{j=await api('product',null,{id});}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}
+  const p=j.product,own=S.role==='owner';
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle" style="font-size:1.35rem;text-transform:none">${esc(p.name)}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Остаток</span><b class="tnum">${fmtQty(j.qty)} ${esc(p.unit||'')}</b></div><div class="tile"><span class="mono">Цена</span><b class="tnum">${rub(p.price)}</b></div>
+    ${own?`<div class="tile"><span class="mono">Себестоимость</span><b class="tnum">${j.cost!=null?rub(j.cost):'—'}</b></div><div class="tile acc"><span class="mono">Наценка</span><b class="tnum">${j.cost?Math.round((p.price/j.cost-1)*100)+'%':'—'}</b></div>`:''}</div>
+  <dl class="facts">${[...attrLines(p.kind,p.attrs),['Вид',KIND_ONE[p.kind]||p.kind],['Группа CloudShop',p.grp||'—'],['Штрихкод',p.barcode||'—'],['Артикул',p.article||'—'],...(own&&p.supplier?[['Поставщик',p.supplier]]:[]),...(p.country?[['Страна',p.country]]:[])].map(([k,v])=>`<div><dt class="mono">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+  <h2 class="sec" style="font-size:1.1rem">Движение</h2>
+  ${j.moves.length?`<div class="tw"><table><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th>Кол-во</th>${own?'<th>Цена прихода</th>':''}</tr></thead><tbody>${j.moves.map(m=>`<tr><td>${fmtDay(m.day)}</td><td style="text-align:left">${esc(m.label)}${m.num?' № '+esc(m.num):''}${m.partner?' · '+esc(m.partner):''}</td><td class="${m.qty<0?'neg':''}">${m.qty>0?'+':''}${fmtQty(+m.qty)}</td>${own?`<td>${m.qty>0?rub(+m.cost):'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>`:'<p class="note">Движений пока нет.</p>'}`;
+  $('#close').onclick=closeSheet;const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
+
+/* ---- загрузка каталога из CloudShop (собственник) ---- */
+function loadXlsxLib(){return new Promise((ok,no)=>{if(window.XLSX)return ok();const s=document.createElement('script');s.src='lib/xlsx.full.min.js';s.onload=()=>ok();s.onerror=()=>no(new Error('Не загрузился модуль чтения Excel (lib/xlsx.full.min.js). Проверьте, что папка lib загружена на сайт.'));document.head.appendChild(s);});}
+const NUM=v=>{const x=parseFloat(String(v??'').replace(/\s/g,'').replace(',','.'));return isFinite(x)?x:0;};
+async function openImport(){let st;try{st=await api('cat_state');}catch(e){toast('<b>Ошибка</b>'+esc(e.message));return;}
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Каталог из CloudShop</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <div class="msgbox">
+    <p class="pay" style="margin:0">CloudShop → Товары → «Экспорт» в Excel. Нужен файл каталога, в котором есть столбцы «ID», «Наименование», «Цена продажи», «Себестоимость», «Общий остаток».</p>
+    <label class="btn" style="cursor:pointer;width:max-content">Выбрать файл .xlsx<input type="file" id="imFile" accept=".xlsx,.xls" hidden></label>
+    <div id="imOut">${st.products?`<p class="note">В базе уже ${st.products} карточек. Повторная загрузка обновит названия, группы и цены и добавит новые товары.</p>`:''}
+      ${st.open?`<p class="note">Стартовые остатки введены ${fmtDay(st.open.day)}. Остатки при повторной загрузке не меняются.</p>`:''}</div>
+  </div>`;
+  $('#close').onclick=closeSheet;const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
+  $('#imFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const out=$('#imOut');out.innerHTML='<p class="note">Читаем файл…</p>';
+    try{await loadXlsxLib();const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{raw:false,defval:''});
+      const need=['ID','Наименование','Цена продажи'];const miss=need.filter(h=>!(h in (rows[0]||{})));if(miss.length)throw new Error('В файле нет столбцов: '+miss.join(', ')+'. Это не выгрузка каталога товаров.');
+      const items=rows.filter(r=>String(r['ID']).trim()&&String(r['Наименование']).trim()).map(r=>{const c=classify(r['Наименование'],r['Группа'],r['Категория'],NUM(r['Общий остаток']));
+        return{ext_id:String(r['ID']).trim(),name:String(r['Наименование']).replace(/\s+/g,' ').trim(),grp:r['Группа']||'',cat:r['Категория']||'',kind:c.kind,attrs:c.attrs,barcode:String(r['Штрих-код']||'').trim(),article:String(r['Артикул']||'').trim(),
+          unit:r['Единица измерения']||'шт',price:NUM(r['Цена продажи']),supplier:r['Поставщик']||'',country:r['Страна']||'',_qty:NUM(r['Общий остаток']),_cost:NUM(r['Себестоимость'])};});
+      const withQty=items.filter(i=>i._qty>0&&i.kind!=='svc');const units=withQty.reduce((a,i)=>a+i._qty,0),cost=withQty.reduce((a,i)=>a+i._qty*i._cost,0),retail=withQty.reduce((a,i)=>a+i._qty*i.price,0);
+      const byKind={};items.forEach(i=>byKind[i.kind]=(byKind[i.kind]||0)+1);
+      const noSize=items.filter(i=>i.kind==='disk'&&!i.attrs.d).length,noAh=items.filter(i=>i.kind==='akb'&&!i.attrs.ah).length;
+      out.innerHTML=`<div class="tiles" style="margin:0"><div class="tile"><span class="mono">Карточек</span><b class="tnum">${items.length.toLocaleString('ru-RU')}</b></div><div class="tile"><span class="mono">В наличии</span><b class="tnum">${withQty.length.toLocaleString('ru-RU')} поз. · ${Math.round(units).toLocaleString('ru-RU')} шт.</b></div>
+        <div class="tile"><span class="mono">По себестоимости</span><b class="tnum">${rub(cost)}</b></div><div class="tile"><span class="mono">В рознице</span><b class="tnum">${rub(retail)}</b></div></div>
+        <p class="note">${Object.entries(byKind).map(([k,v])=>`${KIND_ONE[k]||k}: ${v}`).join(' · ')}${noSize||noAh?`. Не разобрались по полям: дисков ${noSize}, АКБ ${noAh} — останутся с названием как есть.`:''}</p>
+        ${st.open?'':`<label class="row" style="align-items:center;gap:10px"><input type="checkbox" id="imOpen" checked style="width:22px;height:22px"> <span>Ввести стартовые остатки и себестоимость из этого файла на дату</span> <input class="inp" type="date" id="imDay" value="${iso(new Date())}" style="max-width:190px"></label>
+          <p class="note">Сверьте цифры выше с CloudShop: штуки и сумма по себестоимости должны совпасть. Стартовые остатки вводятся один раз — дальше они меняются только документами.</p>`}
+        <button class="btn sig" type="button" id="imGo">Загрузить в учёт</button><p class="pay" id="imProg"></p>`;
+      $('#imGo').onclick=async()=>{const b=$('#imGo');b.disabled=true;const prog=$('#imProg');const open=!st.open&&$('#imOpen')&&$('#imOpen').checked;
+        try{const clean=items.map(({_qty,_cost,...x})=>x);
+          for(let i=0;i<clean.length;i+=500){prog.textContent=`Карточки: ${Math.min(i+500,clean.length)} из ${clean.length}…`;await api('cat_import',{rows:clean.slice(i,i+500)});}
+          if(open){const day=$('#imDay').value;const d=await api('open_start',{day});const lines=withQty.map(i=>({ext_id:i.ext_id,qty:i._qty,cost:i._cost}));
+            for(let i=0;i<lines.length;i+=500){prog.textContent=`Остатки: ${Math.min(i+500,lines.length)} из ${lines.length}…`;await api('open_lines',{doc:d.id,lines:lines.slice(i,i+500)});}
+            await api('open_post',{doc:d.id});}
+          prog.textContent='Готово.';toast('<b>Каталог загружен</b>'+(open?'Стартовые остатки введены':'Названия и цены обновлены'));setTimeout(()=>{closeSheet();loadStock();},700);}
+        catch(err){b.disabled=false;prog.textContent='Ошибка: '+err.message+'. Можно нажать ещё раз — уже загруженное не задвоится.';}};
+    }catch(err){out.innerHTML=`<p class="err">${esc(err.message)}</p>`;}};}
+$('#stImport').onclick=openImport;
 /* ---------- календарь записи ---------- */
 S.cal={mode:'day',anchor:iso(new Date()),items:[]};
 function monday(d){const x=new Date(d);const wd=(x.getDay()+6)%7;x.setDate(x.getDate()-wd);return x;}
@@ -1163,7 +1303,7 @@ $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.yea
 
 /* ---------- вкладки ---------- */
 function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}
