@@ -172,6 +172,17 @@ h2.sec{font-family:var(--f-display);font-weight:800;font-size:1.5rem;text-transf
 .keys button:active{background:var(--paper-3)}
 .out{border:0;background:none;color:var(--ink-3);font-weight:600;min-height:44px;padding:0 6px}
 body.master .owner-only,body.cashier .owner-only{display:none!important}
+.msgbox{display:flex;flex-direction:column;gap:14px;max-width:640px;padding-bottom:30px}
+.msgbox textarea{min-height:150px;padding:10px 12px;line-height:1.45;resize:vertical}
+.msgbtns{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.mb-wa{background:#1F8F4E;border-color:#1F8F4E;color:#fff}
+.mb-tg{background:#2481B8;border-color:#2481B8;color:#fff}
+.mb-max{background:#4B3FD1;border-color:#4B3FD1;color:#fff}
+.sent{color:var(--moss);font-weight:600}
+.savebar{display:none}
+@media (max-width:860px){.savebar{display:flex;position:sticky;bottom:0;z-index:3;align-items:center;justify-content:space-between;gap:12px;margin:16px calc(-1*max(16px,env(safe-area-inset-left,0px))) 0;padding:10px max(16px,env(safe-area-inset-left,0px)) calc(10px + env(safe-area-inset-bottom,0px));background:var(--paper);border-top:1.5px solid var(--ink)}
+  .savebar b{display:block;font-family:var(--f-display);font-weight:800;font-size:1.5rem;line-height:1}
+  .savebar .btn{flex:1;max-width:260px}}
 .wx{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);font-weight:600;font-size:.95rem;white-space:nowrap}
 .cwh .wxl,.cm-d .wxl{display:block;font-size:.74rem;color:var(--ink-2);font-weight:600;white-space:nowrap}
 .ordw{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch}
@@ -251,6 +262,10 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
 .bonus b{display:block;font-family:var(--f-display);font-weight:800;font-size:2rem;line-height:1;color:var(--signal-deep)}
 .badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;grid-column:1/-1;align-items:center}
 .bgl{flex-basis:100%;color:var(--ink-3)}
+details.bdgs{grid-column:1/-1;border-top:1px solid var(--rule);padding-top:10px}
+details.bdgs summary{cursor:pointer;min-height:44px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:.95rem}
+details.bdgs summary .mono{color:var(--ink-3)}
+.minis{display:inline-flex;gap:3px}.minis svg{width:22px;height:22px}
 .bdg{display:flex;align-items:center;gap:8px;border:1.5px solid var(--rule);border-radius:3px;padding:6px 10px 6px 6px;font-size:.85rem;background:var(--paper)}
 .bdg svg{width:30px;height:30px;flex:none}
 .bdg.lock{opacity:.38;filter:grayscale(1)}
@@ -320,14 +335,14 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
     </div>
     <div class="week" id="week" aria-label="Ближайшие дни"></div>
     <div class="tiles" id="tiles"></div>
-    <div id="hero"></div>
     <div class="hd2"><h2>Запись на время</h2><span class="mono" id="bkSum" style="color:var(--ink-3)"></span></div>
     <div class="bks" id="bks"></div>
     <div id="secLeave"></div>
     <div id="secLive"></div>
     <div id="secTask"></div>
-    <div class="hd2"><h2>Сделано</h2></div>
+    <div class="hd2"><h2>Сделано</h2><span class="mono" style="color:var(--ink-3)">новые сверху</span></div>
     <div class="orders" id="orders"></div>
+    <div id="hero" style="margin-bottom:40px"></div>
   </section>
 
   <section id="v-cal" hidden>
@@ -508,7 +523,8 @@ function renderDay(){
   renderBookings();renderWeekMark();if(S.ms&&S._msMonth===S.day.slice(0,7))renderHero();
   const el=$('#orders');
   if(!S.orders.length){el.innerHTML=`<div class="empty"><b>Машин пока нет</b>Нажмите «+ Машина», выберите тип и диаметр, отметьте сделанные работы.</div>`;return;}
-  el.innerHTML=S.orders.map((o,i)=>{
+  const ordView=S.orders.slice().sort((a,b)=>(b.t||0)-(a.t||0));
+  el.innerHTML=ordView.map((o,i)=>{
     const tm=o.t?new Date(o.t):null;
     const works=(o.lines||[]).filter(l=>l.q>0).map(l=>`${l.n}${l.q>1?' ×'+l.q:''}`).join(', ');
     const badge=o.mode==='coupon'?'<span class="badge cp">Купон</span>':o.mode==='disc'?'<span class="badge ds">Скидка</span>':'';
@@ -517,8 +533,8 @@ function renderDay(){
     return `<div class="ordw ${o.paidOk||!needsPay(o)?'isPaid':'unpaid'}"><button class="ord" type="button" data-i="${i}"><span class="tm">${tm?pad(tm.getHours())+':'+pad(tm.getMinutes()):''}</span>
       <span class="what"><b>${esc([who(o),carOf(o),o.plate].filter(Boolean).join(' · ')||(o.phone||'Без номера'))} · ${CAR[o.car]}${o.car!=='com'?' R'+o.d:''}${badge}${st}</b><small>${esc(works)}${hd&&o.noHelper?' · без помощника':''}</small></span>
       <span class="sum"><b class="tnum">${rub(o.paid)}</b>${o.mode==='coupon'?`<span class="pay">купон${o.list!==o.paid?' · прайс '+rub(o.list):''}</span>`:o.paid!==o.list?`<s>${rub(o.list)}</s>`:`<span class="pay">${PAY[o.pay]||''}</span>`}</span></button>${canPay?`<button class="paybtn ${o.paidOk?'ok':''}" type="button" data-pay-i="${i}">${o.paidOk?'✓ Оплачено':'Оплачено'}</button>`:''}</div>`;}).join('');
-  el.querySelectorAll('.ord').forEach(b=>b.onclick=()=>openOrder(S.orders[+b.dataset.i]));
-  el.querySelectorAll('[data-pay-i]').forEach(b=>b.onclick=()=>{const o=S.orders[+b.dataset.payI];setPaid(o,!o.paidOk,o.pay);});
+  el.querySelectorAll('.ord').forEach(b=>b.onclick=()=>openOrder(ordView[+b.dataset.i]));
+  el.querySelectorAll('[data-pay-i]').forEach(b=>b.onclick=()=>{const o=ordView[+b.dataset.payI];setPaid(o,!o.paidOk,o.pay);});
 }
 $('#prev').onclick=()=>{const d=fromIso(S.day);d.setDate(d.getDate()-1);S.day=iso(d);S.orders=[];renderDay();loadDay();};
 $('#next').onclick=()=>{const d=fromIso(S.day);d.setDate(d.getDate()+1);S.day=iso(d);S.orders=[];renderDay();loadDay();};
@@ -576,6 +592,7 @@ function gameStats(ms){if(!ms)return null;const hd=new Set(ms.helperDays||[]);co
   const got={d1:dCnt>=1,d5:dCnt>=5,d12:dCnt>=12,dxl:(r17[D]||0)>=5,d10:dBase>=10000,d20:dBase>=20000,drec:dBase>0&&dBase>prevBest,
     m50:base>=50000,m100:base>=100000,m200:base>=200000,mcars:cars>=100,mbig:big>=10,mbal:bal>=100,mrep:rep>=10,mdays:Object.keys(cnt).length>=20};
   return{base,bonus:Math.floor(base/10000)*100,left:10000-base%10000,got,dBase,prevBest};}
+function badgesOpen(){try{return localStorage.getItem('montazh_bdg')==='1';}catch(_){return false;}}
 function renderHero(){const g=gameStats(S.ms),el=$('#hero');if(!g){el.innerHTML='';return;}
   const m=fromIso(S.day),isToday=S.day===iso(new Date());
   const row=(list,round)=>list.map((b,i)=>`<div class="bdg ${g.got[b.id]?'':'lock'}" title="${esc(b.d)}">${badgeSvg(b.c,i,round)}<span><b>${b.t}</b><small>${b.d}</small></span></div>`).join('');
@@ -585,8 +602,11 @@ function renderHero(){const g=gameStats(S.ms),el=$('#hero');if(!g){el.innerHTML=
     <small>До следующих +100 ₽ осталось ${rub(g.left)} работ. Каждые 10 000 ₽ по прайсу — сладкий бонус.${g.dBase?` ${isToday?'Сегодня':'В этот день'} — ${rub(g.dBase)}${g.prevBest?`, рекорд до этого — ${rub(g.prevBest)}`:''}.`:''}</small></div>
     <div class="bonus"><span class="mono">Бонусов за месяц</span><b class="tnum">${rub(g.bonus)}</b>
       ${S.spin&&S.day.slice(0,7)===iso(new Date()).slice(0,7)?`<button class="btn ${S.spin.left?'sig':'ghost'}" type="button" id="spinBtn" style="margin-top:8px">${S.spin.left?'Крутить колесо ('+S.spin.left+')':'Колесо фортуны'}</button>`:''}</div>
+    <details class="bdgs" ${badgesOpen()?'open':''}><summary><span class="mono">Значки</span> <b>${isToday?'сегодня':fmtDay(S.day)} ${nd} из ${BADGES_DAY.length}</b> · <b>месяц ${nm} из ${BADGES_MONTH.length}</b>
+      <span class="minis">${BADGES.filter(b=>g.got[b.id]).map((b,i)=>badgeSvg(b.c,BADGES_DAY.includes(b)?BADGES_DAY.indexOf(b):BADGES_MONTH.indexOf(b),BADGES_DAY.includes(b))).join('')}</span></summary>
     <div class="badges"><span class="mono bgl">${isToday?'Значки дня':'Значки дня '+fmtDay(S.day)} · ${nd} из ${BADGES_DAY.length}</span>${row(BADGES_DAY,true)}</div>
-    <div class="badges"><span class="mono bgl">Значки месяца · ${nm} из ${BADGES_MONTH.length}</span>${row(BADGES_MONTH,false)}</div></div>`;
+    <div class="badges"><span class="mono bgl">Значки месяца · ${nm} из ${BADGES_MONTH.length}</span>${row(BADGES_MONTH,false)}</div></details></div>`;
+  const dt=el.querySelector('details.bdgs');if(dt)dt.addEventListener('toggle',()=>{try{localStorage.setItem('montazh_bdg',dt.open?'1':'0');}catch(_){}});
   const sb=document.getElementById('spinBtn');if(sb)sb.onclick=openWheel;}
 let toastT=null;
 function toast(html){const t=$('#toast');t.innerHTML=html;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),4200);}
@@ -617,6 +637,51 @@ async function loadWeather(){let c=null;try{c=JSON.parse(localStorage.getItem('m
     wxRender();}catch(_){}}
 /* дни старше месяца — из сохранённой статистики */
 async function loadWeatherSaved(from,to){try{const j=await api('weather',null,{from,to});(j.days||[]).forEach(w=>{if(!S.wx[w.day])S.wx[w.day]={tmax:+w.tmax,tmin:+w.tmin,prec:+w.prec,code:w.code==null?null:+w.code};});}catch(_){}}
+/* ---------- сообщения клиентам: WhatsApp, Telegram, MAX, SMS ---------- */
+const SHOP_PHONE='+7 999 710-01-08';
+const SHOP_ADDR='Владимир, ул. Ноябрьская, 129 — шинный центр IVANOR';
+const WDF=['воскресенье','понедельник','вторник','среду','четверг','пятницу','субботу'];
+function dayWord(day){const t=new Date(),tm=new Date();tm.setDate(t.getDate()+1);const d=fromIso(day),wd=d.getDay();
+  const nice=`${d.getDate()} ${MONTHS_G[d.getMonth()]}`;
+  if(day===iso(t))return 'сегодня';if(day===iso(tm))return `завтра, ${nice}`;return `${wd===2?'во':'в'} ${WDF[wd]}, ${nice}`;}
+function hello(x){const n=who(x);return `Здравствуйте${n?', '+n.split(' ')[0]:''}!`;}
+function msgFor(b){const dw=dayWord(b.day);
+  if(b.kind==='live')return `${hello(b)} Ждём вас ${dw} на шиномонтаж в живую очередь — приезжайте в рабочее время, обслужим по очереди. Адрес: ${SHOP_ADDR}. Если планы изменились, ответьте на это сообщение. ${SHOP_PHONE}`;
+  if(b.kind==='leave')return `${hello(b)} Ждём ваш автомобиль ${dw}: оставляйте ключи, сделаем в течение дня и напишем, когда будет готово. Адрес: ${SHOP_ADDR}. ${SHOP_PHONE}`;
+  if(b.kind==='task')return `${hello(b)} Это шинный центр IVANOR. Ваш заказ${PRESET[b.preset]&&b.preset!=='other'?' «'+PRESET[b.preset]+'»':''} в работе — напишем, как только будет готово. ${SHOP_PHONE}`;
+  return `${hello(b)} Напоминаем: вы записаны на шиномонтаж ${dw} в ${b.tm}. Адрес: ${SHOP_ADDR}. Если планы изменились, ответьте на это сообщение. ${SHOP_PHONE}`;}
+function msgReady(o){const car=[carOf(o),o.plate].filter(Boolean).join(', ');const pay=needsPay(o)&&!o.paidOk?` К оплате: ${rub(clientDue(o))}.`:'';
+  return `${hello(o)} Ваш автомобиль${car?' ('+car+')':''} готов, можно забирать.${pay} Ждём вас: ${SHOP_ADDR}. Спасибо, что выбираете нас! ${SHOP_PHONE}`;}
+async function copyText(t){try{await navigator.clipboard.writeText(t);return true;}catch(_){
+  const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();let ok=false;try{ok=document.execCommand('copy');}catch(_){}ta.remove();return ok;}}
+function msgAgo(t){if(!t)return '';const d=new Date(t*1000);const same=iso(d)===iso(new Date());return `написали ${same?'сегодня':fmtDay(iso(d))} в ${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+function openMsg({phone,text,title,what,id,after}){const k=phoneKey(phone);
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${esc(title)}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <div class="msgbox">
+    <div><span class="mono lbl">Кому</span><b class="tnum" style="font-size:1.3rem">${k?fmtPhone(k):'нет телефона'}</b></div>
+    <label><span class="mono lbl">Текст — можно поправить</span><textarea class="inp" id="m-text" rows="6">${esc(text)}</textarea></label>
+    <div class="msgbtns">
+      <button type="button" class="btn mb-wa" data-ch="wa" ${k?'':'disabled'}>WhatsApp</button>
+      <button type="button" class="btn mb-tg" data-ch="tg" ${k?'':'disabled'}>Telegram</button>
+      <button type="button" class="btn mb-max" data-ch="max" ${k?'':'disabled'}>MAX</button>
+      <button type="button" class="btn ghost" data-ch="sms" ${k?'':'disabled'}>SMS</button>
+      <button type="button" class="btn ghost" data-ch="copy">Скопировать текст</button>
+    </div>
+    <p class="hint" id="m-hint" hidden></p>
+  </div>`;
+  $('#close').onclick=closeSheet;
+  const done=()=>{if(what&&id)api('mark',{what,id}).then(()=>{if(after)after();}).catch(()=>{});};
+  const hint=h=>{const e=$('#m-hint');e.innerHTML=h;e.hidden=false;};
+  document.querySelectorAll('[data-ch]').forEach(b=>b.onclick=async()=>{const t=$('#m-text').value.trim(),enc=encodeURIComponent(t),ch=b.dataset.ch;
+    const copied=await copyText(t);
+    if(ch==='wa'){window.open(`https://wa.me/${k}?text=${enc}`,'_blank','noopener');hint('Открываем WhatsApp — текст уже в чате, останется нажать «Отправить».');done();}
+    else if(ch==='tg'){window.open(`https://t.me/+${k}`,'_blank','noopener');hint(`Открываем Telegram. ${copied?'Текст скопирован':'Скопируйте текст выше'} — в чате долгое нажатие → «Вставить» → «Отправить». Если чат не открылся, у клиента скрыт номер в Telegram.`);done();}
+    else if(ch==='max'){hint(`${copied?'Текст скопирован.':'Скопируйте текст выше.'} В MAX: «Контакты» → «+» → «Найти по номеру» → <b class="tnum">${fmtPhone(k)}</b>, затем вставьте текст и отправьте. <button type="button" class="btn ghost" id="m-cpph" style="min-height:36px;margin-top:6px">Скопировать номер</button>`);
+      const cp=document.getElementById('m-cpph');if(cp)cp.onclick=async()=>{await copyText('+'+k);cp.textContent='Номер скопирован';};done();}
+    else if(ch==='sms'){location.href=`sms:+${k}?body=${enc}`;hint('Открываем SMS с готовым текстом.');done();}
+    else hint(copied?'Текст скопирован — вставьте его в любой мессенджер.':'Не получилось скопировать — выделите текст выше вручную.');});
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
+function remindBooking(b){openMsg({phone:b.phone,text:msgFor(b),title:'Напомнить клиенту',what:'booking',id:b.id,after:()=>{loadDay();loadQueue();if(S.view==='cal')loadCal();}});}
 /* ---------- календарь записи ---------- */
 S.cal={mode:'day',anchor:iso(new Date()),items:[]};
 function monday(d){const x=new Date(d);const wd=(x.getDay()+6)%7;x.setDate(x.getDate()-wd);return x;}
@@ -666,9 +731,10 @@ function renderQueue(){const el=$('#queue');if(!el)return;const today=iso(new Da
     return `<div class="bk"><span class="tm" style="font-size:1.3rem">${KIND_ICON[b.kind]||''}</span>
       <span class="who"><b>${esc(who(b)||carOf(b)||b.plate||(b.note||'Задача').slice(0,50))}${late?' <span class="badge ds">просрочено</span>':''}</b>
       <small>${esc([KIND[b.kind],when,b.phone,carOf(b),b.plate,b.car?CAR[b.car]+(b.car!=='com'&&b.d?' R'+b.d:''):'',PRESET[b.preset],b.est?'~'+rub(b.est):'',b.name?b.note:''].filter(Boolean).join(' · '))}</small></span>
-      <span class="act"><button class="btn sig" type="button" data-qgo="${i}">${b.kind==='live'?'Подъехал':'Сделано — оформить'}</button><button class="btn ghost" type="button" data-qed="${i}">Изменить</button></span></div>`;}).join('');
+      <span class="act"><button class="btn sig" type="button" data-qgo="${i}">${b.kind==='live'?'Подъехал':'Сделано — оформить'}</button>${phoneKey(b.phone)?`<button class="btn ghost" type="button" data-qmsg="${i}">${b.msgAt?'Ещё раз':'Написать'}</button>`:''}<button class="btn ghost" type="button" data-qed="${i}">Изменить</button></span></div>`;}).join('');
   el.querySelectorAll('[data-qgo]').forEach(x=>x.onclick=()=>arrive(list[+x.dataset.qgo]));
-  el.querySelectorAll('[data-qed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.qed]));}
+  el.querySelectorAll('[data-qed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.qed]));
+  el.querySelectorAll('[data-qmsg]').forEach(x=>x.onclick=()=>remindBooking(list[+x.dataset.qmsg]));}
 function calDefDay(){const t=iso(new Date());return S.cal.mode==='day'?S.cal.anchor:(S.cal.anchor>t?S.cal.anchor:t);}
 $('#qAddLeave').onclick=()=>openBk(null,{kind:'leave',day:calDefDay()});
 $('#qAddLive').onclick=()=>openBk(null,{kind:'live',day:calDefDay()});
@@ -770,15 +836,16 @@ function bkItem(b,key,act){const nm=who(b)||b.plate||(b.note?b.note.slice(0,40):
   const st=b.status==='done'?' <span class="badge cp">сделано</span>':b.status==='noshow'?' <span class="badge ds">не приехал</span>':'';
   const left=b.tm?b.tm:`<span style="font-size:1.3rem">${KIND_ICON[b.kind]||''}</span>`;
   return `<div class="bk ${b.status}"><span class="tm">${left}</span>
-    <span class="who"><b>${esc(nm)}${st}</b><small>${esc(bkLine(b))}</small></span>
-    <span class="act">${b.status==='planned'?`<button class="btn sig" type="button" data-go="${key}">${act}</button>`:''}<button class="btn ghost" type="button" data-ed="${key}">Изменить</button></span></div>`;}
+    <span class="who"><b>${esc(nm)}${st}</b><small>${esc(bkLine(b))}</small>${b.msgAt?`<small class="sent">✓ ${msgAgo(b.msgAt)}</small>`:''}</span>
+    <span class="act">${b.status==='planned'?`<button class="btn sig" type="button" data-go="${key}">${act}</button>`:''}${b.status==='planned'&&phoneKey(b.phone)?`<button class="btn ghost" type="button" data-msg="${key}">${b.msgAt?'Ещё раз':'Напомнить'}</button>`:''}<button class="btn ghost" type="button" data-ed="${key}">Изменить</button></span></div>`;}
 function bkSection(el,title,list,act,hint){if(!el)return;
   if(!list.length){el.innerHTML='';return;}
   const pl=list.filter(b=>b.status==='planned');
   el.innerHTML=`<div class="hd2"><h2>${title}</h2><span class="mono" style="color:var(--ink-3)">${pl.length?pl.length+' ждут'+(pl.some(b=>b.est)?' · ~'+rub(pl.reduce((a,b)=>a+(b.est||0),0)):''):'всё сделано'}</span></div>
     ${hint?`<p class="pay" style="margin:-4px 0 8px">${hint}</p>`:''}<div class="bks">${list.map((b,i)=>bkItem(b,i,act)).join('')}</div>`;
   el.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>arrive(list[+x.dataset.go]));
-  el.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.ed]));}
+  el.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>openBk(list[+x.dataset.ed]));
+  el.querySelectorAll('[data-msg]').forEach(x=>x.onclick=()=>remindBooking(list[+x.dataset.msg]));}
 function renderBookings(){const el=$('#bks');if(!el)return;
   const byTm=(a,b)=>(a.tm||'')<(b.tm||'')?-1:1;
   const timed=S.bookings.filter(b=>b.tm).sort(byTm);
@@ -791,7 +858,8 @@ function renderBookings(){const el=$('#bks');if(!el)return;
   if(!timed.length){el.innerHTML=`<div class="empty" style="padding:18px"><b style="font-size:1.1rem">Записи на время нет</b>«+ Запись» — на время, в живую очередь, оставить машину на день или в свободное время.</div>`;}
   else{el.innerHTML=timed.map((b,i)=>bkItem(b,i,'Приехал')).join('');
     el.querySelectorAll('[data-go]').forEach(x=>x.onclick=()=>arrive(timed[+x.dataset.go]));
-    el.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>openBk(timed[+x.dataset.ed]));}
+    el.querySelectorAll('[data-ed]').forEach(x=>x.onclick=()=>openBk(timed[+x.dataset.ed]));
+    el.querySelectorAll('[data-msg]').forEach(x=>x.onclick=()=>remindBooking(timed[+x.dataset.msg]));}
   bkSection($('#secLeave'),'🔑 Оставили на день',leave,'Сделано — оформить','Ключи у нас — делаем в свободное окно этого дня.');
   bkSection($('#secLive'),'⏳ Живая очередь',live,'Подъехал','Приедут в этот день без времени и подождут окошко.');
   bkSection($('#secTask'),'⚙ В свободное время',tasks,'Сделано — оформить','Сборка комплектов и другая работа без клиента на месте.');}
@@ -824,6 +892,7 @@ function renderBk(){const busy=new Set((B.day===S.day?S.bookings:(B._others||[])
     <label><span class="mono lbl">Комментарий</span><input class="inp" id="b-note" type="text" value="${esc(B.note)}" placeholder="Например: свои колёса в сборе, секретки"></label>
     <p class="err" id="b-err" hidden></p>
     <button class="btn sig" type="button" id="b-save">${B.id?'Сохранить':'Записать'}</button>
+    ${B.id&&phoneKey(B.phone)?`<button class="btn ghost" type="button" id="b-msg">${B.msgAt?'Напомнить ещё раз':'Напомнить клиенту'}</button>${B.msgAt?`<small class="sent">✓ ${msgAgo(B.msgAt)}</small>`:''}`:''}
     ${B.id&&B.status==='planned'?`<button class="btn" type="button" id="b-go">Приехал — оформить машину</button><button class="btn ghost" type="button" id="b-no">Не приехал</button>`:''}
     ${B.id?`<div id="bDelBox"><button class="btn danger" type="button" id="b-del" style="width:100%">Удалить запись</button></div>`:''}
   </aside></div>`;
@@ -839,10 +908,12 @@ function bindBk(){$('#close').onclick=closeSheet;
   document.querySelectorAll('[data-d]').forEach(x=>x.onclick=()=>{B.d=+x.dataset.d;rerBk();});
   document.querySelectorAll('[data-pr]').forEach(x=>x.onclick=()=>{B.preset=x.dataset.pr;rerBk();});
   const est=document.getElementById('b-est');if(est)est.oninput=()=>{B.est=+est.value||0;document.querySelector('.side .total b').textContent=rub(B.est);};
-  hookHint('b-phone','b-plate','b-hint','b-name','b-model');
+  if(!B.id)hookHint('b-phone','b-plate','b-hint','b-name','b-model',last=>{keepBk();B.car=last.car||'car';B.d=last.d||16;const ks=(last.lines||[]).map(l=>l.k);
+    B.preset=ks.includes('cx')?'full':(ks.includes('mount')&&ks.includes('bal'))?'mb':(ks.length&&ks.every(k=>k==='wheel'))?'swap':'other';if(B.preset==='other')B.est=last.list||0;rerBk();toast('<b>Как в прошлый раз</b>'+esc((CAR[B.car]||'')+(B.car!=='com'?' R'+B.d:'')+' · '+(PRESET[B.preset]||'')));});
   $('#b-save').onclick=()=>saveBk(B.status||'planned');
   const go=document.getElementById('b-go');if(go)go.onclick=()=>{keepBk();const b={...B};closeSheet();setTimeout(()=>arrive(b),400);};
   const no=document.getElementById('b-no');if(no)no.onclick=()=>saveBk('noshow');
+  const bm=document.getElementById('b-msg');if(bm)bm.onclick=()=>{keepBk();remindBooking({...B});};
   const del=document.getElementById('b-del');if(del)del.onclick=()=>{$('#bDelBox').innerHTML=`<div class="confirm">Удалить запись? <button class="btn danger" type="button" id="b-del2">Да</button><button class="btn ghost" type="button" id="b-del0">Нет</button></div>`;
     $('#b-del0').onclick=rerBk;$('#b-del2').onclick=async()=>{try{await api('book_del',{id:B.id});closeSheet();loadDay();loadWeek();loadQueue();if(S.view==='cal')loadCal();}catch(e){bkErr(e.message);}};};}
 function bkErr(t){const e=$('#b-err');e.textContent=t;e.hidden=false;}
@@ -855,7 +926,7 @@ $('#addBk').onclick=()=>openBk(null);
 
 /* подсказка «уже был у нас» */
 let hintT=null;
-function hookHint(phId,plId,outId,nameId,modelId){const run=()=>{clearTimeout(hintT);hintT=setTimeout(async()=>{const ph=(document.getElementById(phId)||{}).value||'',pl=(document.getElementById(plId)||{}).value||'';
+function hookHint(phId,plId,outId,nameId,modelId,onRepeat){const run=()=>{clearTimeout(hintT);hintT=setTimeout(async()=>{const ph=(document.getElementById(phId)||{}).value||'',pl=(document.getElementById(plId)||{}).value||'';
     const k=phoneKey(ph);const q=k?k:(pl.trim().length>=4?pl.trim():'');const out=document.getElementById(outId);if(!out)return;if(!q){out.innerHTML='';return;}
     try{const j=await api('clients',null,{q});const cl=(j.clients||{})[k]||null;const vs=(j.orders||[]).filter(v=>!k||phoneKey(v.phone)===k);
       const nm=document.getElementById(nameId),md=modelId?document.getElementById(modelId):null;
@@ -863,7 +934,9 @@ function hookHint(phId,plId,outId,nameId,modelId){const run=()=>{clearTimeout(hi
       if(nm&&!nm.value&&name)nm.value=name;if(md&&!md.value&&model)md.value=model;
       if(!vs.length&&!cl){out.innerHTML=k?'<div class="hint">Новый клиент.</div>':'';return;}
       const last=vs[0];
-      out.innerHTML=`<div class="hint">${name?'<b>'+esc(name)+'</b>'+(model?' · '+esc(model):'')+'. ':''}${vs.length?`Был ${vs.length} ${plural(vs.length,'раз','раза','раз')}. Последний — ${fmtDay(last.day)}: ${esc(last.works)}${last.d?' (R'+last.d+')':''}.`:'Визитов ещё не было.'}</div>`;}catch(_){}} ,450);};
+      out.innerHTML=`<div class="hint">${name?'<b>'+esc(name)+'</b>'+(model?' · '+esc(model):'')+'. ':''}${vs.length?`Был ${vs.length} ${plural(vs.length,'раз','раза','раз')}. Последний — ${fmtDay(last.day)}: ${esc(last.works)}${last.d?' (R'+last.d+')':''}.`:'Визитов ещё не было.'}
+        ${onRepeat&&last&&last.lines&&last.lines.length?`<button type="button" class="btn ghost" id="${outId}-rep" style="margin-top:8px;min-height:40px;width:100%">Как в прошлый раз: ${esc(CAR[last.car]||'')}${last.car!=='com'&&last.d?' R'+last.d:''}, ${esc(last.works)}</button>`:''}</div>`;
+      const rb=document.getElementById(outId+'-rep');if(rb)rb.onclick=()=>onRepeat(last);}catch(_){}} ,450);};
   [phId,plId].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',run);});run();}
 function fmtDay(s){return s.slice(8)+'.'+s.slice(5,7)+'.'+s.slice(2,4);}
 
@@ -961,9 +1034,11 @@ function renderSheet(){
     <label><span class="mono lbl">Комментарий</span><input class="inp" id="o-note" type="text" value="${esc(O.note)}"></label>
     <p class="err" id="o-err" hidden></p>
     <button class="btn sig" type="button" id="o-save" ${c.list>0&&S.canWrite?'':'disabled'}>${O.id?'Сохранить':'Записать машину'}</button>
+    ${O.id&&phoneKey(O.phone)?`<button class="btn ghost" type="button" id="o-ready">${O.msgAt?'Написать ещё раз: машина готова':'Написать: машина готова'}</button>${O.msgAt?`<small class="sent">✓ ${msgAgo(O.msgAt)}</small>`:''}`:''}
     ${O.id?`<button class="btn" type="button" id="o-check">Штрихкоды для кассы</button>`:''}
     ${O.id?`<div id="delBox"><button class="btn danger" type="button" id="o-del" style="width:100%">Удалить запись</button></div>`:''}
-  </aside></div>`;
+  </aside></div>
+  <div class="savebar"><span><span class="mono">По прайсу</span><b class="tnum">${rub(c.list)}</b></span><button class="btn sig" type="button" id="o-save2" ${c.list>0&&S.canWrite?'':'disabled'}>${O.id?'Сохранить':'Записать машину'}</button></div>`;
   bindSheet();
 }
 function keepInputs(){const v=id=>{const e=document.getElementById(id);return e?e.value:null;};
@@ -988,25 +1063,37 @@ function bindSheet(){
     rer();});
   const pd=document.getElementById('o-paid');if(pd)pd.oninput=()=>{O.paid=+pd.value||0;const c=calc(O);document.querySelector('.split b:last-child').textContent=rub(c.paid);};
   $('#o-save').onclick=save;
+  const s2=document.getElementById('o-save2');if(s2)s2.onclick=save;
   const nh=document.getElementById('o-nohelp');if(nh)nh.onclick=()=>{O.noHelper=!O.noHelper;rer();};
   const pb=document.getElementById('o-paid-btn');if(pb)pb.onclick=async()=>{keepInputs();const v=!O.paidOk;pb.disabled=true;
     try{await api('paid',{id:O.id,paid:v,pay:O.pay});O.paidOk=v;if(v){closeSheet();toast(`<b>Оплачено</b>${esc(O.plate||O.name||'Машину')} можно отпускать`);}else rer();loadDay();}catch(e){pb.disabled=false;showErr('Не отметилось: '+e.message);}};
+  const rd=document.getElementById('o-ready');if(rd)rd.onclick=()=>{keepInputs();openMsg({phone:O.phone,text:msgReady(O),title:'Сообщить клиенту',what:'order',id:O.id,after:loadDay});};
   const ck=document.getElementById('o-check');if(ck)ck.onclick=()=>{keepInputs();openCheck(O);};
-  if(!O.id)hookHint('o-phone','o-plate','o-hint','o-name','o-model');
+  if(!O.id)hookHint('o-phone','o-plate','o-hint','o-name','o-model',repeatLast);
   const del=document.getElementById('o-del');
   if(del)del.onclick=()=>{$('#delBox').innerHTML=`<div class="confirm">Удалить эту машину из смены? <button class="btn danger" type="button" id="o-del2">Да, удалить</button><button class="btn ghost" type="button" id="o-del0">Нет</button></div>`;
     $('#o-del0').onclick=rer;$('#o-del2').onclick=async()=>{try{await api('del',{id:O.id});closeSheet();loadDay();loadMonth();}catch(e){showErr('Не удалилось: '+e.message);}};};
 }
+/* «как в прошлый раз»: те же работы по сегодняшнему прайсу */
+function repeatLast(last){keepInputs();O.car=last.car||'car';O.d=last.d||16;if(last.mods&&typeof last.mods==='object')O.mods=Object.assign({lp:false,rf:false,season:null},last.mods,{season:null});
+  const b=base(O.car,O.d)||{};const all=[...PR.extras,...PR.disks];
+  O.lines=(last.lines||[]).map(l=>{let p0=l.p0;
+    if(l.k==='wheel')p0=b.wheel;else if(l.k==='mount')p0=b.mount;else if(l.k==='bal')p0=b.bal;
+    else if(l.k==='cx')p0=O.car==='com'?(l.n6?(/с камерой/.test(l.n)?b.cx['6tube']:b.cx['6']):b.cx.all):b.cx;
+    else{const f=all.find(x=>x.n===l.n);if(f)p0=f.p;}
+    return{k:l.k,n:l.n,q:l.q,p0,...(l.n6?{n6:true}:{})};}).filter(l=>l.p0!=null&&l.q>0);
+  rer();toast('<b>Работы как в прошлый раз</b>Проверьте и запишите машину');}
 function showErr(t){const e=$('#o-err');e.textContent=t;e.hidden=false;}
 async function save(){keepInputs();O.phone=cleanPhone(O.phone);if(O.phone&&!phoneKey(O.phone)){showErr('Телефон неполный — нужно 10 цифр после +7.');return;}
   const c=calc(O);if(O.mode==='disc'&&(O.paid==null||O.paid<0)){showErr('Впишите, сколько взяли с клиента.');return;}
   const doc={day:O.day||S.day,t:O.t||Date.now(),car:O.car,d:O.car==='com'?null:O.d,mods:O.mods,
     lines:c.lines.map(l=>({k:l.k,n:l.n,q:l.q,p0:l.p0,p:Math.round(l.p),h:Math.round(l.h),...(l.n6?{n6:true}:{})})),
     list:c.list,h:c.h,mode:O.mode,paid:c.paid,coupon:c.coupon,extra:c.extra,pay:O.mode==='coupon'&&!c.extra?null:O.pay,plate:(O.plate||'').trim().toUpperCase(),phone:(O.phone||'').trim(),note:(O.note||'').trim(),name:(O.name||'').trim(),model:(O.model||'').trim(),noHelper:!!O.noHelper,...(O.bookingId?{bookingId:O.bookingId}:{})};
-  const btn=$('#o-save');btn.disabled=true;btn.textContent='Сохраняем…';
+  if(S._saving)return;S._saving=true;
+  const btn=$('#o-save');btn.disabled=true;btn.textContent='Сохраняем…';{const b2=document.getElementById('o-save2');if(b2){b2.disabled=true;b2.textContent='Сохраняем…';}}
   if(O.id)doc.id=O.id;
-  try{await api('save',doc);closeSheet();loadDay();afterSave();if(doc.bookingId){loadWeek();loadQueue();}}
-  catch(e){btn.disabled=false;btn.textContent='Сохранить';showErr('Не сохранилось: '+e.message);}}
+  try{await api('save',doc);S._saving=false;closeSheet();loadDay();afterSave();if(doc.bookingId){loadWeek();loadQueue();}}
+  catch(e){S._saving=false;btn.disabled=false;btn.textContent='Сохранить';{const b2=document.getElementById('o-save2');if(b2){b2.disabled=false;b2.textContent='Сохранить';}}showErr('Не сохранилось: '+e.message);}}
 function openOrder(o,pre){O=o?JSON.parse(JSON.stringify(o)):Object.assign(blank(),pre||{});if(o&&o.mode==='coupon')O.extraSet=true;if(!O.name&&O.cname)O.name=O.cname;if(!O.model&&O.cmodel)O.model=O.cmodel;if(!O.mods)O.mods={lp:false,rf:false,season:null};
   renderSheet();const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;
   requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}

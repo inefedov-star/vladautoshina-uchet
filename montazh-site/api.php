@@ -307,6 +307,16 @@ try {
     needRole($role, ['owner', 'master', 'cashier']);
     out(['items' => withClients($cfg, bookingRows($cfg, "status = 'planned' AND tm = ''", []))]);
 
+  case 'mark':
+    // отметка «клиенту написали» — у записи или у машины
+    post(); needRole($role, ['owner', 'master', 'cashier']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $tbl = ($b['what'] ?? '') === 'order' ? 'orders' : 'bookings';
+    $st = db($cfg)->prepare("SELECT body FROM $tbl WHERE id = ?"); $st->execute([$id]); $j = $st->fetchColumn();
+    if ($j === false) fail('Запись не найдена', 404);
+    $o = json_decode($j, true); $o['msgAt'] = time();
+    db($cfg)->prepare("UPDATE $tbl SET body = ? WHERE id = ?")->execute([json_encode($o, JSON_UNESCAPED_UNICODE), $id]);
+    out(['ok' => true]);
+
   case 'week':
     // ближайшие дни: сколько записей и на какую сумму
     needRole($role, ['owner', 'master', 'cashier']);
@@ -343,7 +353,8 @@ try {
     foreach ($o->fetchAll() as $r) {
       $b = json_decode($r['body'], true); if (!$match($b)) continue;
       $orders[] = ['id' => (int)$r['id'], 'day' => $r['day'], 'name' => $b['name'] ?? '', 'phone' => $b['phone'] ?? '', 'plate' => $b['plate'] ?? '', 'model' => $b['model'] ?? '', 'car' => $b['car'] ?? '', 'd' => $b['d'] ?? null,
-        'works' => implode(', ', array_map(fn($l) => $l['n'] . (($l['q'] ?? 1) > 1 ? ' ×' . $l['q'] : ''), $b['lines'] ?? [])), 'list' => (int)($b['list'] ?? 0), 'paid' => $role === 'owner' ? (int)($b['paid'] ?? 0) : null, 'mode' => $b['mode'] ?? 'full'];
+        'works' => implode(', ', array_map(fn($l) => $l['n'] . (($l['q'] ?? 1) > 1 ? ' ×' . $l['q'] : ''), $b['lines'] ?? [])), 'list' => (int)($b['list'] ?? 0), 'paid' => $role === 'owner' ? (int)($b['paid'] ?? 0) : null, 'mode' => $b['mode'] ?? 'full',
+        'lines' => array_map(fn($l) => ['k' => $l['k'] ?? 'x', 'n' => $l['n'] ?? '', 'q' => (int)($l['q'] ?? 1), 'p0' => (int)($l['p0'] ?? 0), 'n6' => !empty($l['n6'])], $b['lines'] ?? []), 'mods' => $b['mods'] ?? new stdClass()];
     }
     $bk = array_values(array_filter(bookingRows($cfg, implode(' OR ', $conds), $cargs), $match));
     // справочник по всем найденным телефонам
