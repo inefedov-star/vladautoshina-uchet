@@ -816,7 +816,7 @@ function renderBk(){const busy=new Set((B.day===S.day?S.bookings:(B._others||[])
   </div><aside class="side">
     <div class="total"><span class="mono">Примерно</span><b class="tnum">${rub(B.est||0)}</b></div>
     ${B.preset==='other'?`<label><span class="mono lbl">Сумма по прикидке, ₽</span><input class="inp tnum" id="b-est" type="number" inputmode="numeric" min="0" value="${B.est||''}"></label>`:''}
-    <label><span class="mono lbl">Телефон${B.kind==='task'?'':' — обязательно'}</span><input class="inp" id="b-phone" type="tel" inputmode="tel" value="${esc(B.phone)}" placeholder="+7 900 000-00-00" autocomplete="off"></label>
+    <label><span class="mono lbl">Телефон</span><input class="inp" id="b-phone" type="tel" inputmode="tel" value="${esc(B.phone)}" placeholder="+7 900 000-00-00" autocomplete="off"></label>
     <div id="b-hint"></div>
     <label><span class="mono lbl">Имя</span><input class="inp" id="b-name" type="text" value="${esc(who(B))}" autocomplete="off" placeholder="Как вам удобнее его называть"></label>
     <label><span class="mono lbl">Марка, модель</span><input class="inp" id="b-model" type="text" value="${esc(carOf(B))}" autocomplete="off" placeholder="Например: Haval Jolion"></label>
@@ -846,7 +846,7 @@ function bindBk(){$('#close').onclick=closeSheet;
   const del=document.getElementById('b-del');if(del)del.onclick=()=>{$('#bDelBox').innerHTML=`<div class="confirm">Удалить запись? <button class="btn danger" type="button" id="b-del2">Да</button><button class="btn ghost" type="button" id="b-del0">Нет</button></div>`;
     $('#b-del0').onclick=rerBk;$('#b-del2').onclick=async()=>{try{await api('book_del',{id:B.id});closeSheet();loadDay();loadWeek();loadQueue();if(S.view==='cal')loadCal();}catch(e){bkErr(e.message);}};};}
 function bkErr(t){const e=$('#b-err');e.textContent=t;e.hidden=false;}
-async function saveBk(status){keepBk();const kind=B.kind||'time';if(kind==='time'&&!B.tm)return bkErr('Выберите время.');B.phone=cleanPhone(B.phone);if(B.phone&&!phoneKey(B.phone))return bkErr('Телефон неполный — нужно 10 цифр после +7.');if(kind!=='task'&&!B.phone)return bkErr('Впишите телефон клиента — по нему мы его узнаём.');if(kind==='task'&&!B.phone&&!B.note)return bkErr('Впишите, что сделать, в комментарии.');if(kind==='task'&&B.nodue)B.day=iso(new Date());
+async function saveBk(status){keepBk();const kind=B.kind||'time';if(kind==='time'&&!B.tm)return bkErr('Выберите время.');B.phone=cleanPhone(B.phone);if(B.phone&&!phoneKey(B.phone))return bkErr('Телефон неполный — нужно 10 цифр после +7.');if(kind==='task'&&B.nodue)B.day=iso(new Date());
   try{await api('book_save',{id:B.id,day:B.day,tm:kind==='time'?B.tm:'',kind,nodue:!!B.nodue,status,name:B.name,phone:B.phone,plate:B.plate,model:B.model||'',note:B.note,car:B.car,d:B.car==='com'?null:B.d,preset:B.preset,est:B.est});
     closeSheet();loadQueue();if(S.view==='cal')loadCal();if(B.day!==S.day&&!(kind==='task'&&B.nodue))toast(`<b>Записано на ${fmtDay(B.day)}</b>${esc(KIND[kind])}`);loadDay();loadWeek();}catch(e){bkErr('Не сохранилось: '+e.message);}}
 function openBk(b,pre){B=b?JSON.parse(JSON.stringify(b)):Object.assign({day:S.day,tm:'',kind:'time',nodue:false,car:'car',d:16,preset:'swap',est:0,name:'',phone:'',plate:'',model:'',note:'',status:'planned'},pre||{});if(!B.name&&B.cname)B.name=B.cname;if(!B.model&&B.cmodel)B.model=B.cmodel;if(!B.kind)B.kind=B.tm?'time':'leave';
