@@ -2,7 +2,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 /* Планшет в зале: шапка с подбором размера, ниже сетка моделей; карточка модели открывается листом снизу.
    Токены — дизайн-система IVANOR (бумага, тушь, сигнальный оранжевый, холодный синий). */
@@ -165,6 +165,46 @@ tr.hit td{background:var(--signal-tint)}
   .bar .hide-sm{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ===== дизайн v2 (02.11.2026): светлый, плоский, в цветах IVANOR — как раздел «Магазин» ===== */
+:root,:root[data-theme="dark"]{--bg:#F4F5F7;--paper:#FFFFFF;--paper-2:#F1F2F4;--paper-3:#F7F8FA;--ink:#1B1D21;--ink-2:#4A4F57;--ink-3:#6B7079;
+  --rule:#E1E4E8;--rule-soft:#EEF0F2;--signal:#FF6600;--signal-deep:#B34700;--signal-tint:#FFF1E8;--cold:#2563C9;--cold-tint:#E5EEFC;
+  --moss:#1E7A44;--moss-tint:#E8F5EC;--on-ink:#FFFFFF;--scrim:rgba(20,22,26,.45);
+  --f-display:'Montserrat','Golos Text',system-ui,sans-serif;--f-text:'Golos Text',system-ui,-apple-system,'Segoe UI',sans-serif;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#F4F5F7;--paper:#FFFFFF;--paper-2:#F1F2F4;--paper-3:#F7F8FA;--ink:#1B1D21;--ink-2:#4A4F57;--ink-3:#6B7079;
+  --rule:#E1E4E8;--rule-soft:#EEF0F2;--signal:#FF6600;--signal-deep:#B34700;--signal-tint:#FFF1E8;--cold:#2563C9;--cold-tint:#E5EEFC;--moss:#1E7A44;--moss-tint:#E8F5EC;--on-ink:#FFFFFF;--scrim:rgba(20,22,26,.45);color-scheme:light}}
+body{background:var(--bg)}
+.mono{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.78rem}
+.top{background:var(--paper);border-bottom:1px solid var(--rule)}
+.logo b,.res-hd h1,.empty b,.tab{text-transform:none;letter-spacing:-.01em}
+.logo b,.res-hd h1,.model,.price b,.size-now b,.empty b{font-weight:700}
+.logo svg rect{fill:var(--signal)}.logo svg circle:first-of-type{stroke:#fff}.logo svg circle:last-of-type{fill:var(--signal)}
+.logo i{font-family:var(--f-text);letter-spacing:.04em}
+.tool{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.tool[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+.tab{font-family:var(--f-text);font-weight:600;font-size:1.02rem}
+.tab sup{font-family:var(--f-text);letter-spacing:0}
+.pickbox{border:0;border-radius:16px;background:var(--paper)}
+.chip{border:0;border-radius:9px;background:var(--paper-2)}
+.chip[aria-pressed="true"],.chip.w[aria-pressed="true"],.chip.s[aria-pressed="true"]{background:var(--signal);color:#fff}
+.search{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.card{border:0;border-radius:18px;background:var(--paper);box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.card:hover{box-shadow:0 0 0 1px var(--rule),0 6px 16px rgba(16,24,40,.08)}
+.ph{background:#fff}
+.tag{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.72rem;font-weight:600;border:0;border-radius:7px;padding:.3em .6em}
+.tag.all{background:var(--paper-2)}
+.sz{font-family:var(--f-text);border:0;background:var(--paper-2);border-radius:6px}
+.model{font-size:1.3rem;line-height:1.1}
+.price{border-top:1px solid var(--rule-soft)}.price b{font-size:1.55rem}
+.sheet{background:var(--bg);border-top:0;border-radius:22px 22px 0 0}
+.sh-top .ph{border:0;border-radius:16px}
+.close{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.facts{gap:8px;background:transparent;border:0}.facts div{background:var(--paper);border-radius:12px}
+th{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.76rem;font-weight:600;border-bottom:1px solid var(--rule)}
+td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
+.tw{background:var(--paper);border-radius:14px;padding:0 10px}
+.spec{font-family:var(--f-text)}
+.empty b{font-size:1.3rem}
 </style>
 
 <header class="top">

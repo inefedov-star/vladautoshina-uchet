@@ -8,7 +8,7 @@
 <title>Шиномонтаж и магазин IVANOR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 /* Пульт смены: шапка с датой и помощником, ниже машины за день; машина открывается листом-меню работ.
    Токены — дизайн-система IVANOR, как у витрины. */
@@ -346,6 +346,161 @@ details.bdgs summary .mono{color:var(--ink-3)}
 .slots .chip.busy{border-style:dashed;color:var(--ink-3)}
 @media (max-width:520px){.bk{grid-template-columns:auto minmax(0,1fr)}.bk .act{grid-column:1/-1;justify-content:flex-start}.hero{grid-template-columns:1fr}.bonus{text-align:left}.visits div{grid-template-columns:76px minmax(0,1fr)}.visits div span:last-child{grid-column:2}}
 
+
+/* ================= ДИЗАЙН v2 (02.11.2026): плоский, две темы =================
+   Магазин и витрина — светлая (белые карточки, оранжевый IVANOR), шиномонтаж — тёмная («тёмный цех»).
+   Тема ставится классом на body: t-light / t-dark (по разделу или вручную на устройстве). */
+body{--f-display:'Montserrat','Golos Text',system-ui,sans-serif;--f-text:'Golos Text',system-ui,-apple-system,'Segoe UI',sans-serif;--r:14px;--r-s:10px}
+body.t-light{--bg:#F4F5F7;--paper:#FFFFFF;--paper-2:#F1F2F4;--paper-3:#E6E8EC;--ink:#1B1D21;--ink-2:#4A4F57;--ink-3:#6B7079;
+  --rule:#E1E4E8;--rule-soft:#EEF0F2;--signal:#FF6600;--signal-deep:#B34700;--signal-tint:#FFF1E8;--cold:#2563C9;--cold-tint:#E5EEFC;
+  --moss:#1E7A44;--moss-tint:#E8F5EC;--amber:#8A4B00;--amber-tint:#FFF4E5;--on-ink:#FFFFFF;--scrim:rgba(20,22,26,.45);--shadow:0 1px 2px rgba(16,24,40,.06);color-scheme:light}
+body.t-dark{--bg:#121418;--paper:#1B1E24;--paper-2:#23262D;--paper-3:#2C3038;--ink:#EDEFF2;--ink-2:#C8CCD3;--ink-3:#9BA1AB;
+  --rule:#2E323A;--rule-soft:#24272E;--signal:#FF7A1A;--signal-deep:#FF9A4D;--signal-tint:rgba(255,122,26,.14);--cold:#6FA8FF;--cold-tint:rgba(111,168,255,.14);
+  --moss:#7EE2A0;--moss-tint:rgba(126,226,160,.12);--amber:#FFC266;--amber-tint:rgba(255,194,102,.13);--on-ink:#121418;--scrim:rgba(0,0,0,.6);--shadow:none;color-scheme:dark}
+body{background:var(--bg)}
+body::before{background:var(--paper)}
+/* заголовки — без капса, Montserrat */
+.dayhd h1,.calbar h1,.sh-hd h2,h2.sec,.hd2 h2,.empty b,.login-box h1,.logo b,.release{text-transform:none;letter-spacing:-.01em;font-weight:700}
+.dayhd h1{font-size:clamp(1.4rem,3vw,1.9rem)}.calbar h1{font-size:clamp(1.3rem,2.6vw,1.7rem)}.sh-hd h2{font-size:1.4rem}.hd2 h2{font-size:1.05rem;font-family:var(--f-text);font-weight:600}
+h2.sec{font-size:1.25rem}
+.mono{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.78rem;font-weight:500}
+/* шапка */
+.top{background:var(--paper);border-bottom:1px solid var(--rule)}
+.logo b{font-size:1.1rem}.logo i{font-family:var(--f-text);letter-spacing:.04em;font-size:.68rem}
+.logo svg rect{fill:var(--signal);rx:9}
+.logo svg circle:first-of-type{stroke:#fff}.logo svg circle:last-of-type{fill:var(--signal)}
+.areas{border:0;background:var(--paper-2);border-radius:12px;padding:3px;gap:2px}
+.areas button{border-radius:9px;min-height:38px;color:var(--ink-3)}
+.areas button[aria-pressed="true"]{background:var(--paper);color:var(--ink);box-shadow:var(--shadow)}
+body.t-dark .areas button[aria-pressed="true"]{background:var(--paper-3)}
+.tab{font-family:var(--f-text);text-transform:none;font-weight:600;font-size:1rem;color:var(--ink-3);border-bottom-width:3px;padding:12px 14px 10px;display:inline-flex;align-items:center;gap:7px}
+.tab .ti{width:20px;height:20px;flex:none}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--signal)}
+/* кнопки, поля, чипы */
+.btn{border-radius:12px;border:1px solid var(--ink);min-height:46px;font-weight:600}
+.btn.ghost{background:var(--paper);border-color:var(--rule);color:var(--ink)}
+.btn.ghost:hover{border-color:var(--ink-3)}
+.btn.sig{background:var(--signal);border-color:var(--signal);color:#fff}
+body.t-dark .btn.sig{color:#121418}
+.btn.danger{background:transparent;border-color:var(--signal-deep);color:var(--signal-deep)}
+.chip{border-radius:var(--r-s);border:1px solid var(--rule);background:var(--paper);min-height:42px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.arrow{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.switch{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.switch[aria-checked="true"]{border-color:var(--signal)}
+.switch[aria-checked="true"] .knob{background:var(--signal-tint);border-color:var(--signal)}
+.switch[aria-checked="true"] .knob::after{background:var(--signal)}
+.inp{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+body.t-dark .inp{background:var(--paper-2)}
+.close{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.wx{border-radius:20px;border:0;background:var(--paper)}
+.out{color:var(--ink-3)}
+/* плитки итогов: отдельные карточки */
+.tiles{gap:10px;background:transparent;border:0}
+.tile{background:var(--paper);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
+.tile b{font-family:var(--f-display);font-weight:700;font-size:clamp(1.25rem,2.4vw,1.6rem)}
+.tile.acc{background:var(--signal-tint)}.tile.acc b{color:var(--signal-deep)}
+/* карточки машин, записей, клиентов */
+.ord{border:0;border-radius:16px;background:var(--paper);box-shadow:var(--shadow);padding:14px 16px}
+.ord:hover{box-shadow:0 0 0 1px var(--rule)}
+.ord .sum b{font-family:var(--f-display);font-weight:700;font-size:1.25rem}
+.ordw.unpaid .ord{border-left:6px solid var(--amber)}
+.ordw.isPaid .ord{border-left:6px solid var(--moss)}
+.paybtn{border-radius:14px;border:0;background:var(--amber-tint);color:var(--amber)}
+.paybtn.ok{border:0;background:var(--moss-tint);color:var(--moss)}
+.paybig{border-radius:16px;border:0;background:var(--amber-tint);color:var(--amber)}
+.paybig.ok{background:var(--moss);color:var(--on-ink)}
+.release{border-radius:16px;font-family:var(--f-display)}
+.release.wait{background:var(--amber-tint);color:var(--amber);border:2px dashed var(--amber)}
+.pst{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.74rem;border-radius:7px;padding:.25em .6em}
+.pst.wait{background:var(--amber-tint);color:var(--amber)}.pst.ok{background:var(--moss-tint);color:var(--moss)}
+.badge{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.72rem;font-weight:600;border:0;border-radius:6px;padding:.2em .55em}
+.badge.ds{color:var(--amber);background:var(--amber-tint)}
+.bk{border:1px dashed var(--rule);border-radius:16px;background:var(--paper)}
+.bk .tm,.cd-row .tm,.ord .tm{font-family:var(--f-display);font-weight:700}
+.cbk{border-radius:12px;border:1px solid var(--signal);background:var(--signal-tint)}
+.cbk.done{border-color:var(--moss);background:var(--moss-tint)}
+.cfree{border-radius:12px;border:1px dashed var(--rule)}
+.cwh,.cm-d,.wd{border-radius:12px;border:1px solid var(--rule);background:var(--paper)}
+.wd[aria-current="true"],.cm-d.today{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal)}
+.wd b,.cm-d .n{font-family:var(--f-display);font-weight:700}
+.cal-day{border-top:0}
+.hero{border:0;border-radius:18px;background:var(--paper);box-shadow:var(--shadow)}
+.bar2{height:10px;border:0;border-radius:10px;background:var(--paper-3)}.bar2 i{background:var(--signal);border-radius:10px}
+.bonus b{font-family:var(--f-display);font-weight:700}
+.bdg{border-radius:12px;border:1px solid var(--rule)}
+.cl{border:0;border-radius:16px;background:var(--paper);box-shadow:var(--shadow)}
+.hint{border-left:0;border-radius:12px;padding:10px 12px}
+.empty{border:1px dashed var(--rule);border-radius:16px;background:var(--paper)}
+.empty b{font-size:1.2rem}
+.toast{border-radius:16px}.toast b{font-family:var(--f-display);font-size:1.15rem}
+/* лист (машина, документ, карточка товара) */
+.sheet{background:var(--bg);border-top:0;border-radius:22px 22px 0 0}
+.sh-hd{padding-top:4px}
+.work{border-radius:14px;border:1px solid var(--rule);background:var(--paper)}
+.work.on{border:2px solid var(--signal);background:var(--signal-tint)}
+.step button{border-radius:10px;border:1px solid var(--rule);background:var(--paper-2)}
+.side{border:0;border-radius:18px;background:var(--paper);box-shadow:var(--shadow)}
+.total b{font-family:var(--f-display);font-weight:700}
+.form{border:0;border-radius:18px;background:var(--paper);box-shadow:var(--shadow)}
+.savebar{background:var(--paper)!important;border-top:1px solid var(--rule)}
+/* таблицы — на белой карточке */
+.tw{background:var(--paper);border-radius:var(--r);padding:4px 10px;box-shadow:var(--shadow)}
+th{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.76rem;font-weight:600;border-bottom:1px solid var(--rule)}
+td{border-bottom:1px solid var(--rule-soft)}
+tr:last-child td{border-bottom:0}
+tr.tot td{border-top:1px solid var(--rule)}
+.sttab tr[data-p]:hover td{background:var(--paper-2)}
+.kb{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.68rem;border:0;background:var(--paper-2);border-radius:5px;padding:.15em .45em}
+.thumb{width:40px;height:40px;border-radius:9px;border:0;background:#fff;box-shadow:0 0 0 1px var(--rule)}
+.facts{gap:8px;background:transparent;border:0}.facts div{background:var(--paper);border-radius:12px}
+.found{border-radius:14px;border:1px solid var(--rule);background:var(--paper)}
+.dtot{border-bottom:0;background:var(--paper);border-radius:var(--r);padding:12px 16px;margin-top:10px}
+/* фильтры каталога */
+.fc{border:0;border-radius:var(--r);background:var(--paper);box-shadow:var(--shadow)}
+.fcl{font-family:var(--f-text);letter-spacing:0;text-transform:none;font-size:.78rem}
+.fchip{border:0;border-radius:8px;background:var(--paper-2);min-height:34px}
+.fchip[aria-pressed="true"]{background:var(--signal);color:#fff}
+.phc{border:0;border-radius:var(--r);background:var(--paper);box-shadow:var(--shadow);overflow:hidden}
+.pcph,.sug button{border-radius:12px;border:1px solid var(--rule)}
+/* вход */
+.keys button{border-radius:16px;border:1px solid var(--rule);background:var(--paper);font-family:var(--f-display);font-weight:700}
+.pin{border-bottom:2px solid var(--signal)}
+/* меню магазина (светлая тема): слева белая колонка, на телефоне — полоса кнопок */
+body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
+.smenu button{border-radius:10px;border:1px solid var(--rule);background:var(--paper)}
+.smenu button[aria-current="page"]{background:var(--signal-tint);color:var(--signal-deep);border-color:transparent}
+@media (min-width:900px){
+  body.area-s .smenu{background:var(--paper);border-right:1px solid var(--rule);padding:12px 10px 30px}
+  .smenu .sgh{font-family:var(--f-text);letter-spacing:.06em;font-size:.68rem;color:var(--ink-3);padding:10px 10px 4px}
+  .smenu .sg{margin-bottom:6px}
+  .smenu button{color:var(--ink);opacity:1;border:0;border-radius:10px;padding:0 10px;min-height:40px;font-weight:500}
+  .smenu button:hover{background:var(--paper-2)}
+  .smenu button[aria-current="page"]{background:var(--signal-tint);color:var(--signal-deep);font-weight:600;border:0}
+  body.area-s .shell>main{padding-top:8px}
+}
+/* ---- телефон мастера (тёмная тема): нижнее меню и широкая «+ Машина» ---- */
+@media (max-width:760px){
+  body:not(.area-s) .tabs{position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--paper);border-top:1px solid var(--rule);display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:4px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+  body:not(.area-s) .tab{flex-direction:column;gap:2px;font-size:.7rem;padding:6px 2px 4px;min-height:54px;border-bottom:0;justify-content:center}
+  body:not(.area-s) .tab[aria-selected="true"]{color:var(--signal)}
+  body:not(.area-s) .tab .ti{width:23px;height:23px}
+  body:not(.area-s) main.wrap{padding-bottom:84px}
+  body:not(.area-s) .bar{padding-block:10px 10px}
+  body:not(.area-s) #v-day{padding-bottom:84px}
+  body:not(.area-s) #add{position:fixed;left:14px;right:14px;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:14;min-height:58px;border-radius:18px;font-size:1.1rem;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  body:not(.area-s) .dayhd{gap:8px}
+  body:not(.area-s) .dayhd h1{font-size:1.35rem;flex:1;min-width:0}
+  body:not(.area-s) .dayhd .spacer{display:none}
+  .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+  .logo span{display:none}
+  #who{display:none}
+  .bar{gap:8px;flex-wrap:nowrap}
+  .areas{margin-right:0}.areas button{padding:0 10px;font-size:.84rem;min-height:36px}
+  #thLbl{display:none}
+  .dayhd h1{order:-1;flex:1 1 100%!important}
+}
+.toast{opacity:0;transition:transform .35s var(--ease),opacity .25s}.toast.on{opacity:1}
 </style>
 </head>
 <body>
@@ -369,15 +524,15 @@ details.bdgs summary .mono{color:var(--ink-3)}
       </div>
       <div class="areas" role="group" aria-label="Раздел"><button type="button" data-area="m" aria-pressed="true">Шиномонтаж</button><button type="button" data-area="s" aria-pressed="false">Магазин</button></div>
       <div class="spacer"></div>
-      <span class="status" id="status"></span><span class="mono" id="who" style="color:var(--ink-3)"></span><button class="out" type="button" id="logout">Выйти</button>
+      <span class="status" id="status"></span><span class="mono" id="who" style="color:var(--ink-3)"></span><button class="out" type="button" id="thBtn" aria-label="Тема оформления" title="Тема: авто / светлая / тёмная"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span id="thLbl" style="margin-left:4px;font-size:.8rem"></span></button><button class="out" type="button" id="logout">Выйти</button>
     </div>
     <nav class="tabs" role="tablist" aria-label="Разделы">
-      <button class="tab" role="tab" type="button" data-v="day" data-a="m" aria-selected="true">Смена</button>
-      <button class="tab" role="tab" type="button" data-v="cal" data-a="m" aria-selected="false">Запись</button>
-      <button class="tab" role="tab" type="button" data-v="stock" data-a="s" aria-selected="false">Склад</button>
-      <button class="tab" role="tab" type="button" data-v="cli" data-a="ms" aria-selected="false">Клиенты</button>
-      <button class="tab owner-only" role="tab" type="button" data-v="exp" data-a="m" aria-selected="false">Расходы</button>
-      <button class="tab owner-only" role="tab" type="button" data-v="sum" data-a="m" aria-selected="false">Итоги</button>
+      <button class="tab" role="tab" type="button" data-v="day" data-a="m" aria-selected="true"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/></svg>Смена</button>
+      <button class="tab" role="tab" type="button" data-v="cal" data-a="m" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Запись</button>
+      <button class="tab" role="tab" type="button" data-v="stock" data-a="s" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7h18v13H3zM3 7l3-4h12l3 4"/></svg>Склад</button>
+      <button class="tab" role="tab" type="button" data-v="cli" data-a="ms" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Клиенты</button>
+      <button class="tab owner-only" role="tab" type="button" data-v="exp" data-a="m" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>Расходы</button>
+      <button class="tab owner-only" role="tab" type="button" data-v="sum" data-a="m" aria-selected="false"><svg class="ti" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Итоги</button>
     </nav>
   </div>
 </header>
@@ -1627,7 +1782,17 @@ $('#cpnSave').onclick=async()=>{try{const j=await api('coupon_set',{value:+$('#c
 $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.year++;renderSum();};$('#y-refresh').onclick=renderSum;
 
 /* ---------- разделы: шиномонтаж и магазин (одна база, общие клиенты) ---------- */
-function setArea(a,first){S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');
+/* тема: магазин — светлая, шиномонтаж — тёмная; на устройстве можно закрепить вручную */
+function themePref(){try{return localStorage.getItem('ivanor_theme')||'auto';}catch(_){return 'auto';}}
+function applyTheme(){let area=S.area;if(!area){try{area=localStorage.getItem('ivanor_area')||'m';}catch(_){area='m';}if(/shop|magazin/.test(location.search))area='s';}
+  const p=themePref(),t=p==='light'||p==='dark'?p:(area==='s'?'light':'dark');
+  document.body.classList.toggle('t-dark',t==='dark');document.body.classList.toggle('t-light',t==='light');
+  const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=t==='dark'?'#1B1E24':'#FFFFFF';
+  const l=document.getElementById('thLbl');if(l)l.textContent=p==='auto'?'':p==='light'?'светлая':'тёмная';}
+applyTheme();
+document.getElementById('thBtn').onclick=()=>{const n={auto:'light',light:'dark',dark:'auto'}[themePref()];try{localStorage.setItem('ivanor_theme',n);}catch(_){}applyTheme();
+  toast('<b>Тема: '+(n==='auto'?'по разделу':n==='light'?'всегда светлая':'всегда тёмная')+'</b>'+(n==='auto'?'Магазин светлый, шиномонтаж тёмный':'Только на этом устройстве'));};
+function setArea(a,first){S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');applyTheme();
   document.querySelectorAll('[data-area]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.area===a));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('off-area',!t.dataset.a.includes(a)));
   $('#areaName').textContent=a==='s'?'Магазин':'Шиномонтаж';document.title=(a==='s'?'Магазин':'Шиномонтаж')+' IVANOR';
