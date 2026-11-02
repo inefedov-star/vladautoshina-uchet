@@ -92,6 +92,8 @@ function db(array $cfg): PDO {
   // цена по прайсу на момент продажи — чтобы видеть скидку
   if (!in_array('list', $mcols, true)) $pdo->exec("ALTER TABLE moves ADD COLUMN list REAL");
   $pdo->exec('CREATE TABLE IF NOT EXISTS weather (day TEXT PRIMARY KEY, tmax REAL, tmin REAL, prec REAL, code INTEGER, updated INTEGER)');
+  // коды поставщиков: «у этого поставщика код X — это наш товар Y» (запоминается при загрузке документов)
+  $pdo->exec('CREATE TABLE IF NOT EXISTS supcodes (pk TEXT NOT NULL, code TEXT NOT NULL, product_id INTEGER NOT NULL, updated INTEGER, PRIMARY KEY (pk, code))');
   $pdo->exec('CREATE TABLE IF NOT EXISTS photos (k TEXT PRIMARY KEY, file TEXT NOT NULL, source TEXT, src_url TEXT, updated INTEGER)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
   return $pdo;
@@ -237,6 +239,22 @@ function api4tItems($x, array &$out, int $depth = 0): void {
   foreach ($x as $v) if (is_array($v) || is_object($v)) api4tItems($v, $out, $depth + 1);
 }
 function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-ЯЁ]+/u', ' ', mb_strtoupper($s))); }
+// ===== загрузка документов поставщиков: сопоставление строк с карточками =====
+function codeNorm(string $c): string { return ltrim(preg_replace('/[\s\-\.\/]+/u', '', mb_strtoupper(trim($c))), '0'); }
+function partnerKey(string $p): string { return trim(preg_replace('/[^0-9A-ZА-ЯЁ]+/u', ' ', mb_strtoupper(preg_replace('/^(ООО|ОАО|АО|ЗАО|ИП)\s+/ui', '', str_replace(['«', '»', '"'], '', $p))))); }
+function nameTokens(string $s): array {
+  $s = mb_strtoupper(str_replace(['*', '×', ',', '\\', 'Х'], ['X', 'X', '.', ' ', 'X'], $s));
+  $stop = ['АВТОШИНА', 'АВТОШИНЫ', 'ШИНА', 'ДИСК', 'TL', 'TYRES', 'ШТ', 'ШИП', 'Ш', 'XL', 'ET', 'DIA', 'D', 'R', 'ЛИТОЙ', 'ШТАМП'];
+  $t = preg_split('/[\s\/()\[\]]+/u', $s); $o = [];
+  foreach ($t as $w) { $w = trim($w, '.-'); if ($w === '' || in_array($w, $stop, true) || mb_strlen($w) < 2 && !ctype_digit($w)) continue; $o[$w] = true; }
+  // центровочное кольцо: «65,1 60,1» и «65.1-60.1» — один и тот же размер
+  if (preg_match('/КОЛЬЦ/u', $s) && preg_match('/(\d{2,3}(?:\.\d)?)\s*[-\s]\s*(\d{2,3}(?:\.\d)?)/u', $s, $m)) $o['RING' . (float)$m[1] . '-' . (float)$m[2]] = true;
+  return array_map('strval', array_keys($o));
+}
+function tireSize(string $s): ?array { if (preg_match('~(\d{3})\s*/\s*(\d{2})\s*(?:/|\s|Z?R)\s*(\d{2})(\s*C\b)?~iu', $s, $m)) return ['w' => (int)$m[1], 'p' => (int)$m[2], 'd' => (int)$m[3]]; return null; }
+function diskSpec(string $s): ?array { $s = str_replace(',', '.', $s); $d = null; if (preg_match('~(?:\\|\bR|^)\s*(1[3-9]|2[0-4])\b~u', $s, $m)) $d = (int)$m[1];
+  $pcd = preg_match('~(\d)\s*[*xх×]\s*(\d{2,3}(?:\.\d+)?)~u', $s, $m) ? $m[1] . '×' . (float)$m[2] : null; $et = preg_match('~ET\s*(-?\d+(?:\.\d+)?)~i', $s, $m) ? (float)$m[1] : null;
+  return $d || $pcd ? ['d' => $d, 'pcd' => $pcd, 'et' => $et] : null; }
 function post(): void { if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Нужен POST', 405); }
 
 try {
@@ -921,6 +939,57 @@ try {
     usort($cand, fn($x, $y) => $y['score'] <=> $x['score']); $cand = array_slice(array_values($cand), 0, 6);
     if ($auto && $cand) { $u = photoSave($cfg, $k, fetchUrl($cand[0]['url']), '4tochki', $cand[0]['url']); out(['saved' => $u, 'items' => $cand]); }
     out(['items' => $cand, 'error' => $cand ? null : $err]);
+
+  case 'doc_match':
+    // строки документа поставщика → наши карточки: запомненный код, артикул производителя, штрихкод, затем по названию
+    post(); needRole($role, ['owner']);
+    $b = body(); $pk = partnerKey((string)($b['partner'] ?? '')); $lines = array_slice((array)($b['lines'] ?? []), 0, 300);
+    $prods = db($cfg)->query("SELECT id, name, kind, attrs, article, barcode, price, unit FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll();
+    $byArt = []; $byBc = []; $byId = [];
+    foreach ($prods as $p) { $byId[(int)$p['id']] = $p; if ($p['article'] !== '') $byArt[codeNorm($p['article'])][] = (int)$p['id']; if ($p['barcode'] !== '') $byBc[ltrim($p['barcode'], '0')][] = (int)$p['id']; }
+    $sup = []; if ($pk !== '') { $st = db($cfg)->prepare('SELECT code, product_id FROM supcodes WHERE pk = ?'); $st->execute([$pk]); foreach ($st->fetchAll() as $r) $sup[$r['code']] = (int)$r['product_id']; }
+    $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $last = lastCosts($cfg);
+    $card = fn($id, $how) => ['id' => $id, 'name' => $byId[$id]['name'], 'article' => $byId[$id]['article'], 'price' => (float)$byId[$id]['price'], 'unit' => $byId[$id]['unit'], 'qty' => $sm[$id]['q'] ?? 0, 'custody' => $cu[$id]['q'] ?? 0, 'last' => $last[$id] ?? null, 'how' => $how];
+    $out = [];
+    foreach ($lines as $l) {
+      $code = trim((string)($l['code'] ?? '')); $scode = trim((string)($l['scode'] ?? '')); $name = (string)($l['name'] ?? ''); $res = ['match' => null, 'alts' => []];
+      foreach ([$code, $scode] as $c) if ($c !== '' && isset($sup[codeNorm($c)]) && isset($byId[$sup[codeNorm($c)]])) { $res['match'] = $card($sup[codeNorm($c)], 'saved'); break; }
+      if (!$res['match'] && $code !== '' && !empty($byArt[codeNorm($code)])) { $ids = $byArt[codeNorm($code)]; $res['match'] = $card($ids[0], 'article'); foreach (array_slice($ids, 1, 4) as $i) $res['alts'][] = $card($i, 'article'); }
+      if (!$res['match'] && $code !== '' && !empty($byBc[ltrim($code, '0')])) $res['match'] = $card($byBc[ltrim($code, '0')][0], 'barcode');
+      if (!$res['match']) {
+        // по названию: размер шины / параметры диска + совпадающие слова
+        $tz = tireSize($name); $ds = $tz ? null : diskSpec($name); $tk = nameTokens($name); $sc = [];
+        foreach ($prods as $p) { $a = json_decode($p['attrs'], true) ?: [];
+          if ($tz) { if ($p['kind'] !== 'tire' || (int)($a['w'] ?? 0) !== $tz['w'] || (int)($a['p'] ?? 0) !== $tz['p'] || (int)($a['d'] ?? 0) !== $tz['d']) continue; }
+          elseif ($ds && ($ds['pcd'] || $ds['d'])) { if ($p['kind'] !== 'disk') continue; if ($ds['d'] && (int)($a['d'] ?? 0) !== $ds['d']) continue;
+            if ($ds['pcd'] && !in_array($ds['pcd'], array_map(fn($x) => str_replace(['×'], ['×'], preg_replace('/(\d)×(\d+(?:\.\d+)?)/u', '$1×$2', (string)$x)), (array)($a['pcds'] ?? [])), true) && (string)($a['pcd'] ?? '') !== $ds['pcd']) continue;
+            if ($ds['et'] !== null && isset($a['et']) && abs((float)$a['et'] - $ds['et']) > 0.01) continue; }
+          // совпавшие слова добавляют (модель с цифрами важнее), слова карточки, которых нет у поставщика, — убавляют
+          $ptk = nameTokens($p['name']); $sf = array_flip($tk);
+          $ring = preg_grep('/^RING/', $tk); if ($ring && !array_intersect($ring, $ptk)) continue; $hit = 0; $miss = 0; $nn = 0; $nh = 0;
+          $wgt = fn($w) => ctype_digit(str_replace(['.', ','], '', $w)) ? 0.5 : (preg_match('/\d/', $w) ? 3 : 2);
+          foreach ($ptk as $w) { $dig = ctype_digit(str_replace(['.', ','], '', $w)); if (!$dig) $nn++;
+            if (isset($sf[$w])) { $hit += $wgt($w); if (!$dig) $nh++; } elseif (!$dig) $miss += 1.5; }
+          if ($hit > 0) $sc[(int)$p['id']] = ['s' => $hit - $miss + (($sm[(int)$p['id']]['q'] ?? 0) > 0 ? 0.3 : 0), 'cov' => $nn ? $nh / $nn : 0];
+        }
+        uasort($sc, fn($x, $y) => $y['s'] <=> $x['s']); $top = array_slice(array_keys($sc), 0, 6);
+        if ($top) { $best = $sc[$top[0]]['s']; $sure = ($tz || $ds) && $best >= 3 && $sc[$top[0]]['cov'] >= 0.6 && (count($top) === 1 || $sc[$top[1]]['s'] < $best - 2);
+          $res['match'] = $sure ? $card($top[0], 'name') : null; foreach ($top as $i) if (!$res['match'] || $i !== $res['match']['id']) $res['alts'][] = $card($i, 'name'); $res['alts'] = array_slice($res['alts'], 0, 5); }
+      }
+      $out[] = $res;
+    }
+    $dup = null; $num = trim((string)($b['num'] ?? ''));
+    if ($num !== '') { $st = db($cfg)->prepare("SELECT id, type, status, partner FROM docs WHERE num = ? AND status != 'cancelled'"); $st->execute([$num]); foreach ($st->fetchAll() as $r) if (partnerKey((string)$r['partner']) === $pk || $pk === '') { $dup = ['id' => (int)$r['id'], 'label' => docLabel($r['type'])]; break; } }
+    out(['lines' => $out, 'dup' => $dup]);
+
+  case 'supmap_save':
+    // запомнить соответствие «код поставщика → наша карточка»
+    post(); needRole($role, ['owner']);
+    $b = body(); $pk = partnerKey((string)($b['partner'] ?? '')); if ($pk === '') out(['ok' => true]);
+    $ins = db($cfg)->prepare('INSERT OR REPLACE INTO supcodes (pk, code, product_id, updated) VALUES (?,?,?,?)'); $n = 0;
+    foreach (array_slice((array)($b['pairs'] ?? []), 0, 500) as $x) { $pid = (int)($x['product_id'] ?? 0); if (!$pid) continue;
+      foreach ([(string)($x['code'] ?? ''), (string)($x['scode'] ?? '')] as $c) if (trim($c) !== '') { $ins->execute([$pk, codeNorm($c), $pid, time()]); $n++; } }
+    out(['ok' => true, 'saved' => $n]);
 
   case 'price_set':
     // цена продажи в карточке
