@@ -162,6 +162,16 @@ function returnedMap(array $cfg, int $saleId, int $exceptId = 0): array {
   $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(m.qty) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.type = 'ret' AND d.status = 'posted' AND d.base_id = ? AND d.id != ? GROUP BY m.product_id");
   $st->execute([$saleId, $exceptId]); $o = []; foreach ($st->fetchAll() as $r) $o[(int)$r['pid']] = (float)$r['q']; return $o;
 }
+// быстрый выбор в каталоге (как на витрине): значения полей товара по видам
+function facetVals(string $kind, array $a): array {
+  if ($kind === 'tire') { $s = $a['season'] ?? 'all'; $sv = $s === 'winter' ? ['winter', !empty($a['stud']) ? 'stud' : 'fric'] : [$s];
+    return ['d' => isset($a['d']) ? [(int)$a['d']] : [], 'w' => isset($a['w']) ? [(int)$a['w']] : [], 'p' => isset($a['p']) ? [(int)$a['p']] : [], 's' => $sv]; }
+  if ($kind === 'disk') return ['k' => [$a['type'] ?? 'cast'], 'd' => isset($a['d']) ? [(int)$a['d']] : [], 'pcd' => array_values(array_filter((array)($a['pcds'] ?? [])))];
+  if ($kind === 'akb') { $ah = (int)($a['ah'] ?? 0); $cap = !$ah ? [] : [$ah <= 55 ? 's' : ($ah <= 65 ? 'm' : ($ah <= 80 ? 'l' : ($ah <= 110 ? 'xl' : 'xxl')))];
+    return ['std' => [$a['std'] ?? 'euro'], 'pol' => !empty($a['pol']) ? [$a['pol']] : [], 'cap' => $cap]; }
+  if ($kind === 'fast') return ['k' => [$a['type'] ?? 'other'], 'th' => !empty($a['thread']) ? [$a['thread']] : []];
+  return [];
+}
 function post(): void { if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Нужен POST', 405); }
 
 try {
@@ -562,16 +572,27 @@ try {
     $sm = stockMap($cfg, $wh); $owner = $role === 'owner';
     $toks = array_values(array_filter(preg_split('/[\s\/]+/u', str_replace(['*', '×', 'х'], ' ', $q))));
     $rows = []; $tot = ['n' => 0, 'qty' => 0, 'cost' => 0, 'retail' => 0];
+    // выбранные кнопки быстрого выбора: {"d":"16","s":"stud",...}
+    $F = []; foreach ((array)json_decode((string)($_GET['f'] ?? ''), true) as $k => $v) if ($v !== null && $v !== '') $F[(string)$k] = (string)$v;
+    $fAll = []; $fAvail = [];
     foreach (db($cfg)->query("SELECT id, name, kind, attrs, barcode, article, price, unit FROM products WHERE archived = 0 AND kind != 'svc' ORDER BY name")->fetchAll() as $p) {
       $s = $sm[(int)$p['id']] ?? ['q' => 0, 'c' => 0]; if ($only && $s['q'] <= 0) continue;
       if ($kind !== '' && $p['kind'] !== $kind && !($kind === 'other' && in_array($p['kind'], ['acc', 'tube', 'tool', 'tireo'], true))) continue;
+      if ($kind === 'other') { $g = $p['kind'] === 'acc' ? ((json_decode($p['attrs'], true) ?: [])['group'] ?? 'acc') : $p['kind']; if ($g === 'consumable') $g = 'acc'; $fv = ['g' => [$g]]; }
+      else $fv = $kind !== '' ? facetVals($kind, json_decode($p['attrs'], true) ?: []) : [];
+      $tm = true;
       if ($toks) { $hay = mb_strtoupper(str_replace('/', ' ', $p['name'])) . ' ' . $p['barcode'] . ' ' . mb_strtoupper($p['article']); $a = json_decode($p['attrs'], true) ?: [];
-        $ok = true; foreach ($toks as $t) { if (preg_match('/^[RР](\d{2})$/u', $t, $m)) { if ((int)($a['d'] ?? 0) !== (int)$m[1]) { $ok = false; break; } continue; } if (mb_strpos($hay, $t) === false) { $ok = false; break; } } if (!$ok) continue; }
+        foreach ($toks as $t) { if (preg_match('/^[RР](\d{2})$/u', $t, $m)) { if ((int)($a['d'] ?? 0) !== (int)$m[1]) { $tm = false; break; } continue; } if (mb_strpos($hay, $t) === false) { $tm = false; break; } } }
+      // какие значения вообще есть и какие ещё подходят при остальных выбранных кнопках и поиске
+      $miss = []; foreach ($F as $k => $v) if (!in_array($v, array_map('strval', $fv[$k] ?? []), true)) $miss[] = $k;
+      foreach ($fv as $k => $vals) foreach ($vals as $v) { $fAll[$k][(string)$v] = true; if ($tm && (!$miss || $miss === [$k])) $fAvail[$k][(string)$v] = ($fAvail[$k][(string)$v] ?? 0) + 1; }
+      if ($miss || !$tm) continue;
       $tot['n']++; $tot['qty'] += max(0, $s['q']); $tot['retail'] += max(0, $s['q']) * (float)$p['price']; if ($owner) $tot['cost'] += max(0, $s['c']);
       if (count($rows) < $lim) $rows[] = ['id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null];
     }
     if (!$owner) unset($tot['cost']);
-    out(['rows' => $rows, 'total' => $tot, 'more' => $tot['n'] > count($rows)]);
+    $facets = []; foreach ($fAll as $k => $vals) { $facets[$k] = []; foreach (array_keys($vals) as $v) $facets[$k][] = [(string)$v, $fAvail[$k][(string)$v] ?? 0]; }
+    out(['rows' => $rows, 'total' => $tot, 'more' => $tot['n'] > count($rows), 'facets' => $facets ?: new stdClass()]);
 
   case 'product':
     needRole($role, ['owner', 'master', 'cashier']);

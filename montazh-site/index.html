@@ -176,6 +176,14 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
 .areas button{border:0;background:transparent;padding:0 12px;min-height:40px;font-weight:700;font-size:.9rem;color:var(--ink-2)}
 .areas button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 .tab.off-area{display:none}
+.fc{margin:-2px 0 12px;padding:10px 12px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2)}
+.fcrow{display:flex;gap:10px;align-items:flex-start;padding:4px 0}
+.fcl{flex:none;width:96px;padding-top:8px;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.fcv{display:flex;flex-wrap:wrap;gap:5px}
+.fchip{min-height:32px;min-width:40px;padding:0 9px;border:1.2px solid var(--rule);border-radius:3px;background:var(--paper);font-weight:600;font-size:.84rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.fchip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.fchip[data-dim]{opacity:.32}
+@media (max-width:520px){.fcrow{flex-direction:column;gap:4px}.fcl{width:auto;padding-top:0}}
 .shell{display:block}
 .smenu{display:none}
 body.area-s .tabs,body.area-s #stSubs,body.area-s #stWh,body.area-s #stImport{display:none!important}
@@ -428,6 +436,7 @@ details.bdgs summary .mono{color:var(--ink-3)}
       <button class="switch" type="button" role="switch" id="stOnly" aria-checked="true"><span class="knob"></span>Только в наличии</button>
     </div>
     <div class="row" id="stKinds" style="margin-bottom:12px"><button type="button" class="chip" data-k="tire">Шины</button><button type="button" class="chip" data-k="disk">Диски</button><button type="button" class="chip" data-k="akb">АКБ</button><button type="button" class="chip" data-k="fast">Крепёж</button><button type="button" class="chip" data-k="other">Прочее</button></div>
+    <div id="stFacets"></div>
     <div id="stOut" style="margin-bottom:40px"></div>
     </div>
     <div id="stDocs" hidden>
@@ -821,9 +830,9 @@ function classify(n,g,cat,qty){n=String(n||'').replace(/\s+/g,' ').trim();g=Stri
 /* ======================= СКЛАД ======================= */
 const KIND_RU={tire:'Шины',disk:'Диски',akb:'АКБ',fast:'Крепёж',other:'Прочее'};
 const KIND_ONE={tire:'шина',tireo:'грузовая/спец',disk:'диск',akb:'АКБ',fast:'крепёж',tube:'камера',tool:'инструмент',acc:'аксессуар',svc:'услуга'};
-S.st={kind:'',q:'',only:true,rows:[],total:null,more:false};
+S.st={kind:'',q:'',only:true,rows:[],total:null,more:false,f:{},facets:{}};
 let stT=null;
-async function loadStock(){const el=$('#stOut');try{const j=await api('stock',null,{q:S.st.q,kind:S.st.kind,instock:S.st.only?'1':'0',limit:150,wh:S.st.wh||'shop'});S.st.rows=j.rows;S.st.total=j.total;S.st.more=j.more;renderStock();}
+async function loadStock(){const el=$('#stOut');try{const j=await api('stock',null,{q:S.st.q,kind:S.st.kind,instock:S.st.only?'1':'0',limit:150,wh:S.st.wh||'shop',f:JSON.stringify(S.st.f||{})});S.st.rows=j.rows;S.st.total=j.total;S.st.more=j.more;S.st.facets=j.facets||{};renderStock();renderFacets();}
   catch(e){if(e.code!=='auth')el.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;}}
 function renderStock(){const t=S.st.total||{},own=S.role==='owner';
   document.querySelectorAll('#stKinds .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.k===S.st.kind));
@@ -841,7 +850,23 @@ function renderStock(){const t=S.st.total||{},own=S.role==='owner';
   el.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
 const fmtQty=q=>{q=+q||0;return Number.isInteger(q)?String(q):q.toFixed(2).replace('.',',');};
 $('#stQ').addEventListener('input',()=>{clearTimeout(stT);stT=setTimeout(()=>{S.st.q=$('#stQ').value.trim();loadStock();},350);});
-document.querySelectorAll('#stKinds .chip').forEach(c=>c.onclick=()=>{S.st.kind=S.st.kind===c.dataset.k?'':c.dataset.k;loadStock();});
+document.querySelectorAll('#stKinds .chip').forEach(c=>c.onclick=()=>{S.st.kind=S.st.kind===c.dataset.k?'':c.dataset.k;S.st.f={};loadStock();});
+/* быстрый выбор — как на витрине: размер, сезон, разболтовка, ёмкость… */
+const FACETS={
+  tire:[['d','Диаметр',v=>'R'+v],['w','Ширина'],['p','Профиль'],['s','Сезон',v=>({winter:'Вся зима',stud:'Шипы',fric:'Липучка',summer:'Лето',all:'Всесезон'})[v]||v,['winter','stud','fric','summer','all']]],
+  disk:[['k','Тип',v=>({cast:'Литые',steel:'Штампованные',odd:'Некомплект'})[v]||v,['cast','steel','odd']],['d','Диаметр',v=>'R'+v],['pcd','Разболтовка']],
+  akb:[['std','Тип',v=>({euro:'Легковые, евро',asia:'Азия',moto:'Мото',truck:'Грузовые'})[v]||v,['euro','asia','truck','moto']],['pol','Полярность',v=>({rev:'Обратная − +',dir:'Прямая + −'})[v]||v,['rev','dir']],['cap','Ёмкость, А·ч',v=>({s:'до 55',m:'56–65',l:'66–80',xl:'81–110',xxl:'больше 110'})[v]||v,['s','m','l','xl','xxl']]],
+  fast:[['k','Что нужно',v=>({nut:'Гайки',bolt:'Болты',lock:'Секретки',ring:'Кольца',stud:'Шпильки',other:'Прочее'})[v]||v,['nut','bolt','lock','ring','stud','other']],['th','Резьба',v=>'М'+v]],
+  other:[['g','Раздел',v=>({acc:'Аксессуары',caps:'Колпаки',akbacc:'Для АКБ',chem:'Автохимия',tube:'Камеры',tool:'Инструмент',tireo:'Грузовые и спецшины'})[v]||v,['acc','caps','akbacc','chem','tube','tool','tireo']]]};
+function renderFacets(){const el=$('#stFacets'),def=FACETS[S.st.kind],F=S.st.f||{},fc=S.st.facets||{};
+  if(!def){el.innerHTML='';return;}
+  const cmp=(a,b)=>{const x=parseFloat(String(a).replace(',','.')),y=parseFloat(String(b).replace(',','.'));return isNaN(x)||isNaN(y)?String(a).localeCompare(String(b),'ru',{numeric:true}):x-y||String(a).localeCompare(String(b));};
+  el.innerHTML=`<div class="fc">${def.map(([k,lbl,fmt,order])=>{const list=fc[k]||[];if(!list.length)return '';const m=new Map(list);
+      const vals=order?order.filter(v=>m.has(v)):[...m.keys()].sort(cmp);
+      return `<div class="fcrow"><span class="mono fcl">${lbl}</span><div class="fcv">${vals.map(v=>`<button type="button" class="fchip" data-fk="${k}" data-fv="${esc(v)}" aria-pressed="${F[k]===v}" ${m.get(v)?'':'data-dim="1"'}>${esc(fmt?fmt(v):v)}</button>`).join('')}</div></div>`;}).join('')}
+    ${Object.keys(F).length?'<button type="button" class="out" id="fcReset" style="min-height:34px">Сбросить выбор ×</button>':''}</div>`;
+  el.querySelectorAll('.fchip').forEach(b=>b.onclick=()=>{const k=b.dataset.fk,v=b.dataset.fv;S.st.f=S.st.f||{};if(S.st.f[k]===v)delete S.st.f[k];else S.st.f[k]=v;loadStock();});
+  const r=document.getElementById('fcReset');if(r)r.onclick=()=>{S.st.f={};loadStock();};}
 $('#stOnly').onclick=()=>{S.st.only=!S.st.only;loadStock();};
 function attrLines(k,a){if(!a)return[];const L=[];
   if(k==='tire'){L.push(['Размер',`${a.w}/${a.p} R${a.d}${a.c?'C':''}`],['Бренд, модель',[a.brand,a.model].filter(Boolean).join(' ')+(a.alias?` (${a.alias})`:'')],['Сезон',{winter:'Зима',summer:'Лето',all:'Всесезон'}[a.season]+(a.season==='winter'?(a.stud?', шипы':', липучка'):'')],['Индексы',(a.index||'—')+(a.xl?' XL':'')]);}
