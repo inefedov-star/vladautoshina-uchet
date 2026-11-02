@@ -92,6 +92,7 @@ function db(array $cfg): PDO {
   // цена по прайсу на момент продажи — чтобы видеть скидку
   if (!in_array('list', $mcols, true)) $pdo->exec("ALTER TABLE moves ADD COLUMN list REAL");
   $pdo->exec('CREATE TABLE IF NOT EXISTS weather (day TEXT PRIMARY KEY, tmax REAL, tmin REAL, prec REAL, code INTEGER, updated INTEGER)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS photos (k TEXT PRIMARY KEY, file TEXT NOT NULL, source TEXT, src_url TEXT, updated INTEGER)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
   return $pdo;
 }
@@ -171,6 +172,47 @@ function facetVals(string $kind, array $a): array {
     return ['std' => [$a['std'] ?? 'euro'], 'pol' => !empty($a['pol']) ? [$a['pol']] : [], 'cap' => $cap]; }
   if ($kind === 'fast') return ['k' => [$a['type'] ?? 'other'], 'th' => !empty($a['thread']) ? [$a['thread']] : []];
   return [];
+}
+// ===== фото товаров: одно фото на модель (шины — бренд+модель+шипы, диски — модель), остальное — на карточку =====
+function photoKey(string $kind, array $a, string $name, int $id): string {
+  $U = fn($x) => trim(preg_replace('/\s+/u', ' ', mb_strtoupper((string)$x)));
+  if ($kind === 'tire' && !empty($a['brand'])) return 'tire|' . $U($a['brand']) . '|' . $U($a['model'] ?? '') . '|' . (!empty($a['stud']) ? 'S' : '');
+  if ($kind === 'disk' && !empty($a['model'])) return 'disk|' . $U(preg_replace('/\([^)]*\)/u', '', $a['model']));
+  if ($kind === 'akb') return 'akb|' . $U(preg_replace('/^Аккумулятор\s*|\b(о\/п|п\/п|обр\.?|прям\.?)\b/ui', ' ', $name));
+  return 'p|' . $id;
+}
+function photoLabel(string $kind, array $a, string $name): string {
+  if ($kind === 'tire' && !empty($a['brand'])) return trim($a['brand'] . ' ' . ($a['model'] ?? '') . (!empty($a['stud']) ? ' (шип.)' : ''));
+  if ($kind === 'disk' && !empty($a['model'])) return trim(preg_replace('/\([^)]*\)/u', '', $a['model']));
+  return $name;
+}
+function photoDir(): string { $d = __DIR__ . '/photos'; if (!is_dir($d)) { @mkdir($d, 0755, true); }
+  // в папке фото не должно исполняться ничего, кроме картинок
+  if (!is_file($d . '/.htaccess')) @file_put_contents($d . '/.htaccess', "Options -Indexes\n<IfModule mod_php7.c>\n  php_flag engine off\n</IfModule>\n<FilesMatch \"(?i)\\.(php|phtml|phar|pl|py|cgi|sh)$\">\n  <IfModule mod_authz_core.c>\n    Require all denied\n  </IfModule>\n</FilesMatch>\n");
+  return $d; }
+function photoMap(array $cfg): array { $o = []; foreach (db($cfg)->query('SELECT k, file, source, updated FROM photos')->fetchAll() as $r) $o[$r['k']] = ['url' => 'photos/' . $r['file'] . '?v=' . $r['updated'], 'source' => $r['source']]; return $o; }
+// принимает байты картинки, уменьшает до 900 px и сохраняет как jpg (если на хостинге есть GD), иначе — как есть
+function photoSave(array $cfg, string $key, string $bytes, string $source, string $srcUrl = ''): string {
+  if (strlen($bytes) < 200) fail('Это не картинка'); if (strlen($bytes) > 12 * 1024 * 1024) fail('Файл больше 12 МБ');
+  $info = @getimagesizefromstring($bytes); if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP, IMAGETYPE_GIF], true)) fail('Нужна картинка: jpg, png или webp');
+  $name = substr(sha1($key), 0, 16); $dir = photoDir(); $ext = 'jpg'; $out = null;
+  if (function_exists('imagecreatefromstring') && ($im = @imagecreatefromstring($bytes))) {
+    $w = imagesx($im); $h = imagesy($im); $k = min(1, 900 / max($w, $h)); $nw = max(1, (int)round($w * $k)); $nh = max(1, (int)round($h * $k));
+    $dst = imagecreatetruecolor($nw, $nh); imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+    imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h); ob_start(); imagejpeg($dst, null, 84); $out = ob_get_clean(); imagedestroy($im); imagedestroy($dst);
+  }
+  if ($out === null) { $out = $bytes; $ext = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp', IMAGETYPE_GIF => 'gif'][$info[2]]; }
+  foreach (glob($dir . '/' . $name . '.*') ?: [] as $old) @unlink($old);
+  if (@file_put_contents($dir . '/' . $name . '.' . $ext, $out) === false) fail('Не удалось сохранить файл — проверьте права на папку photos', 500);
+  db($cfg)->prepare('INSERT OR REPLACE INTO photos (k, file, source, src_url, updated) VALUES (?,?,?,?,?)')->execute([$key, $name . '.' . $ext, $source, $srcUrl, time()]);
+  return 'photos/' . $name . '.' . $ext . '?v=' . time();
+}
+function fetchUrl(string $url): string {
+  if (!preg_match('~^https?://~i', $url)) fail('Ссылка должна начинаться с http:// или https://');
+  $ua = 'Mozilla/5.0 (IVANOR catalog photo loader)';
+  if (function_exists('curl_init')) { $c = curl_init($url); curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 4, CURLOPT_TIMEOUT => 20, CURLOPT_USERAGENT => $ua, CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS]);
+    $b = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE); curl_close($c); if ($b === false || $code >= 400) fail('Не удалось скачать картинку по ссылке (' . ($code ?: 'нет связи') . ')'); return $b; }
+  $b = @file_get_contents($url, false, stream_context_create(['http' => ['timeout' => 20, 'user_agent' => $ua]])); if ($b === false) fail('Не удалось скачать картинку по ссылке'); return $b;
 }
 function post(): void { if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Нужен POST', 405); }
 
@@ -574,7 +616,7 @@ try {
     $rows = []; $tot = ['n' => 0, 'qty' => 0, 'cost' => 0, 'retail' => 0];
     // выбранные кнопки быстрого выбора: {"d":"16","s":"stud",...}
     $F = []; foreach ((array)json_decode((string)($_GET['f'] ?? ''), true) as $k => $v) if ($v !== null && $v !== '') $F[(string)$k] = (string)$v;
-    $fAll = []; $fAvail = [];
+    $fAll = []; $fAvail = []; $pmap = photoMap($cfg);
     foreach (db($cfg)->query("SELECT id, name, kind, attrs, barcode, article, price, unit FROM products WHERE archived = 0 AND kind != 'svc' ORDER BY name")->fetchAll() as $p) {
       $s = $sm[(int)$p['id']] ?? ['q' => 0, 'c' => 0]; if ($only && $s['q'] <= 0) continue;
       if ($kind !== '' && $p['kind'] !== $kind && !($kind === 'other' && in_array($p['kind'], ['acc', 'tube', 'tool', 'tireo'], true))) continue;
@@ -588,7 +630,7 @@ try {
       foreach ($fv as $k => $vals) foreach ($vals as $v) { $fAll[$k][(string)$v] = true; if ($tm && (!$miss || $miss === [$k])) $fAvail[$k][(string)$v] = ($fAvail[$k][(string)$v] ?? 0) + 1; }
       if ($miss || !$tm) continue;
       $tot['n']++; $tot['qty'] += max(0, $s['q']); $tot['retail'] += max(0, $s['q']) * (float)$p['price']; if ($owner) $tot['cost'] += max(0, $s['c']);
-      if (count($rows) < $lim) $rows[] = ['id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null];
+      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? ($pmap[photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id'])]['url'] ?? null) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null];
     }
     if (!$owner) unset($tot['cost']);
     $facets = []; foreach ($fAll as $k => $vals) { $facets[$k] = []; foreach (array_keys($vals) as $v) $facets[$k][] = [(string)$v, $fAvail[$k][(string)$v] ?? 0]; }
@@ -602,7 +644,8 @@ try {
     $mv = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.num, d.partner, d.wh dwh, m.qty, m.cost, m.wh FROM moves m JOIN docs d ON d.id = m.doc_id WHERE m.product_id = ? AND d.status = 'posted' ORDER BY d.day DESC, d.id DESC LIMIT 100");
     $mv->execute([$id]); $moves = array_map(function ($r) use ($owner) { $r['label'] = docLabel($r['type']); if (!$owner) { unset($r['cost']); $r['partner'] = ''; } return $r; }, $mv->fetchAll());
     $s = stockMap($cfg)[$id] ?? ['q' => 0, 'c' => 0]; $cu = stockMap($cfg, 'custody')[$id] ?? ['q' => 0];
-    out(['product' => $p, 'qty' => $s['q'], 'custody' => $cu['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'moves' => $moves]);
+    $pk = photoKey($p['kind'], (array)$p['attrs'], $p['name'], (int)$p['id']); $pm = photoMap($cfg);
+    out(['photo' => $pm[$pk]['url'] ?? null, 'photo_key' => $pk, 'product' => $p, 'qty' => $s['q'], 'custody' => $cu['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'moves' => $moves]);
 
   case 'prod_find':
     // поиск товара для строки документа: все карточки, и в наличии, и нет; штрихкод — точное совпадение первым
@@ -771,6 +814,50 @@ try {
     }
     $o = array_values($o); usort($o, fn($a, $b) => strcmp($b['last'], $a['last']));
     out(['suppliers' => array_map(function ($x) { $x['sum'] = round($x['sum'], 2); return $x; }, $o)]);
+
+  case 'photo_models':
+    // модели товаров для раздела «Фото товаров»: по умолчанию то, что есть в наличии (наш склад и ответхранение)
+    needRole($role, ['owner']);
+    $all = ($_GET['all'] ?? '0') === '1'; $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $pm = photoMap($cfg); $g = [];
+    foreach (db($cfg)->query("SELECT id, name, kind, attrs FROM products WHERE archived = 0 AND kind != 'svc' ORDER BY name")->fetchAll() as $p) {
+      $id = (int)$p['id']; $q = ($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0); if (!$all && $q <= 0) continue;
+      $a = json_decode($p['attrs'], true) ?: []; $k = photoKey($p['kind'], $a, $p['name'], $id);
+      if (!isset($g[$k])) $g[$k] = ['k' => $k, 'kind' => $p['kind'], 'label' => photoLabel($p['kind'], $a, $p['name']), 'n' => 0, 'qty' => 0, 'names' => [], 'photo' => $pm[$k]['url'] ?? null, 'source' => $pm[$k]['source'] ?? null];
+      $g[$k]['n']++; $g[$k]['qty'] += max(0, $q); if (count($g[$k]['names']) < 3) $g[$k]['names'][] = $p['name'];
+    }
+    $ord = ['tire' => 1, 'disk' => 2, 'akb' => 3, 'fast' => 4];
+    $g = array_values($g); usort($g, fn($x, $y) => (($ord[$x['kind']] ?? 9) <=> ($ord[$y['kind']] ?? 9)) ?: ($y['qty'] <=> $x['qty']));
+    out(['models' => $g, 'gd' => function_exists('imagecreatefromstring')]);
+
+  case 'photo_upload':
+    // загрузка своего фото (multipart: k, file)
+    post(); needRole($role, ['owner']);
+    $k = (string)($_POST['k'] ?? ''); if ($k === '' || strlen($k) > 400) fail('Не указана модель');
+    if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) fail('Файл не дошёл до сервера' . (!empty($_FILES['file']) ? ' (код ' . $_FILES['file']['error'] . ')' : ''));
+    $url = photoSave($cfg, $k, (string)file_get_contents($_FILES['file']['tmp_name']), 'manual'); logit($cfg, $role, 'photo_upload', $k);
+    out(['url' => $url]);
+
+  case 'photo_url':
+    // фото по ссылке (например, с сайта производителя): сервер скачивает и хранит у себя
+    post(); needRole($role, ['owner']);
+    $b = body(); $k = (string)($b['k'] ?? ''); $u = trim((string)($b['url'] ?? '')); if ($k === '') fail('Не указана модель');
+    $url = photoSave($cfg, $k, fetchUrl($u), 'url', $u); logit($cfg, $role, 'photo_url', $k);
+    out(['url' => $url]);
+
+  case 'photo_del':
+    post(); needRole($role, ['owner']);
+    $k = (string)(body()['k'] ?? ''); $st = db($cfg)->prepare('SELECT file FROM photos WHERE k = ?'); $st->execute([$k]);
+    if ($f = $st->fetchColumn()) @unlink(photoDir() . '/' . $f);
+    db($cfg)->prepare('DELETE FROM photos WHERE k = ?')->execute([$k]); logit($cfg, $role, 'photo_del', $k);
+    out(['ok' => true]);
+
+  case 'photos_public':
+    // для витрины: ID карточки CloudShop → адрес фото. Только картинки, без цен и остатков
+    $pm = photoMap($cfg); $o = [];
+    if ($pm) foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs FROM products WHERE archived = 0 AND ext_id IS NOT NULL AND ext_id != ''")->fetchAll() as $p) {
+      $k = photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']); if (isset($pm[$k])) $o[$p['ext_id']] = $pm[$k]['url']; }
+    header('Cache-Control: public, max-age=300'); header('Access-Control-Allow-Origin: *');
+    out(['base' => 'montazh/', 'photos' => $o ?: new stdClass()]);
 
   case 'price_set':
     // цена продажи в карточке

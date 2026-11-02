@@ -176,6 +176,15 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
 .areas button{border:0;background:transparent;padding:0 12px;min-height:40px;font-weight:700;font-size:.9rem;color:var(--ink-2)}
 .areas button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 .tab.off-area{display:none}
+.thumb{width:34px;height:34px;object-fit:contain;background:#fff;border:1px solid var(--rule);border-radius:2px;vertical-align:middle;margin-right:8px}
+.phgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.phc{border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);display:flex;flex-direction:column}
+.phc .im{aspect-ratio:4/3;background:#fff;display:grid;place-items:center;overflow:hidden;border-bottom:1px solid var(--rule)}
+.phc .im img{width:100%;height:100%;object-fit:contain}
+.phc .im span{color:var(--ink-3);font-size:.8rem;text-align:center;padding:10px}
+.phc .tx{padding:8px 10px;flex:1}.phc .tx b{display:block;font-size:.95rem;line-height:1.25}.phc .tx small{display:block;color:var(--ink-3);font-size:.76rem;margin-top:3px}
+.phc .ac{display:flex;gap:4px;padding:0 8px 8px;flex-wrap:wrap}.phc .ac .btn{min-height:34px;padding:0 9px;font-size:.84rem}
+.pcph{max-width:320px;aspect-ratio:4/3;background:#fff;border:1.5px solid var(--rule);border-radius:3px;display:grid;place-items:center;overflow:hidden;margin-bottom:12px}.pcph img{width:100%;height:100%;object-fit:contain}
 .fc{margin:-2px 0 12px;padding:10px 12px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2)}
 .fcrow{display:flex;gap:10px;align-items:flex-start;padding:4px 0}
 .fcl{flex:none;width:96px;padding-top:8px;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
@@ -375,7 +384,7 @@ details.bdgs summary .mono{color:var(--ink-3)}
 <aside id="side" class="smenu" aria-label="Меню магазина">
   <div class="sg owner-only"><span class="sgh">Продажи</span><button type="button" data-p="sale">Продажи</button><button type="button" data-p="ret">Возвраты</button></div>
   <div class="sg owner-only"><span class="sgh">Закупки</span><button type="button" data-p="in">Закупки</button><button type="button" data-p="iss">Выдача с ответхранения</button></div>
-  <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" data-p="custody">Ответхранение</button></div>
+  <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" data-p="custody">Ответхранение</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
   <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="month">Итоги месяца</button></div>
   <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button></div>
@@ -505,6 +514,18 @@ details.bdgs summary .mono{color:var(--ink-3)}
     </div>
     <div class="tiles" id="rpTiles" style="margin-top:0"></div>
     <div id="rpOut" style="margin-bottom:40px"></div>
+  </section>
+
+  <section id="v-pho" hidden>
+    <div class="calbar"><h1>Фото товаров</h1></div>
+    <p class="note" style="margin:0 0 10px">Одно фото на модель: шины — бренд и модель (шипованные отдельно), диски — модель, остальное — на карточку. Фото хранятся на вашем сайте и сразу видны в витрине и в карточке товара.</p>
+    <div class="tiles" id="phTiles" style="margin-top:0"></div>
+    <div class="row" style="margin-bottom:10px;align-items:center">
+      <div class="row" id="phShow"><button type="button" class="chip" data-s="miss" aria-pressed="true">Без фото</button><button type="button" class="chip" data-s="has" aria-pressed="false">С фото</button><button type="button" class="chip" data-s="all" aria-pressed="false">Все</button></div>
+      <div class="row" id="phKinds"><button type="button" class="chip" data-k="tire">Шины</button><button type="button" class="chip" data-k="disk">Диски</button><button type="button" class="chip" data-k="akb">АКБ</button><button type="button" class="chip" data-k="other">Прочее</button></div>
+      <input class="inp" type="search" id="phQ" placeholder="Поиск модели" autocomplete="off" style="flex:1;min-width:180px">
+    </div>
+    <div id="phOut" style="margin-bottom:40px"></div>
   </section>
 
   <section id="v-sup" hidden>
@@ -844,7 +865,7 @@ function renderStock(){const t=S.st.total||{},own=S.role==='owner';
   const el=$('#stOut');
   if(!S.st.rows.length){el.innerHTML=`<div class="empty"><b>${S.st.q||S.st.kind?'Ничего не нашлось':'Склад пуст'}</b>${S.st.q||S.st.kind?'Измените поиск или уберите фильтр.':(own?'Загрузите каталог из CloudShop кнопкой выше.':'Собственник ещё не загрузил каталог.')}</div>`;return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Товар</th><th>Остаток</th><th>Цена</th>${own?'<th>Себест.</th><th>Наценка</th>':''}</tr></thead><tbody>
-    ${S.st.rows.map((r,i)=>`<tr data-p="${r.id}"><td class="nm"><span class="kb">${KIND_ONE[r.kind]||''}</span>${esc(r.name)}</td><td class="${r.qty<=0?'neg':''}">${fmtQty(r.qty)} ${esc(r.unit||'')}</td><td>${rub(r.price)}</td>
+    ${S.st.rows.map((r,i)=>`<tr data-p="${r.id}"><td class="nm">${r.photo?`<img class="thumb" src="${esc(r.photo)}" alt="" loading="lazy">`:''}<span class="kb">${KIND_ONE[r.kind]||''}</span>${esc(r.name)}</td><td class="${r.qty<=0?'neg':''}">${fmtQty(r.qty)} ${esc(r.unit||'')}</td><td>${rub(r.price)}</td>
       ${own?`<td>${r.cost!=null?rub(r.cost):'—'}</td><td>${r.cost?Math.round((r.price/r.cost-1)*100)+'%':'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>
     ${S.st.more?`<p class="note">Показаны первые ${S.st.rows.length} из ${t.n}. Уточните поиск, например «205 55 R16» или бренд.</p>`:''}`;
   el.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
@@ -877,13 +898,15 @@ function attrLines(k,a){if(!a)return[];const L=[];
 async function openProduct(id){let j;try{j=await api('product',null,{id});}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}
   const p=j.product,own=S.role==='owner';
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle" style="font-size:1.35rem;text-transform:none">${esc(p.name)}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  ${own&&j.qty>0?'<div class="row" style="margin:-4px 0 12px"><button class="btn sig" type="button" id="pcSell">Продать</button></div>':''}
+  ${j.photo||own?`<div class="pcph">${j.photo?`<img src="${esc(j.photo)}" alt="">`:'<span class="pay">нет фото</span>'}</div>`:''}
+  ${own?`<div class="row" style="margin:-4px 0 12px">${j.qty>0?'<button class="btn sig" type="button" id="pcSell">Продать</button>':''}<label class="btn ghost" style="cursor:pointer">${j.photo?'Заменить фото':'Загрузить фото'}<input type="file" accept="image/*" id="pcPh" hidden></label></div>`:''}
   <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Остаток</span><b class="tnum">${fmtQty(j.qty)} ${esc(p.unit||'')}</b>${j.custody?`<small class="pay">+ ${fmtQty(j.custody)} на ответхранении</small>`:''}</div><div class="tile"><span class="mono">Цена</span><b class="tnum" id="pcPrice">${rub(p.price)}</b>${own?'<button type="button" class="out" id="pcEdit" style="padding:0;min-height:30px">Изменить цену</button>':''}</div>
     ${own?`<div class="tile"><span class="mono">Себестоимость</span><b class="tnum">${j.cost!=null?rub(j.cost):'—'}</b></div><div class="tile acc"><span class="mono">Наценка</span><b class="tnum">${j.cost?Math.round((p.price/j.cost-1)*100)+'%':'—'}</b></div>`:''}</div>
   <dl class="facts">${[...attrLines(p.kind,p.attrs),['Вид',KIND_ONE[p.kind]||p.kind],['Группа CloudShop',p.grp||'—'],['Штрихкод',p.barcode||'—'],['Артикул',p.article||'—'],...(own&&p.supplier?[['Поставщик',p.supplier]]:[]),...(p.country?[['Страна',p.country]]:[])].map(([k,v])=>`<div><dt class="mono">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
   <h2 class="sec" style="font-size:1.1rem">Движение</h2>
   ${j.moves.length?`<div class="tw"><table><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th>Кол-во</th>${own?'<th>Цена прихода</th>':''}</tr></thead><tbody>${j.moves.map(m=>`<tr><td>${fmtDay(m.day)}</td><td style="text-align:left">${esc(m.label)} № ${m.doc}${m.num&&m.type!=='open'?' (накл. '+esc(m.num)+')':''}${m.partner?' · '+esc(m.partner):''}${m.wh==='custody'?' · ответхранение':''}</td><td class="${m.qty<0?'neg':''}">${m.qty>0?'+':''}${fmtQty(+m.qty)}</td>${own?`<td>${m.qty>0?rub(+m.cost):'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>`:'<p class="note">Движений пока нет.</p>'}`;
   $('#close').onclick=closeSheet;
+  const pf=document.getElementById('pcPh');if(pf)pf.onchange=async()=>{if(pf.files[0]&&await uploadPhoto(j.photo_key,pf.files[0])){openProduct(p.id);loadStock();}};
   const ps=document.getElementById('pcSell');if(ps)ps.onclick=()=>openDoc(null,{type:'sale',lines:[{product_id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,qty:1,price:p.price,list:p.price,cur_price:p.price,avg:j.cost,last:j.cost,stock:j.qty}]});
   const pe=document.getElementById('pcEdit');if(pe)pe.onclick=()=>{pe.outerHTML=`<span class="row" style="margin-top:6px"><input class="inp tnum" id="pcNew" type="number" inputmode="decimal" min="0" value="${p.price}" style="max-width:130px"><button class="btn" type="button" id="pcSave" style="min-height:42px">Сохранить</button></span>`;
     $('#pcSave').onclick=async()=>{try{await api('price_set',{id:p.id,price:+$('#pcNew').value});toast('<b>Цена изменена</b>'+rub(+$('#pcNew').value));openProduct(p.id);loadStock();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};};
@@ -1610,12 +1633,12 @@ function setArea(a,first){S.area=a;try{localStorage.setItem('ivanor_area',a);}ca
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
-const PAGES={sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',month:'Итоги месяца'};
+const PAGES={pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',month:'Итоги месяца'};
 function page(p){if(p==='import'){openImport();return;}
   if(!PAGES[p])p='goods';if(S.role!=='owner'&&!['goods','custody','cli'].includes(p))p='goods';
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
-  if(p==='cli'){show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}
+  if(p==='cli'){show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pho'){show('pho');loadPho();return;}
   $('#stH1').textContent=PAGES[p];
   if(p==='goods'||p==='custody'){S.st.wh=p==='custody'?'custody':'shop';document.querySelectorAll('#stWh .chip').forEach(x=>x.setAttribute('aria-pressed',x.dataset.w===S.st.wh));show('stock');stSub('goods');}
   else{if(S.dl.type!==(p==='month'?'':p))S.dl.partner='';S.dl.type=p==='month'?'':p;show('stock');stSub('docs');}
@@ -1625,6 +1648,38 @@ document.querySelectorAll('[data-area]').forEach(b=>b.onclick=()=>setArea(b.data
 function startArea(){const h=location.hash.slice(1),q=location.search;
   if(/shop|magazin/.test(q)||h==='stock')return 's';if(['day','cal','exp','sum'].includes(h))return 'm';
   try{return localStorage.getItem('ivanor_area')==='s'?'s':'m';}catch(_){return 'm';}}
+
+/* ---------- фото товаров ---------- */
+S.ph={show:'miss',kind:'',q:'',models:[]};
+async function loadPho(){try{const j=await api('photo_models');S.ph.models=j.models;S.ph.gd=j.gd;}catch(e){S.ph.models=[];}renderPho();}
+const PH_KIND={tire:'шины',disk:'диски',akb:'АКБ',fast:'крепёж'};
+function renderPho(){const M=S.ph.models,has=M.filter(m=>m.photo).length;
+  document.querySelectorAll('#phShow .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.s===S.ph.show));
+  document.querySelectorAll('#phKinds .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.k===S.ph.kind));
+  const byK=k=>{const x=M.filter(m=>k==='other'?!['tire','disk','akb'].includes(m.kind):m.kind===k);return `${x.filter(m=>m.photo).length} из ${x.length}`;};
+  $('#phTiles').innerHTML=`<div class="tile acc"><span class="mono">С фото</span><b class="tnum">${has} из ${M.length}</b><small class="pay">моделей в наличии</small></div>
+    <div class="tile"><span class="mono">Шины</span><b class="tnum">${byK('tire')}</b></div><div class="tile"><span class="mono">Диски</span><b class="tnum">${byK('disk')}</b></div><div class="tile"><span class="mono">АКБ</span><b class="tnum">${byK('akb')}</b></div>`;
+  const q=S.ph.q.toUpperCase().split(/\s+/).filter(Boolean);
+  let L=M.filter(m=>(S.ph.show==='all'||(S.ph.show==='has')===!!m.photo)&&(!S.ph.kind||(S.ph.kind==='other'?!['tire','disk','akb'].includes(m.kind):m.kind===S.ph.kind))&&q.every(t=>(m.label+' '+m.names.join(' ')).toUpperCase().includes(t)));
+  const more=L.length>120;L=L.slice(0,120);
+  if(!L.length){$('#phOut').innerHTML=`<div class="empty"><b>${S.ph.show==='miss'?'Все модели с фото':'Ничего не нашлось'}</b>${M.length?'Измените фильтр.':'Загрузите каталог из CloudShop — модели возьмутся из него.'}</div>`;return;}
+  $('#phOut').innerHTML=`<div class="phgrid">${L.map((m,i)=>`<div class="phc" data-i="${i}"><div class="im">${m.photo?`<img src="${esc(m.photo)}" alt="" loading="lazy">`:'<span>нет фото</span>'}</div>
+      <div class="tx"><b>${esc(m.label)}</b><small>${PH_KIND[m.kind]||'товар'} · ${m.n} ${plural(m.n,'карточка','карточки','карточек')} · ${fmtQty(m.qty)} шт.${m.source==='manual'?' · ваше фото':m.source==='url'?' · по ссылке':m.source?' · '+esc(m.source):''}</small></div>
+      <div class="ac"><label class="btn ghost" style="cursor:pointer">${m.photo?'Заменить':'Загрузить'}<input type="file" accept="image/*" data-up="${i}" hidden></label><button type="button" class="btn ghost" data-url="${i}">По ссылке</button>${m.photo?`<button type="button" class="btn ghost" data-del="${i}">Убрать</button>`:''}</div>
+      <div class="urlbox" id="pu${i}"></div></div>`).join('')}</div>${more?'<p class="note">Показаны первые 120 — уточните поиск или вид товара.</p>':''}`;
+  const out=$('#phOut');
+  out.querySelectorAll('[data-up]').forEach(inp=>inp.onchange=async()=>{const m=L[+inp.dataset.up],f=inp.files[0];if(!f)return;await uploadPhoto(m.k,f);loadPho();});
+  out.querySelectorAll('[data-url]').forEach(b=>b.onclick=()=>{const i=+b.dataset.url,m=L[i],box=document.getElementById('pu'+i);
+    box.innerHTML=`<div style="padding:0 8px 8px;display:flex;gap:4px"><input class="inp" id="pui${i}" placeholder="https://… ссылка на картинку" style="min-height:36px;font-size:.85rem"><button class="btn" type="button" id="pus${i}" style="min-height:36px">OK</button></div>`;
+    const inp=document.getElementById('pui'+i);inp.focus();
+    document.getElementById('pus'+i).onclick=async()=>{try{await api('photo_url',{k:m.k,url:inp.value.trim()});toast('<b>Фото сохранено</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}};});
+  out.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const m=L[+b.dataset.del];try{await api('photo_del',{k:m.k});toast('<b>Фото убрано</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Ошибка</b>'+esc(e.message));}});}
+async function uploadPhoto(k,file){const fd=new FormData();fd.append('k',k);fd.append('file',file);
+  try{const r=await fetch('api.php?a=photo_upload',{method:'POST',body:fd,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('Ошибка '+r.status));toast('<b>Фото сохранено</b>');return j.url;}
+  catch(e){toast('<b>Не загрузилось</b>'+esc(e.message));return null;}}
+document.querySelectorAll('#phShow .chip').forEach(c=>c.onclick=()=>{S.ph.show=c.dataset.s;renderPho();});
+document.querySelectorAll('#phKinds .chip').forEach(c=>c.onclick=()=>{S.ph.kind=S.ph.kind===c.dataset.k?'':c.dataset.k;renderPho();});
+$('#phQ').addEventListener('input',e=>{S.ph.q=e.target.value;renderPho();});
 
 /* ---------- отчёт «Продажи по товарам» ---------- */
 S.rp={month:iso(new Date()).slice(0,7),rows:[],checks:0};
@@ -1654,7 +1709,7 @@ async function loadSup(){let L=[];try{L=(await api('suppliers')).suppliers;}catc
 
 /* ---------- вкладки ---------- */
 function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}

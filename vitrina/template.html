@@ -88,6 +88,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
   transition:border-color .25s,transform .25s var(--ease)}
 .card:hover{border-color:var(--ink)}
 .card:active{transform:scale(.99)}
+.pimg{width:100%;height:100%;object-fit:contain;background:#fff}
 .ph{position:relative;aspect-ratio:4/3;max-width:100%;background:var(--paper-3);display:grid;place-items:center;overflow:hidden}
 .ph svg{width:62%;height:auto}
 .ph .tags{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap}
@@ -205,6 +206,10 @@ tr.hit td{background:var(--signal-tint)}
 const STAMP='__STAMP__';
 const TIRES=__TIRES__;
 const OTHER=__OTHER__;
+/* фото моделей — из учёта на этом же сайте (vladautoshina.ru/montazh); если недоступно — остаются схемы */
+let PH={};
+fetch('../montazh/api.php?a=photos_public',{credentials:'omit'}).then(r=>r.json()).then(j=>{const b='../montazh/';PH={};Object.entries(j.photos||{}).forEach(([k,v])=>PH[k]=b+v);if(Object.keys(PH).length&&typeof renderOut==='function')renderOut();}).catch(()=>{});
+const phImg=(list,svg)=>{const o=list.find(x=>PH[x.id]);return o?`<img class="pimg" src="${PH[o.id]}" alt="" loading="lazy">`:svg;};
 (function(){
 'use strict';
 const $=s=>document.querySelector(s);
@@ -279,7 +284,7 @@ function tiresOut(){
   if(!rows.length)return empty('Такого размера сейчас нет','Привезём под заказ — уточните у продавца. Или уберите один из фильтров.');
   const html=`<div class="grid">${g.map((x,i)=>{const o=x.o,one=x.list.length===1;
     const szs=one?'':`<div class="sizes">${x.list.slice(0,6).map(s=>`<span class="sz">${tSize(s)}</span>`).join('')}${x.list.length>6?`<span class="sz">+${x.list.length-6}</span>`:''}</div>`;
-    return `<button class="card" type="button" data-i="${i}"><div class="ph">${tireSvg(o)}<div class="tags">${tTags(o)}</div></div>
+    return `<button class="card" type="button" data-i="${i}"><div class="ph">${phImg(x.list,tireSvg(o))}<div class="tags">${tTags(o)}</div></div>
       <div class="cb"><span class="mono brand">${esc(o.b)}${one?' · '+tSize(o):''}</span><span class="model">${esc(o.m)}</span>
       ${o.a?`<span class="alias">Известна как ${esc(o.a)}</span>`:''}${szs}
       <div class="price"><b class="tnum">${one?'':'<small>от</small>'}${rub(x.min)}</b><span>${one?`за 4 шт. ${rub(o.pr*4)}<br>${stockHtml(o.q)}`:`${x.list.length} ${plural(x.list.length,'размер','размера','размеров')}`}</span></div></div></button>`;}).join('')}</div>`;
@@ -288,7 +293,7 @@ function tiresOut(){
 function tireSheet(x){const o=x.o;
   const all=TIRES.filter(r=>r.b===o.b&&r.m===o.m&&r.st===o.st&&r.s===o.s).sort((a,b)=>a.d-b.d||a.w-b.w||a.p-b.p);
   const hit=new Set(x.list.map(r=>r.id)),f=S.tires;
-  sheet(`<div class="sh-top"><div class="ph">${tireSvg(o)}<div class="tags">${tTags(o)}</div></div><div style="min-width:0">
+  sheet(`<div class="sh-top"><div class="ph">${phImg(all,tireSvg(o))}<div class="tags">${tTags(o)}</div></div><div style="min-width:0">
     <span class="mono brand">${esc(o.b)}</span><h2 class="model" id="shTitle" style="font-size:clamp(1.8rem,4vw,2.6rem);margin:4px 0 6px">${esc(o.m)}</h2>
     ${o.a?`<div class="alias">Известна как ${esc(o.a)}</div>`:''}
     <dl class="facts"><div><dt class="mono">Сезон</dt><dd>${SEAS[o.s][0]}${o.s==='winter'?(o.st?', шипованная':', нешипованная'):''}</dd></div>
@@ -318,7 +323,7 @@ const DISKS_PICK=()=>{const f=S.disks,set=k=>v=>{f[k]=v;renderAll();};const out=
 function disksOut(){const rows=sortList(DISKS.filter(o=>dMatch(o)),o=>o.pr,o=>o.m);
   title(rows.length?`${rows.length} ${plural(rows.length,'диск','диска','дисков')}`:'');
   if(!rows.length)return empty('Таких дисков сейчас нет','Подберём под заказ по марке машины.');
-  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${diskSvg(o)}<div class="tags"><span class="tag ${o.k==='odd'?'stud':'all'}">${DK[o.k]}</span></div></div>
+  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],diskSvg(o))}<div class="tags"><span class="tag ${o.k==='odd'?'stud':'all'}">${DK[o.k]}</span></div></div>
     <div class="cb"><span class="mono brand">R${o.d} · ${esc(o.pcd)}</span><span class="model" style="font-size:1.25rem">${esc(o.m)}</span>
     <span class="spec">${o.w}×${o.d} · ET${o.et} · DIA ${o.dia}</span>
     <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${o.k==='odd'?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,o.k==='odd'?1:4)}</span></div></div></div>`).join('')}</div>`];}
@@ -343,7 +348,7 @@ const AKB_PICK=()=>{const f=S.akb,set=k=>v=>{f[k]=v;renderAll();};const out=[];
 function akbOut(){const rows=sortList(AKB.filter(o=>aMatch(o)),o=>o.pr,o=>o.m);
   title(rows.length?`${rows.length} ${plural(rows.length,'аккумулятор','аккумулятора','аккумуляторов')}`:'');
   if(!rows.length)return empty('Такого аккумулятора нет','Привезём под заказ — назовите марку машины.');
-  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${akbSvg(o)}<div class="tags"><span class="tag all">${STD[o.std]}</span>${/AGM/i.test(o.m)?'<span class="tag win">AGM</span>':/EFB/i.test(o.m)?'<span class="tag win">EFB</span>':''}</div></div>
+  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],akbSvg(o))}<div class="tags"><span class="tag all">${STD[o.std]}</span>${/AGM/i.test(o.m)?'<span class="tag win">AGM</span>':/EFB/i.test(o.m)?'<span class="tag win">EFB</span>':''}</div></div>
     <div class="cb"><span class="mono brand">${o.pol==='rev'?'Обратная полярность':o.pol==='dir'?'Прямая полярность':''}</span>
     <span class="model" style="font-size:1.25rem">${esc(o.m.replace(/^(ASIA|Asia|MOTO)\s+/,'').replace(/^(о\/п|п\/п)\s+/,''))}</span>
     ${o.en?`<span class="spec">Пусковой ток ${o.en} А</span>`:''}
