@@ -184,6 +184,8 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
 .phc .im span{color:var(--ink-3);font-size:.8rem;text-align:center;padding:10px}
 .phc .tx{padding:8px 10px;flex:1}.phc .tx b{display:block;font-size:.95rem;line-height:1.25}.phc .tx small{display:block;color:var(--ink-3);font-size:.76rem;margin-top:3px}
 .phc .ac{display:flex;gap:4px;padding:0 8px 8px;flex-wrap:wrap}.phc .ac .btn{min-height:34px;padding:0 9px;font-size:.84rem}
+.sug{display:flex;gap:6px;flex-wrap:wrap;padding:0 8px 8px}.sug button{width:88px;border:1.5px solid var(--rule);border-radius:3px;background:#fff;padding:0;overflow:hidden}
+.sug img{width:100%;height:66px;object-fit:contain;display:block}.sug span{display:block;font-size:.72rem;font-weight:700;background:var(--ink);color:var(--paper);padding:3px 0}
 .pcph{max-width:320px;aspect-ratio:4/3;background:#fff;border:1.5px solid var(--rule);border-radius:3px;display:grid;place-items:center;overflow:hidden;margin-bottom:12px}.pcph img{width:100%;height:100%;object-fit:contain}
 .fc{margin:-2px 0 12px;padding:10px 12px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2)}
 .fcrow{display:flex;gap:10px;align-items:flex-start;padding:4px 0}
@@ -519,6 +521,8 @@ details.bdgs summary .mono{color:var(--ink-3)}
   <section id="v-pho" hidden>
     <div class="calbar"><h1>Фото товаров</h1></div>
     <p class="note" style="margin:0 0 10px">Одно фото на модель: шины — бренд и модель (шипованные отдельно), диски — модель, остальное — на карточку. Фото хранятся на вашем сайте и сразу видны в витрине и в карточке товара.</p>
+    <div class="row" style="margin-bottom:10px"><button class="btn sig" type="button" id="phAuto">Подобрать фото шин автоматически</button><button class="btn ghost" type="button" id="phTest">Проверить связь с поставщиком</button></div>
+    <div id="phMsg"></div>
     <div class="tiles" id="phTiles" style="margin-top:0"></div>
     <div class="row" style="margin-bottom:10px;align-items:center">
       <div class="row" id="phShow"><button type="button" class="chip" data-s="miss" aria-pressed="true">Без фото</button><button type="button" class="chip" data-s="has" aria-pressed="false">С фото</button><button type="button" class="chip" data-s="all" aria-pressed="false">Все</button></div>
@@ -1665,7 +1669,7 @@ function renderPho(){const M=S.ph.models,has=M.filter(m=>m.photo).length;
   if(!L.length){$('#phOut').innerHTML=`<div class="empty"><b>${S.ph.show==='miss'?'Все модели с фото':'Ничего не нашлось'}</b>${M.length?'Измените фильтр.':'Загрузите каталог из CloudShop — модели возьмутся из него.'}</div>`;return;}
   $('#phOut').innerHTML=`<div class="phgrid">${L.map((m,i)=>`<div class="phc" data-i="${i}"><div class="im">${m.photo?`<img src="${esc(m.photo)}" alt="" loading="lazy">`:'<span>нет фото</span>'}</div>
       <div class="tx"><b>${esc(m.label)}</b><small>${PH_KIND[m.kind]||'товар'} · ${m.n} ${plural(m.n,'карточка','карточки','карточек')} · ${fmtQty(m.qty)} шт.${m.source==='manual'?' · ваше фото':m.source==='url'?' · по ссылке':m.source?' · '+esc(m.source):''}</small></div>
-      <div class="ac"><label class="btn ghost" style="cursor:pointer">${m.photo?'Заменить':'Загрузить'}<input type="file" accept="image/*" data-up="${i}" hidden></label><button type="button" class="btn ghost" data-url="${i}">По ссылке</button>${m.photo?`<button type="button" class="btn ghost" data-del="${i}">Убрать</button>`:''}</div>
+      <div class="ac"><label class="btn ghost" style="cursor:pointer">${m.photo?'Заменить':'Загрузить'}<input type="file" accept="image/*" data-up="${i}" hidden></label>${m.kind==='tire'?`<button type="button" class="btn ghost" data-sug="${i}">Подобрать</button>`:''}<button type="button" class="btn ghost" data-url="${i}">По ссылке</button>${m.photo?`<button type="button" class="btn ghost" data-del="${i}">Убрать</button>`:''}</div>
       <div class="urlbox" id="pu${i}"></div></div>`).join('')}</div>${more?'<p class="note">Показаны первые 120 — уточните поиск или вид товара.</p>':''}`;
   const out=$('#phOut');
   out.querySelectorAll('[data-up]').forEach(inp=>inp.onchange=async()=>{const m=L[+inp.dataset.up],f=inp.files[0];if(!f)return;await uploadPhoto(m.k,f);loadPho();});
@@ -1673,10 +1677,28 @@ function renderPho(){const M=S.ph.models,has=M.filter(m=>m.photo).length;
     box.innerHTML=`<div style="padding:0 8px 8px;display:flex;gap:4px"><input class="inp" id="pui${i}" placeholder="https://… ссылка на картинку" style="min-height:36px;font-size:.85rem"><button class="btn" type="button" id="pus${i}" style="min-height:36px">OK</button></div>`;
     const inp=document.getElementById('pui'+i);inp.focus();
     document.getElementById('pus'+i).onclick=async()=>{try{await api('photo_url',{k:m.k,url:inp.value.trim()});toast('<b>Фото сохранено</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}};});
+  out.querySelectorAll('[data-sug]').forEach(b=>b.onclick=async()=>{const i=+b.dataset.sug,m=L[i],box=document.getElementById('pu'+i);box.innerHTML='<p class="note" style="padding:0 8px">Ищу у поставщика…</p>';
+    let j;try{j=await api('photo_suggest',null,{k:m.k});}catch(e){box.innerHTML=`<p class="err" style="padding:0 8px">${esc(e.message)}</p>`;return;}
+    if(!j.items.length){box.innerHTML=`<p class="note" style="padding:0 8px">У поставщика не нашлось${j.error?': '+esc(j.error):j.note?': '+esc(j.note):''}. Загрузите своё или по ссылке.</p>`;return;}
+    box.innerHTML=`<div class="sug">${j.items.map((c,n)=>`<button type="button" data-c="${n}" title="${esc(c.title)}"><img src="${esc(c.url)}" alt="" loading="lazy"><span>Подходит</span></button>`).join('')}</div>`;
+    box.querySelectorAll('[data-c]').forEach(cb=>cb.onclick=async()=>{try{await api('photo_url',{k:m.k,url:j.items[+cb.dataset.c].url});toast('<b>Фото сохранено</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}});});
   out.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const m=L[+b.dataset.del];try{await api('photo_del',{k:m.k});toast('<b>Фото убрано</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Ошибка</b>'+esc(e.message));}});}
 async function uploadPhoto(k,file){const fd=new FormData();fd.append('k',k);fd.append('file',file);
   try{const r=await fetch('api.php?a=photo_upload',{method:'POST',body:fd,credentials:'same-origin'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('Ошибка '+r.status));toast('<b>Фото сохранено</b>');return j.url;}
   catch(e){toast('<b>Не загрузилось</b>'+esc(e.message));return null;}}
+$('#phTest').onclick=async()=>{const el=$('#phMsg');el.innerHTML='<p class="note">Проверяю…</p>';
+  try{const j=await api('api4t_test');const ok=j.soap&&j.probe&&j.probe.ok;
+    el.innerHTML=`<div class="hint" style="margin-bottom:12px;${ok?'':'border-color:var(--signal)'}"><b>${!j.soap?'На хостинге не включён модуль SOAP':ok?'Связь с поставщиком есть':'Поставщик ответил с ошибкой'}</b>
+      ${!j.soap?`<p>${esc(j.hint||'')}</p>`:ok?`<p>Пробный поиск 205/55 R16: найдено товаров с фото — ${j.probe.items.length}${j.probe.items.length?'':'. Похоже, фото в ответе называются иначе — пришлите текст ниже Claude.'}</p>`:`<p>${esc(j.probe?j.probe.error:'')}</p>`}
+      <details><summary>Технические подробности (для Claude — паролей тут нет)</summary><textarea class="inp" readonly style="width:100%;min-height:200px;font-family:var(--f-mono);font-size:.72rem">${esc(JSON.stringify(j,null,1))}</textarea></details></div>`;}
+  catch(e){el.innerHTML=`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)"><b>Не получилось</b><p>${esc(e.message)}</p></div>`;}};
+let phRun=false;
+$('#phAuto').onclick=async()=>{const b=$('#phAuto');if(phRun){phRun=false;b.textContent='Останавливаю…';return;}
+  const list=S.ph.models.filter(m=>m.kind==='tire'&&!m.photo);if(!list.length){toast('<b>Все шины уже с фото</b>');return;}
+  phRun=true;b.textContent='Стоп';let ok=0,miss=0,errs=0;const el=$('#phMsg');
+  for(let i=0;i<list.length&&phRun;i++){el.innerHTML=`<p class="note">Подбираю ${i+1} из ${list.length}: ${esc(list[i].label)} · нашлось ${ok}, нет у поставщика ${miss}${errs?', ошибок '+errs:''}</p>`;
+    try{const j=await api('photo_suggest',null,{k:list[i].k,auto:'1'});if(j.saved)ok++;else miss++;}catch(e){errs++;if(errs>=3&&!ok){el.innerHTML=`<div class="hint" style="border-color:var(--signal)"><b>Остановлено: ${esc(e.message)}</b><p>Нажмите «Проверить связь с поставщиком».</p></div>`;break;}}}
+  phRun=false;b.textContent='Подобрать фото шин автоматически';if(ok||miss)el.innerHTML=`<p class="note">Готово: фото нашлось у ${ok} моделей, у поставщика нет — ${miss}${errs?', ошибок '+errs:''}. Проверьте вкладку «С фото» — неподходящее можно заменить.</p>`;loadPho();};
 document.querySelectorAll('#phShow .chip').forEach(c=>c.onclick=()=>{S.ph.show=c.dataset.s;renderPho();});
 document.querySelectorAll('#phKinds .chip').forEach(c=>c.onclick=()=>{S.ph.kind=S.ph.kind===c.dataset.k?'':c.dataset.k;renderPho();});
 $('#phQ').addEventListener('input',e=>{S.ph.q=e.target.value;renderPho();});

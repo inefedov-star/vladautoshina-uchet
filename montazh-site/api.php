@@ -214,6 +214,29 @@ function fetchUrl(string $url): string {
     $b = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE); curl_close($c); if ($b === false || $code >= 400) fail('Не удалось скачать картинку по ссылке (' . ($code ?: 'нет связи') . ')'); return $b; }
   $b = @file_get_contents($url, false, stream_context_create(['http' => ['timeout' => 20, 'user_agent' => $ua]])); if ($b === false) fail('Не удалось скачать картинку по ссылке'); return $b;
 }
+// ===== API поставщика «Форточки» (b2b.4tochki.ru): подбор фото по модели =====
+function api4t(array $cfg): SoapClient {
+  if (empty($cfg['api4t_login']) || empty($cfg['api4t_password'])) fail('Не заданы api4t_login и api4t_password в config.php');
+  if (!class_exists('SoapClient')) fail('На хостинге нет модуля PHP SOAP — нужно включить его в панели Джино (расширения PHP)', 500);
+  ini_set('default_socket_timeout', '25');
+  try { return new SoapClient($cfg['api4t_wsdl'] ?? 'http://api-b2b.4tochki.ru/WCF/ClientService.svc?wsdl', ['exceptions' => true, 'connection_timeout' => 20, 'cache_wsdl' => WSDL_CACHE_DISK, 'trace' => false]); }
+  catch (Throwable $e) { fail('Не удалось подключиться к API поставщика: ' . $e->getMessage(), 502); }
+}
+// обход любого ответа: собираем «товары» — объекты, где есть название/модель и ссылки на картинки
+function api4tItems($x, array &$out, int $depth = 0): void {
+  if ($depth > 8 || count($out) > 400) return;
+  if (is_object($x)) $x = get_object_vars($x);
+  if (!is_array($x)) return;
+  $imgs = []; $txt = [];
+  foreach ($x as $k => $v) {
+    $u = is_string($v) ? trim($v) : ''; if (strpos($u, '//') === 0) $u = 'https:' . $u;
+    if ($u !== '' && preg_match('~^https?://\S+$~i', $u) && (preg_match('~\.(jpe?g|png|webp|gif)(\?\S*)?$~i', $u) || preg_match('/img|image|photo|foto|pic/i', (string)$k))) $imgs[(string)$k] = $u;
+    elseif (is_string($v) && preg_match('/name|model|brand|marka|title/i', (string)$k)) $txt[(string)$k] = $v;
+  }
+  if ($imgs && $txt) $out[] = ['txt' => $txt, 'imgs' => $imgs];
+  foreach ($x as $v) if (is_array($v) || is_object($v)) api4tItems($v, $out, $depth + 1);
+}
+function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-ЯЁ]+/u', ' ', mb_strtoupper($s))); }
 function post(): void { if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Нужен POST', 405); }
 
 try {
@@ -858,6 +881,46 @@ try {
       $k = photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']); if (isset($pm[$k])) $o[$p['ext_id']] = $pm[$k]['url']; }
     header('Cache-Control: public, max-age=300'); header('Access-Control-Allow-Origin: *');
     out(['base' => 'montazh/', 'photos' => $o ?: new stdClass()]);
+
+  case 'api4t_test':
+    // проверка связи с API поставщика: какие методы и типы он описывает (без паролей)
+    needRole($role, ['owner']);
+    if (!class_exists('SoapClient')) out(['soap' => false, 'hint' => 'Включите расширение soap в настройках PHP на Джино']);
+    $c = api4t($cfg); $types = array_map(fn($t) => mb_substr(preg_replace('/\s+/', ' ', $t), 0, 600), $c->__getTypes());
+    $res = ['soap' => true, 'login_set' => !empty($cfg['api4t_login']), 'functions' => $c->__getFunctions(), 'types' => array_values(array_filter($types, fn($t) => preg_match('/Tyre|Tire|Disk|Filter|Rest|Goods|img/i', $t)))];
+    // пробный поиск: 205/55 R16
+    try { $r = $c->GetFindTyre(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => ['width' => 205, 'height' => 55, 'diameter' => 16], 'page' => 0, 'pageSize' => 5]);
+      $it = []; api4tItems($r, $it); $res['probe'] = ['ok' => true, 'items' => array_slice($it, 0, 3), 'raw' => mb_substr(json_encode($r, JSON_UNESCAPED_UNICODE), 0, 3000)]; }
+    catch (Throwable $e) { $res['probe'] = ['ok' => false, 'error' => $e->getMessage()]; }
+    out($res);
+
+  case 'photo_suggest':
+    // предложить фото модели из API поставщика: ищем по размеру одной из шин модели и сверяем бренд+модель
+    needRole($role, ['owner']);
+    $k = (string)($_GET['k'] ?? ''); $auto = ($_GET['auto'] ?? '0') === '1';
+    if (strpos($k, 'tire|') !== 0) out(['items' => [], 'note' => 'Автоподбор пока только для шин']);
+    [, $brand, $model, $stud] = array_pad(explode('|', $k), 4, '');
+    $sizes = [];
+    foreach (db($cfg)->query("SELECT name, attrs FROM products WHERE kind = 'tire' AND archived = 0")->fetchAll() as $p) { $a = json_decode($p['attrs'], true) ?: [];
+      if (photoKey('tire', $a, $p['name'], 0) === $k && !empty($a['w'])) $sizes[$a['w'] . '/' . $a['p'] . '/' . $a['d']] = $a; if (count($sizes) >= 2) break; }
+    if (!$sizes) out(['items' => [], 'note' => 'Нет размеров этой модели']);
+    $c = api4t($cfg); $cand = []; $nb = normModel($brand); $nm = normModel($model); $err = null;
+    foreach ($sizes as $a) {
+      try { $r = $c->GetFindTyre(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => ['width' => (float)$a['w'], 'height' => (float)$a['p'], 'diameter' => (float)$a['d']], 'page' => 0, 'pageSize' => 200]); }
+      catch (Throwable $e) { $err = $e->getMessage(); continue; }
+      $it = []; api4tItems($r, $it);
+      foreach ($it as $x) { $t = normModel(implode(' ', $x['txt']));
+        // совпадение: бренд и все слова модели есть в названии у поставщика
+        $words = array_filter(explode(' ', $nm)); $hit = ($nb === '' || strpos(' ' . $t . ' ', ' ' . $nb . ' ') !== false); foreach ($words as $w) if (strpos(' ' . $t . ' ', ' ' . $w . ' ') === false) { $hit = false; break; }
+        if (!$hit) continue; $score = 100 - abs(mb_strlen($t) - mb_strlen($nb . ' ' . $nm)); if ($stud === 'S' && preg_match('/ШИП|STUD/u', $t)) $score += 5;
+        // большая картинка важнее маленькой
+        $img = null; foreach ($x['imgs'] as $kk => $u) if (preg_match('/big|large|full|my/i', $kk)) { $img = $u; break; } if (!$img) $img = reset($x['imgs']);
+        if (!isset($cand[$img]) || $cand[$img]['score'] < $score) $cand[$img] = ['url' => $img, 'title' => implode(' · ', array_unique(array_values($x['txt']))), 'score' => $score]; }
+      if (count($cand) >= 3) break;
+    }
+    usort($cand, fn($x, $y) => $y['score'] <=> $x['score']); $cand = array_slice(array_values($cand), 0, 6);
+    if ($auto && $cand) { $u = photoSave($cfg, $k, fetchUrl($cand[0]['url']), '4tochki', $cand[0]['url']); out(['saved' => $u, 'items' => $cand]); }
+    out(['items' => $cand, 'error' => $cand ? null : $err]);
 
   case 'price_set':
     // цена продажи в карточке
