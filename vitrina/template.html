@@ -58,16 +58,20 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .tool[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
 
 /* подбор размера */
-.pick{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;align-items:center;padding-block:4px 12px}
-.pick .lbl{color:var(--ink-3);width:84px}
-.row{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding-block:2px;min-width:0}
+.pickbox{margin-top:12px;padding:10px 12px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2)}
+.pick{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;align-items:start}
+.pick .lbl{color:var(--ink-3);width:84px;padding-top:9px;font-size:.66rem}
+.row{display:flex;flex-wrap:wrap;gap:5px;padding-block:1px;min-width:0}
+.psum{display:flex;align-items:center;gap:10px;padding-block:6px 8px;font-weight:600}
+.psum .tool{min-height:36px;padding:0 12px}
+.psum span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row::-webkit-scrollbar{display:none}
-.chip{flex:none;min-width:56px;min-height:46px;padding:0 14px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);
-  font-family:var(--f-mono);font-weight:700;font-size:1.02rem;transition:background .2s,border-color .2s,color .2s}
+.chip{flex:none;min-width:44px;min-height:36px;padding:0 10px;border:1.2px solid var(--rule);border-radius:3px;background:var(--paper);
+  font-family:var(--f-mono);font-weight:700;font-size:.9rem;transition:background .2s,border-color .2s,color .2s}
 .chip:active{transform:translateY(1px)}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
 .chip.dim{opacity:.32}
-.chip.txt{font-family:var(--f-text);font-weight:600;font-size:.95rem}
+.chip.txt{font-family:var(--f-text);font-weight:600;font-size:.88rem}
 .chip.w[aria-pressed="true"]{background:var(--cold);border-color:var(--cold);color:var(--on-ink)}
 .chip.s[aria-pressed="true"]{background:var(--moss);border-color:var(--moss);color:var(--on-ink)}
 .size-now{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
@@ -140,7 +144,7 @@ tr.hit td{background:var(--signal-tint)}
   text-transform:uppercase;letter-spacing:.01em;color:var(--ink-3);border-bottom:3px solid transparent}
 .tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--signal)}
 .tab sup{font-family:var(--f-mono);font-size:.62rem;font-weight:500;color:var(--ink-3);margin-left:4px;letter-spacing:.05em}
-.search{width:100%;min-height:46px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:0 14px;font:inherit;font-size:1rem;color:var(--ink)}
+.search{width:100%;min-height:40px;border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);padding:0 14px;font:inherit;font-size:1rem;color:var(--ink)}
 .search:focus{outline:none;border-color:var(--signal)}
 .spec{font-family:var(--f-mono);font-size:.82rem;color:var(--ink-2);letter-spacing:-.01em}
 .big{font-family:var(--f-display);font-weight:800;font-size:2.1rem;line-height:1;letter-spacing:-.02em}
@@ -154,7 +158,7 @@ tr.hit td{background:var(--signal-tint)}
 
 @media (max-width:640px){
   .pick{grid-template-columns:1fr}
-  .pick .lbl{width:auto}
+  .pick .lbl{width:auto;padding-top:4px}
   .sh-top{grid-template-columns:1fr}
   .sh-top .ph{max-width:260px}
   .bar .hide-sm{display:none}
@@ -174,11 +178,12 @@ tr.hit td{background:var(--signal-tint)}
       <button class="tool" id="fs" type="button">На весь экран</button>
     </div>
     <nav class="tabs" id="tabs" role="tablist" aria-label="Разделы"></nav>
-    <div class="pick" id="pick"></div>
+    <div class="psum" id="psum" hidden><span id="psumT"></span><button class="tool" type="button" id="psumGo">Изменить подбор ↑</button></div>
   </div>
 </header>
 
 <main class="wrap">
+  <section class="pickbox" id="pickbox"><div class="pick" id="pick"></div></section>
   <div class="res-hd">
     <h1 id="resTitle"></h1>
     <div class="sort" id="sort">
@@ -231,7 +236,7 @@ function chipRow(label,vals,cur,avail,fmt,onPick,cls){
 function searchRow(ph){
   const l=document.createElement('span');l.className='mono lbl';l.textContent='Поиск';
   const i=document.createElement('input');i.className='search';i.id='q-'+S.tab;i.type='search';i.placeholder=ph;i.value=S.q;
-  i.oninput=()=>{S.q=i.value;renderOut();};return [l,i];
+  i.oninput=()=>{S.q=i.value;renderOut();psum();};return [l,i];
 }
 const qmatch=(text)=>!S.q||S.q.toLowerCase().split(/\s+/).filter(Boolean).every(w=>text.toLowerCase().includes(w));
 const sortList=(arr,price,name)=>{const a=[...arr];
@@ -383,7 +388,13 @@ function renderOut(){const t=TABS.find(x=>x[0]===S.tab);const [html,bind]=t[4]()
   if(S.tab==='tires')renderPickLite();}
 function renderPickLite(){/* при поиске по шинам доступность фишек меняется — перерисуем без потери фокуса */
   if(document.activeElement&&document.activeElement.id==='q-tires'){renderPick();}}
-function renderAll(){renderTabs();renderPick();renderOut();}
+function renderAll(){renderTabs();renderPick();renderOut();psum();}
+/* подбор прокручивается вместе со страницей; когда он ушёл вверх — в шапке короткая строка выбранного */
+function psum(){const sel=[...document.querySelectorAll('#pick .chip[aria-pressed="true"]')].map(b=>b.textContent.trim());if(S.q)sel.push('«'+S.q+'»');
+  $('#psumT').textContent=sel.length?'Подбор: '+sel.join(' · '):'Подбор не выбран';}
+let pickVisible=true;
+if('IntersectionObserver' in window)new IntersectionObserver(es=>{pickVisible=es[0].isIntersecting;$('#psum').hidden=pickVisible;},{rootMargin:'-120px 0px 0px 0px'}).observe($('#pickbox'));
+$('#psumGo').onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
 
 function sheet(html){$('#shIn').innerHTML=`<button class="close" id="close" type="button" aria-label="Закрыть">×</button>`+html;
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
