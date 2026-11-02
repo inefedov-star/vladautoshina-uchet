@@ -208,7 +208,7 @@ const TIRES=__TIRES__;
 const OTHER=__OTHER__;
 /* фото моделей — из учёта на этом же сайте (vladautoshina.ru/montazh); если недоступно — остаются схемы */
 let PH={};
-fetch('../montazh/api.php?a=photos_public',{credentials:'omit'}).then(r=>r.json()).then(j=>{const b='../montazh/';PH={};Object.entries(j.photos||{}).forEach(([k,v])=>PH[k]=b+v);if(Object.keys(PH).length&&typeof renderOut==='function')renderOut();}).catch(()=>{});
+fetch('/montazh/api.php?a=photos_public',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{const b='/montazh/';PH={};Object.entries(j.photos||{}).forEach(([k,v])=>PH[k]=b+v);if(Object.keys(PH).length&&typeof renderOut==='function')renderOut();}).catch(()=>{});
 const phImg=(list,svg)=>{const o=list.find(x=>PH[x.id]);return o?`<img class="pimg" src="${PH[o.id]}" alt="" loading="lazy">`:svg;};
 (function(){
 'use strict';

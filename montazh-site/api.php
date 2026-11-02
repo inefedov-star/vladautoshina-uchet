@@ -189,8 +189,9 @@ function photoLabel(string $kind, array $a, string $name): string {
   return $name;
 }
 function photoDir(): string { $d = __DIR__ . '/photos'; if (!is_dir($d)) { @mkdir($d, 0755, true); }
-  // в папке фото не должно исполняться ничего, кроме картинок
-  if (!is_file($d . '/.htaccess')) @file_put_contents($d . '/.htaccess', "Options -Indexes\n<IfModule mod_php7.c>\n  php_flag engine off\n</IfModule>\n<FilesMatch \"(?i)\\.(php|phtml|phar|pl|py|cgi|sh)$\">\n  <IfModule mod_authz_core.c>\n    Require all denied\n  </IfModule>\n</FilesMatch>\n");
+  // в папке фото не должно исполняться ничего, кроме картинок. Без «Options»: на части хостингов он даёт ошибку 500
+  $ht = "# v2\n<FilesMatch \"(?i)\\.(php|phtml|phar|pl|py|cgi|sh)$\">\n  <IfModule mod_authz_core.c>\n    Require all denied\n  </IfModule>\n  <IfModule !mod_authz_core.c>\n    Order allow,deny\n    Deny from all\n  </IfModule>\n</FilesMatch>\n";
+  if (@file_get_contents($d . '/.htaccess') !== $ht) @file_put_contents($d . '/.htaccess', $ht);
   return $d; }
 function photoMap(array $cfg): array { $o = []; foreach (db($cfg)->query('SELECT k, file, source, updated FROM photos')->fetchAll() as $r) $o[$r['k']] = ['url' => 'photos/' . $r['file'] . '?v=' . $r['updated'], 'source' => $r['source']]; return $o; }
 // принимает байты картинки, уменьшает до 900 px и сохраняет как jpg (если на хостинге есть GD), иначе — как есть
@@ -894,7 +895,7 @@ try {
 
   case 'photos_public':
     // для витрины: ID карточки CloudShop → адрес фото. Только картинки, без цен и остатков
-    $pm = photoMap($cfg); $o = [];
+    $pm = photoMap($cfg); $o = []; if ($pm) photoDir();
     if ($pm) foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs FROM products WHERE archived = 0 AND ext_id IS NOT NULL AND ext_id != ''")->fetchAll() as $p) {
       $k = photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']); if (isset($pm[$k])) $o[$p['ext_id']] = $pm[$k]['url']; }
     header('Cache-Control: public, max-age=300'); header('Access-Control-Allow-Origin: *');
