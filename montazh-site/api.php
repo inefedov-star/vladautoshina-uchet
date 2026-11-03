@@ -933,13 +933,17 @@ try {
         // совпадение: бренд и все слова модели есть в названии у поставщика
         $words = array_filter(explode(' ', $nm)); $hit = ($nb === '' || strpos(' ' . $t . ' ', ' ' . $nb . ' ') !== false); foreach ($words as $w) if (strpos(' ' . $t . ' ', ' ' . $w . ' ') === false) { $hit = false; break; }
         if (!$hit) continue; $score = 100 - abs(mb_strlen($t) - mb_strlen($nb . ' ' . $nm)); if ($stud === 'S' && preg_match('/ШИП|STUD/u', $t)) $score += 5;
-        // большая картинка важнее маленькой
-        $img = null; foreach ($x['imgs'] as $kk => $u) if (preg_match('/big|large|full|my/i', $kk)) { $img = $u; break; } if (!$img) $img = reset($x['imgs']);
-        if (!isset($cand[$img]) || $cand[$img]['score'] < $score) $cand[$img] = ['url' => $img, 'title' => implode(' · ', array_unique(array_values($x['txt']))), 'score' => $score]; }
-      if (count($cand) >= 3) break;
+        // у поставщика бывает несколько вариантов фото (с водяным знаком и без): предлагаем все крупные,
+        // выше — те, что по названию поля похожи на «чистые»; варианты с пометкой my/wm/logo — в конце
+        foreach ($x['imgs'] as $kk => $u) {
+          if (preg_match('/small|thumb|mini|_s$/i', $kk) && count($x['imgs']) > 1) continue;
+          $pri = preg_match('/my|wm|water|logo|mark/i', $kk) ? -20 : (preg_match('/pish|clean|orig|nowm|without/i', $kk) ? 15 : (preg_match('/big|large|full/i', $kk) ? 5 : 0));
+          $sc = $score + $pri;
+          if (!isset($cand[$u]) || $cand[$u]['score'] < $sc) $cand[$u] = ['url' => $u, 'field' => (string)$kk, 'title' => implode(' · ', array_unique(array_values($x['txt']))) . ' · ' . $kk, 'score' => $sc]; } }
+      if (count($cand) >= 4) break;
     }
     usort($cand, fn($x, $y) => $y['score'] <=> $x['score']); $cand = array_slice(array_values($cand), 0, 6);
-    if ($auto && $cand) { $u = photoSave($cfg, $k, fetchUrl($cand[0]['url']), '4tochki', $cand[0]['url']); out(['saved' => $u, 'items' => $cand]); }
+    if ($auto && $cand) { $u = photoSave($cfg, $k, fetchUrl($cand[0]['url']), '4tochki', $cand[0]['url']); out(['saved' => $u, 'field' => $cand[0]['field'] ?? '', 'items' => $cand]); }
     out(['items' => $cand, 'error' => $cand ? null : $err]);
 
   case 'doc_match':

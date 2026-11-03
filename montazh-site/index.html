@@ -676,7 +676,7 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
   <section id="v-pho" hidden>
     <div class="calbar"><h1>Фото товаров</h1></div>
     <p class="note" style="margin:0 0 10px">Одно фото на модель: шины — бренд и модель (шипованные отдельно), диски — модель, остальное — на карточку. Фото хранятся на вашем сайте и сразу видны в витрине и в карточке товара.</p>
-    <div class="row" style="margin-bottom:10px"><button class="btn sig" type="button" id="phAuto">Подобрать фото шин автоматически</button><button class="btn ghost" type="button" id="phTest">Проверить связь с поставщиком</button></div>
+    <div class="row" style="margin-bottom:10px"><button class="btn sig" type="button" id="phAuto">Подобрать фото шин автоматически</button><button class="btn ghost" type="button" id="phRedo">Переподобрать фото от поставщика</button><button class="btn ghost" type="button" id="phTest">Проверить связь с поставщиком</button></div>
     <div id="phMsg"></div>
     <div class="tiles" id="phTiles" style="margin-top:0"></div>
     <div class="row" style="margin-bottom:10px;align-items:center">
@@ -1999,7 +1999,7 @@ function renderPho(){const M=S.ph.models,has=M.filter(m=>m.photo).length;
   out.querySelectorAll('[data-sug]').forEach(b=>b.onclick=async()=>{const i=+b.dataset.sug,m=L[i],box=document.getElementById('pu'+i);box.innerHTML='<p class="note" style="padding:0 8px">Ищу у поставщика…</p>';
     let j;try{j=await api('photo_suggest',null,{k:m.k});}catch(e){box.innerHTML=`<p class="err" style="padding:0 8px">${esc(e.message)}</p>`;return;}
     if(!j.items.length){box.innerHTML=`<p class="note" style="padding:0 8px">У поставщика не нашлось${j.error?': '+esc(j.error):j.note?': '+esc(j.note):''}. Загрузите своё или по ссылке.</p>`;return;}
-    box.innerHTML=`<div class="sug">${j.items.map((c,n)=>`<button type="button" data-c="${n}" title="${esc(c.title)}"><img src="${esc(c.url)}" alt="" loading="lazy"><span>Подходит</span></button>`).join('')}</div>`;
+    box.innerHTML=`<div class="sug">${j.items.map((c,n)=>`<button type="button" data-c="${n}" title="${esc(c.title)}"><img src="${esc(c.url)}" alt="" loading="lazy"><small style="display:block;font-size:.66rem;color:var(--ink-3);padding:2px 0">${esc(c.field||'')}</small><span>Подходит</span></button>`).join('')}</div>`;
     box.querySelectorAll('[data-c]').forEach(cb=>cb.onclick=async()=>{try{await api('photo_url',{k:m.k,url:j.items[+cb.dataset.c].url});toast('<b>Фото сохранено</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}});});
   out.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const m=L[+b.dataset.del];try{await api('photo_del',{k:m.k});toast('<b>Фото убрано</b>'+esc(m.label));loadPho();}catch(e){toast('<b>Ошибка</b>'+esc(e.message));}});}
 async function uploadPhoto(k,file){const fd=new FormData();fd.append('k',k);fd.append('file',file);
@@ -2012,12 +2012,13 @@ $('#phTest').onclick=async()=>{const el=$('#phMsg');el.innerHTML='<p class="note
       <details><summary>Технические подробности (для Claude — паролей тут нет)</summary><textarea class="inp" readonly style="width:100%;min-height:200px;font-family:var(--f-mono);font-size:.72rem">${esc(JSON.stringify(j,null,1))}</textarea></details></div>`;}
   catch(e){el.innerHTML=`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)"><b>Не получилось</b><p>${esc(e.message)}</p></div>`;}};
 let phRun=false;
-$('#phAuto').onclick=async()=>{const b=$('#phAuto');if(phRun){phRun=false;b.textContent='Останавливаю…';return;}
-  const list=S.ph.models.filter(m=>m.kind==='tire'&&!m.photo);if(!list.length){toast('<b>Все шины уже с фото</b>');return;}
+async function phAutoRun(redo){const b=redo?$('#phRedo'):$('#phAuto');const label=b.textContent;if(phRun){phRun=false;b.textContent='Останавливаю…';return;}
+  const list=S.ph.models.filter(m=>m.kind==='tire'&&(redo?m.source==='4tochki':!m.photo));if(!list.length){toast(redo?'<b>Нет фото, подобранных у поставщика</b>':'<b>Все шины уже с фото</b>');return;}
   phRun=true;b.textContent='Стоп';let ok=0,miss=0,errs=0;const el=$('#phMsg');
   for(let i=0;i<list.length&&phRun;i++){el.innerHTML=`<p class="note">Подбираю ${i+1} из ${list.length}: ${esc(list[i].label)} · нашлось ${ok}, нет у поставщика ${miss}${errs?', ошибок '+errs:''}</p>`;
     try{const j=await api('photo_suggest',null,{k:list[i].k,auto:'1'});if(j.saved)ok++;else miss++;}catch(e){errs++;if(errs>=3&&!ok){el.innerHTML=`<div class="hint" style="border-color:var(--signal)"><b>Остановлено: ${esc(e.message)}</b><p>Нажмите «Проверить связь с поставщиком».</p></div>`;break;}}}
-  phRun=false;b.textContent='Подобрать фото шин автоматически';if(ok||miss)el.innerHTML=`<p class="note">Готово: фото нашлось у ${ok} моделей, у поставщика нет — ${miss}${errs?', ошибок '+errs:''}. Проверьте вкладку «С фото» — неподходящее можно заменить.</p>`;loadPho();};
+  phRun=false;b.textContent=label;if(ok||miss)el.innerHTML=`<p class="note">Готово: фото нашлось у ${ok} моделей, у поставщика нет — ${miss}${errs?', ошибок '+errs:''}. Проверьте вкладку «С фото» — неподходящее можно заменить.</p>`;loadPho();}
+$('#phAuto').onclick=()=>phAutoRun(false);$('#phRedo').onclick=()=>phAutoRun(true);
 document.querySelectorAll('#phShow .chip').forEach(c=>c.onclick=()=>{S.ph.show=c.dataset.s;renderPho();});
 document.querySelectorAll('#phKinds .chip').forEach(c=>c.onclick=()=>{S.ph.kind=S.ph.kind===c.dataset.k?'':c.dataset.k;renderPho();});
 $('#phQ').addEventListener('input',e=>{S.ph.q=e.target.value;renderPho();});
