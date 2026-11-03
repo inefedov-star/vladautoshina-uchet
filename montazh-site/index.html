@@ -574,6 +574,23 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
 .hbv{text-align:right;font-weight:700;font-size:.9rem;white-space:nowrap}.hbv small{display:block;font-weight:500;color:var(--ink-3);font-size:.74rem}
 .antab td.nm{white-space:normal;text-align:left}.antab .kb{margin-right:6px}.antab tr[data-p]{cursor:pointer}.antab tr.muted td{opacity:.55}
 .dl{display:block;font-size:.78rem;font-weight:600;margin-top:4px}.dl.up{color:var(--moss)}.dl.dn{color:var(--signal-deep)}
+/* нижняя панель Магазина и Заказов на телефоне */
+.bnav{display:none}
+@media (max-width:760px){
+  body.ar-s .bnav:not([hidden]),body.ar-z .bnav:not([hidden]){display:grid;position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--paper);border-top:1px solid var(--rule);grid-auto-flow:column;grid-auto-columns:1fr;padding:4px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+  .bnav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:0;background:none;color:var(--ink-3);font:600 .7rem/1.1 var(--f-text);min-height:54px;padding:4px 2px}
+  .bnav svg{width:23px;height:23px}
+  .bnav button[aria-current="page"]{color:var(--acc)}
+  .bnav .bplus{color:var(--ink)}.bnav .bplus .pi{width:48px;height:48px;border-radius:16px;background:var(--acc);color:#fff;display:grid;place-items:center;margin-top:-20px;box-shadow:0 6px 14px rgba(0,0,0,.18)}
+  .bnav .bplus .pi svg{width:26px;height:26px}
+  body.ar-s .smenu{display:none!important}
+  body.ar-s main.wrap,body.ar-z main.wrap{padding-bottom:96px}
+  body.ar-z #zSt,body.ar-z #zNew{display:none!important}
+}
+@media (max-width:560px){.zc{grid-template-columns:1fr;gap:6px}.zc-a,.zc-b,.zc-d,.zc-e{grid-column:1}.zc-c{grid-column:1;grid-row:auto;text-align:left;flex-direction:row;flex-wrap:wrap;gap:4px 10px;align-items:baseline}.zc-e{flex-direction:row;justify-content:space-between;align-items:center}}
+.moreg{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.moret{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px;border:0;border-radius:14px;background:var(--paper-2);color:var(--ink);font-weight:600;text-align:left;min-height:84px}
+.moret svg{width:24px;height:24px;color:var(--acc)}.moret[aria-current="page"]{box-shadow:inset 0 0 0 2px var(--acc)}
 </style>
 </head>
 <body>
@@ -610,6 +627,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
   </div>
 </header>
 
+<nav class="bnav" id="bnav" aria-label="Разделы" hidden></nav>
 <div class="shell">
 <aside id="side" class="smenu" aria-label="Меню магазина">
   <div class="sg owner-only"><span class="sgh">Продажи</span><button type="button" data-p="sale">Продажи</button></div>
@@ -1765,6 +1783,31 @@ async function searchClients(){const q=$('#cq').value.trim(),out=$('#cliOut');
       <label><span class="mono lbl">Марка, модель</span><input class="inp" id="rm${i}" value="${esc(g.model)}"></label><div><button class="btn" type="button" id="rs${i}">Сохранить</button></div></div>`;
     document.getElementById('rn'+i).focus();
     document.getElementById('rs'+i).onclick=async()=>{try{await api('client_set',{phone:g.phone,name:document.getElementById('rn'+i).value,model:document.getElementById('rm'+i).value});toast('<b>Сохранено</b>Клиент подписан');searchClients();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};});}
+/* ---------- нижняя панель на телефоне: Магазин и Заказы (как у шиномонтажа) ---------- */
+const BI={rcpt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',box:'<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',tag:'<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',dots:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+  out:'<path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M12 15V8M9 10.5 12 8l3 2.5"/>',chart:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',bulb:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.8.6 1.5 1.5 1.5 2.6V17h4v-.5c0-1.1.7-2 1.5-2.6A6 6 0 0 0 12 3z"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',truck:'<path d="M2 6h11v10H2zM13 10h4l4 4v2h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  list:'<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',docs:'<path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M4 7v14h11"/>',up:'<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',phone:'<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2z"/>',check:'<path d="m5 12 5 5 9-10"/>'};
+const bic=k=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BI[k]}</svg>`;
+function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;const a=S.area;let it=[];
+  if(a==='s')it=S.role==='owner'?[['p:sale','Продажи','rcpt'],['p:in','Закупки','box'],['n:sale','Продажа','plus',1],['p:goods','Товары','tag'],['more','Ещё','dots']]:[['p:goods','Товары','tag'],['p:cli','Клиенты','user']];
+  else if(a==='z')it=[['z:open','В работе','clock'],['z:came','Позвонить','phone'],['zn','Заказ','plus',1],['z:done','Выданы','check'],['z:all','Все','list']];
+  nav.hidden=!it.length;if(!it.length){nav.innerHTML='';return;}
+  const main=['sale','in','goods','cli'];
+  const cur=x=>x==='more'?(a==='s'&&!main.includes(S.page)):x.startsWith('p:')?S.page===x.slice(2):x.startsWith('z:')?ZS.st===x.slice(2):false;
+  nav.innerHTML=it.map(([k,l,i,big])=>`<button type="button" data-bn="${k}"${big?' class="bplus"':''}${cur(k)?' aria-current="page"':''}>${big?`<span class="pi">${bic(i)}</span>`:bic(i)}<span>${l}</span></button>`).join('');
+  nav.querySelectorAll('[data-bn]').forEach(b=>b.onclick=()=>{const k=b.dataset.bn;
+    if(k.startsWith('p:'))page(k.slice(2));else if(k==='n:sale')openDoc(null,{type:'sale'});else if(k==='more')openMore();
+    else if(k.startsWith('z:')){ZS.st=k.slice(2);loadZak();}else if(k==='zn')openZak(null);renderBnav();});}
+function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['p:iss','Выдачи с ОХ','list']]],
+    ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:month','Все документы','docs']]],
+    ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]]];
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
+  $('#close').onclick=closeSheet;
+  $('#shIn').querySelectorAll('[data-mo]').forEach(b=>b.onclick=()=>{const k=b.dataset.mo;if(k.startsWith('n:'))openDoc(null,{type:k.slice(2)});else{closeSheet();page(k.slice(2));renderBnav();}});
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 /* ---------- аналитика магазина: итоги, графики, советы по ассортименту ---------- */
 const AN={mode:'month',d:iso(new Date())};
 const KIND_NAME={tire:'Шины',disk:'Диски',akb:'Аккумуляторы',fast:'Крепёж',other:'Прочее'};
@@ -1874,7 +1917,7 @@ const ZST={wait:'ждём товар',came:'приехал — позвонит�
 const ZPR={bshm:'БШМ — бесплатный шиномонтаж',m20:'−20% на шиномонтаж'};
 const ZB={wait:'ds',came:'zcm',done:'cp',cancel:''};
 const ZS={st:'open',q:'',rows:[],sup:[]};let zqT=null;
-async function loadZak(){const out=$('#zOut');document.querySelectorAll('#zSt [data-zs]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.zs===ZS.st));
+async function loadZak(){const out=$('#zOut');renderBnav();document.querySelectorAll('#zSt [data-zs]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.zs===ZS.st));
   let j;try{j=await api('zak_list',null,{st:ZS.st,q:ZS.q});}catch(e){if(e.code!=='auth')out.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;return;}
   ZS.rows=j.rows;ZS.sup=j.suppliers||[];const t=j.total;
   $('#zTiles').innerHTML=`<div class="tile"><span class="mono">Ждём товар</span><b class="tnum">${t.wait}</b></div><div class="tile acc"><span class="mono">Приехал — позвонить</span><b class="tnum">${t.came}</b></div>
@@ -2152,7 +2195,7 @@ function setArea(a,first){if((a==='z'||a==='k')&&S.role!=='owner')a='m';if(!['m'
   else if(a==='z')show('zak');
   else if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
   else if(first||!cur||!cur.dataset.a.includes(a))show('day');
-  setHdr();}
+  setHdr();renderBnav();}
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
@@ -2165,7 +2208,7 @@ function page(p){if(p==='import'){openImport();return;}
   $('#stH1').textContent=PAGES[p];
   if(p==='goods'){S.st.wh='all';show('stock');stSub('goods');}
   else{if(S.dl.type!==(p==='month'?'':p))S.dl.partner='';S.dl.type=p==='month'?'':p;show('stock');stSub('docs');}
-  window.scrollTo(0,0);}
+  window.scrollTo(0,0);renderBnav();}
 document.querySelectorAll('#side [data-p]').forEach(b=>b.onclick=()=>page(b.dataset.p));
 document.querySelectorAll('[data-area]').forEach(b=>b.onclick=()=>setArea(b.dataset.area));
 function startArea(){const h=location.hash.slice(1),q=location.search;
