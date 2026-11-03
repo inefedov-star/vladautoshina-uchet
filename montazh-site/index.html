@@ -504,6 +504,24 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
 }
 .toast{opacity:0;transition:transform .35s var(--ease),opacity .25s}.toast.on{opacity:1}
 .dqp{margin:4px 0 14px}.dqp #dqKinds{margin-bottom:8px}.dqp #dqKinds .chip{min-height:34px}
+/* заказы клиентов и ссылки на другие программы */
+.xlinks{display:flex;gap:4px;margin-right:10px}
+.xlinks a{display:inline-flex;align-items:center;gap:3px;min-height:38px;padding:0 10px;border-radius:9px;background:var(--paper-2);color:var(--ink-2);font-weight:700;font-size:.86rem;text-decoration:none}
+.xlinks a:hover{color:var(--signal-deep)}.xlinks a span{font-size:.75em;opacity:.7}
+body.area-z .tabs{display:none!important}
+.badge.zcm{color:#fff;background:var(--signal)}
+.zhd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 6px}.zh1{margin:0;font-size:1.5rem}
+.zl{display:flex;flex-direction:column;gap:8px;margin-bottom:40px}
+.zc{display:grid;grid-template-columns:150px minmax(0,2.2fr) 140px minmax(0,1fr) 150px;gap:14px;align-items:start;background:var(--paper);border-radius:var(--r,14px);box-shadow:var(--shadow);padding:12px 14px;cursor:pointer;border-left:4px solid transparent}
+.zc.st-came{border-left-color:var(--signal)}.zc.st-wait{border-left-color:var(--amber,#E8A317)}.zc.st-done,.zc.st-cancel{opacity:.62}
+.zc-a{display:flex;flex-direction:column;gap:2px;font-size:.9rem}.zc-a .zd{color:var(--ink-3);font-size:.8rem}
+.zit{font-weight:600;white-space:pre-line}.zc-c{display:flex;flex-direction:column;text-align:right}.zc-d{display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.zpr{align-self:flex-start;background:var(--signal);color:#fff;border-radius:6px;padding:1px 7px;font-weight:700;font-size:.78rem}
+.zc-e{display:flex;flex-direction:column;align-items:flex-end;gap:6px}.zq{min-height:34px;padding:0 12px}
+@media (max-width:900px){.zc{grid-template-columns:1fr auto;gap:6px 12px}.zc-a{grid-column:1}.zc-c{grid-column:2;grid-row:1}.zc-b{grid-column:1/-1}.zc-d{grid-column:1;flex-direction:row;flex-wrap:wrap;gap:8px;align-items:center}.zc-e{grid-column:2;flex-direction:row;align-items:center}}
+.asn{display:none}.zxl{display:none}.zc-a .tnum{white-space:nowrap}.zc .badge{white-space:nowrap}.zc-c small b{white-space:nowrap}
+@media (max-width:760px){header .xlinks{display:none}.zxl{display:flex;margin:0 0 0 auto}.zh1{font-size:1.2rem}}
+@media (max-width:560px){.aln{display:none}.asn{display:inline}.areas button{padding:0 7px!important;font-size:.8rem!important}header.top .logo{display:none}.zhd{flex-wrap:wrap}.zhd .zh1{width:100%}.zxl{margin:0}}
 </style>
 </head>
 <body>
@@ -525,7 +543,8 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
         <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="2" fill="var(--ink)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="var(--signal)" stroke-width="3"/><circle cx="16" cy="16" r="3.4" fill="var(--paper)"/></svg>
         <span><b id="areaName">Шиномонтаж</b><i>IVANOR · НОЯБРЬСКАЯ 129</i></span>
       </div>
-      <div class="areas" role="group" aria-label="Раздел"><button type="button" data-area="m" aria-pressed="true">Шиномонтаж</button><button type="button" data-area="s" aria-pressed="false">Магазин</button></div>
+      <div class="areas" role="group" aria-label="Раздел"><button type="button" data-area="m" aria-pressed="true"><span class="aln">Шиномонтаж</span><span class="asn">Монтаж</span></button><button type="button" data-area="s" aria-pressed="false">Магазин</button><button type="button" class="owner-only" data-area="z" aria-pressed="false">Заказы</button></div>
+      <nav class="xlinks owner-only" aria-label="Другие программы"><a href="https://sklad.shinhotel33.ru/" target="_blank" rel="noopener">Отель<span aria-hidden="true">↗</span></a><a href="https://vladautoshina.ru/kp/" target="_blank" rel="noopener">КП<span aria-hidden="true">↗</span></a></nav>
       <div class="spacer"></div>
       <span class="status" id="status"></span><span class="mono" id="who" style="color:var(--ink-3)"></span><button class="out" type="button" id="thBtn" aria-label="Тема оформления" title="Тема: авто / светлая / тёмная"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span id="thLbl" style="margin-left:4px;font-size:.8rem"></span></button><button class="out" type="button" id="logout">Выйти</button>
     </div>
@@ -625,6 +644,14 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
     <div style="margin-block:18px 14px"><label><span class="mono lbl">Найти клиента</span>
       <input class="inp" type="search" id="cq" placeholder="Телефон, имя, марка или госномер" autocomplete="off"></label></div>
     <div id="cliOut"><div class="empty"><b>Поиск по клиентам</b>Наберите хотя бы 2 символа: часть номера телефона, госномера или имя.</div></div>
+  </section>
+
+  <section id="v-zak" hidden>
+    <div class="zhd"><h1 class="zh1">Заказы клиентов</h1><nav class="xlinks zxl" aria-label="Другие программы"><a href="https://sklad.shinhotel33.ru/" target="_blank" rel="noopener">Отель<span aria-hidden="true">↗</span></a><a href="https://vladautoshina.ru/kp/" target="_blank" rel="noopener">КП<span aria-hidden="true">↗</span></a></nav><button class="btn sig" type="button" id="zNew">+ Заказ</button></div>
+    <div class="tiles" id="zTiles"></div>
+    <div class="row" id="zSt" style="margin:4px 0 10px"><button type="button" class="chip" data-zs="open">В работе</button><button type="button" class="chip" data-zs="wait">Ждём товар</button><button type="button" class="chip" data-zs="came">Приехал — позвонить</button><button type="button" class="chip" data-zs="done">Выданы</button><button type="button" class="chip" data-zs="cancel">Отменены</button><button type="button" class="chip" data-zs="all">Все</button></div>
+    <input class="inp" type="search" id="zQ" placeholder="Поиск: телефон, имя, товар, поставщик" autocomplete="off" style="margin-bottom:12px">
+    <div id="zOut"></div>
   </section>
 
   <section id="v-exp" hidden>
@@ -1581,9 +1608,11 @@ function hookHint(phId,plId,outId,nameId,modelId,onRepeat){const run=()=>{clearT
       const nm=document.getElementById(nameId),md=modelId?document.getElementById(modelId):null;
       const name=(cl&&cl.name)||(vs.find(v=>v.name)||{}).name||'',model=(cl&&cl.model)||(vs.find(v=>v.model)||{}).model||'';
       if(nm&&!nm.value&&name)nm.value=name;if(md&&!md.value&&model)md.value=model;
-      if(!vs.length&&!cl){out.innerHTML=k?'<div class="hint">Новый клиент.</div>':'';return;}
+      const zo=(j.zak||[]).filter(z=>k&&z.phone===k&&(z.status==='wait'||z.status==='came'||z.status==='done')&&z.promo).slice(0,1)[0];
+      const zl=zo?`<div class="hint" style="border-color:var(--signal)"><b>По заказу ${zo.promo==='bshm'?'обещан бесплатный шиномонтаж':'обещана скидка 20% на шиномонтаж'}</b> · ${esc(zo.items)}</div>`:'';
+      if(!vs.length&&!cl){out.innerHTML=k?zl+'<div class="hint">Новый клиент.</div>':'';return;}
       const last=vs[0];
-      out.innerHTML=`<div class="hint">${name?'<b>'+esc(name)+'</b>'+(model?' · '+esc(model):'')+'. ':''}${vs.length?`Был ${vs.length} ${plural(vs.length,'раз','раза','раз')}. Последний — ${fmtDay(last.day)}: ${esc(last.works)}${last.d?' (R'+last.d+')':''}.`:'Визитов ещё не было.'}
+      out.innerHTML=zl+`<div class="hint">${name?'<b>'+esc(name)+'</b>'+(model?' · '+esc(model):'')+'. ':''}${vs.length?`Был ${vs.length} ${plural(vs.length,'раз','раза','раз')}. Последний — ${fmtDay(last.day)}: ${esc(last.works)}${last.d?' (R'+last.d+')':''}.`:'Визитов ещё не было.'}
         ${onRepeat&&last&&last.lines&&last.lines.length?`<button type="button" class="btn ghost" id="${outId}-rep" style="margin-top:8px;min-height:40px;width:100%">Как в прошлый раз: ${esc(CAR[last.car]||'')}${last.car!=='com'&&last.d?' R'+last.d:''}, ${esc(last.works)}</button>`:''}</div>`;
       const rb=document.getElementById(outId+'-rep');if(rb)rb.onclick=()=>onRepeat(last);}catch(_){}} ,450);};
   [phId,plId].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',run);});run();}
@@ -1597,24 +1626,27 @@ async function searchClients(){const q=$('#cq').value.trim(),out=$('#cliOut');
   let j;try{j=await api('clients',null,{q});}catch(e){out.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;return;}
   const C=j.clients||{};const G=new Map();
   const key=x=>{const p=phoneKey(x.phone);return p?'p'+p:(x.plate?'n'+x.plate.replace(/\s/g,''):'x'+(x.name||x.id));};
-  Object.keys(C).forEach(p=>{if(!G.has('p'+p))G.set('p'+p,{phone:p,v:[],b:[],s:[]});});
-  (j.orders||[]).forEach(o=>{const k=key(o);if(!G.has(k))G.set(k,{phone:phoneKey(o.phone),v:[],b:[],s:[]});G.get(k).v.push(o);});
-  (j.bookings||[]).forEach(b=>{const k=key(b);if(!G.has(k))G.set(k,{phone:phoneKey(b.phone),v:[],b:[],s:[]});G.get(k).b.push(b);});
-  (j.buys||[]).forEach(x=>{const k=key(x);if(!G.has(k))G.set(k,{phone:phoneKey(x.phone),v:[],b:[],s:[]});G.get(k).s.push(x);});
+  Object.keys(C).forEach(p=>{if(!G.has('p'+p))G.set('p'+p,{phone:p,v:[],b:[],s:[],z:[]});});
+  (j.orders||[]).forEach(o=>{const k=key(o);if(!G.has(k))G.set(k,{phone:phoneKey(o.phone),v:[],b:[],s:[],z:[]});G.get(k).v.push(o);});
+  (j.bookings||[]).forEach(b=>{const k=key(b);if(!G.has(k))G.set(k,{phone:phoneKey(b.phone),v:[],b:[],s:[],z:[]});G.get(k).b.push(b);});
+  (j.buys||[]).forEach(x=>{const k=key(x);if(!G.has(k))G.set(k,{phone:phoneKey(x.phone),v:[],b:[],s:[],z:[]});G.get(k).s.push(x);});
+  (j.zak||[]).forEach(x=>{const k=key(x);if(!G.has(k))G.set(k,{phone:phoneKey(x.phone),v:[],b:[],s:[],z:[]});G.get(k).z.push(x);});
   if(!G.size){out.innerHTML=`<div class="empty"><b>Никого не нашли</b>Проверьте номер телефона или поищите по госномеру.</div>`;return;}
   const today=iso(new Date());const groups=[...G.values()];
-  groups.forEach(g=>{const all=[...g.v,...g.b,...g.s];const c=C[g.phone]||{};g.name=c.name||(all.find(x=>x.name)||{}).name||'';g.model=c.model||(all.find(x=>x.model)||{}).model||'';});
+  groups.forEach(g=>{const all=[...g.v,...g.b,...g.s,...g.z];const c=C[g.phone]||{};g.name=c.name||(all.find(x=>x.name)||{}).name||'';g.model=c.model||(all.find(x=>x.model)||{}).model||'';});
   out.innerHTML=groups.map((g,i)=>{const all=[...g.v,...g.b];
     const plates=[...new Set(all.map(x=>x.plate).filter(Boolean))].join(', ');const sum=g.v.reduce((a,v)=>a+(S.role==='owner'?(v.paid??v.list):v.list),0);
     const ssum=g.s.reduce((a,x)=>a+x.sum,0),nbuy=g.s.filter(x=>x.type==='sale').length;
     const hist=[...g.v.map(v=>({day:v.day,html:`<div><span class="tnum">${fmtDay(v.day)}</span><span><span class="pay">шиномонтаж · </span>${esc((v.d?'R'+v.d+' · ':'')+v.works)}${v.mode==='coupon'?' · купон':v.mode==='disc'?' · скидка':''}</span><span class="tnum">${rub(S.role==='owner'&&v.paid!=null?v.paid:v.list)}</span></div>`})),
-      ...g.s.map(x=>({day:x.day,html:`<div><span class="tnum">${fmtDay(x.day)}</span><span><span class="pay">${x.type==='ret'?'возврат в магазин':'магазин'} · </span>${esc(x.items)}</span><span class="tnum">${rub(x.sum)}</span></div>`}))].sort((a,b)=>a.day<b.day?1:a.day>b.day?-1:0);
+      ...g.s.map(x=>({day:x.day,html:`<div><span class="tnum">${fmtDay(x.day)}</span><span><span class="pay">${x.type==='ret'?'возврат в магазин':'магазин'} · </span>${esc(x.items)}</span><span class="tnum">${rub(x.sum)}</span></div>`})),
+      ...g.z.map(x=>({day:x.day,html:`<div${S.role==='owner'?` data-zk="${x.id}" style="cursor:pointer"`:''}><span class="tnum">${fmtDay(x.day)}</span><span><span class="pay">заказ · ${ZST[x.status]} · </span>${esc(x.items)}${x.promo?' · '+ZPR[x.promo]:''}</span><span class="tnum">${rub(x.total)}</span></div>`}))].sort((a,b)=>a.day<b.day?1:a.day>b.day?-1:0);
     const next=g.b.filter(b=>b.status==='planned'&&b.day>=today).sort((a,b)=>(a.day+a.tm)<(b.day+b.tm)?-1:1)[0];
     return `<div class="cl"><div class="cl-hd"><b>${esc(g.name||'Без имени')}${g.model?' · <span style="font-weight:500">'+esc(g.model)+'</span>':''}</b><small class="tnum">${esc([g.phone?fmtPhone(g.phone):'нет телефона',plates].filter(Boolean).join(' · '))}</small></div>
-      <div class="cl-hd" style="margin-top:4px"><small>${[g.v.length||!nbuy?`${g.v.length} ${plural(g.v.length,'визит','визита','визитов')} на шиномонтаж${g.v.length?' · '+(S.role==='owner'?'принесли ':'работ на ')+rub(sum):''}`:'',nbuy?`${nbuy} ${plural(nbuy,'покупка','покупки','покупок')} в магазине на ${rub(ssum)}`:''].filter(Boolean).join(' · ')}${next?' · записан на '+fmtDay(next.day)+(next.tm?' '+next.tm:''):''}</small>
+      <div class="cl-hd" style="margin-top:4px"><small>${[g.v.length||!nbuy?`${g.v.length} ${plural(g.v.length,'визит','визита','визитов')} на шиномонтаж${g.v.length?' · '+(S.role==='owner'?'принесли ':'работ на ')+rub(sum):''}`:'',nbuy?`${nbuy} ${plural(nbuy,'покупка','покупки','покупок')} в магазине на ${rub(ssum)}`:''].filter(Boolean).join(' · ')}${next?' · записан на '+fmtDay(next.day)+(next.tm?' '+next.tm:''):''}${g.z.some(x=>x.status==='wait'||x.status==='came')?' · <b style="color:var(--signal-deep)">есть заказ в работе</b>':''}</small>
         <span class="row">${g.phone?`<button class="btn ghost" type="button" data-ren="${i}" style="min-height:40px">Имя и машина</button>`:''}<button class="btn ghost" type="button" data-book="${i}" style="min-height:40px">Записать</button></span></div>
       <div id="ren${i}" hidden></div>
       <div class="visits">${hist.slice(0,15).map(h=>h.html).join('')}</div></div>`;}).join('');
+  out.querySelectorAll('[data-zk]').forEach(r=>r.onclick=()=>{const z=groups.flatMap(g=>g.z).find(x=>x.id===+r.dataset.zk);if(z)openZak(z);});
   out.querySelectorAll('[data-book]').forEach(b=>b.onclick=()=>{const g=groups[+b.dataset.book],l=[...g.v,...g.b][0]||{};
     openBk(null,{name:g.name,model:g.model,phone:g.phone?fmtPhone(g.phone):'',plate:l.plate||'',car:l.car||'car',d:l.d||16});});
   out.querySelectorAll('[data-ren]').forEach(b=>b.onclick=()=>{const i=+b.dataset.ren,g=groups[i],box=document.getElementById('ren'+i);box.hidden=!box.hidden;if(box.hidden)return;
@@ -1622,6 +1654,76 @@ async function searchClients(){const q=$('#cq').value.trim(),out=$('#cliOut');
       <label><span class="mono lbl">Марка, модель</span><input class="inp" id="rm${i}" value="${esc(g.model)}"></label><div><button class="btn" type="button" id="rs${i}">Сохранить</button></div></div>`;
     document.getElementById('rn'+i).focus();
     document.getElementById('rs'+i).onclick=async()=>{try{await api('client_set',{phone:g.phone,name:document.getElementById('rn'+i).value,model:document.getElementById('rm'+i).value});toast('<b>Сохранено</b>Клиент подписан');searchClients();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};});}
+/* ---------- заказы клиентов (раньше — листок) ---------- */
+const ZST={wait:'ждём товар',came:'приехал — позвонить',done:'выдан',cancel:'отменён'};
+const ZPR={bshm:'БШМ — бесплатный шиномонтаж',m20:'−20% на шиномонтаж'};
+const ZB={wait:'ds',came:'zcm',done:'cp',cancel:''};
+const ZS={st:'open',q:'',rows:[],sup:[]};let zqT=null;
+async function loadZak(){const out=$('#zOut');document.querySelectorAll('#zSt [data-zs]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.zs===ZS.st));
+  let j;try{j=await api('zak_list',null,{st:ZS.st,q:ZS.q});}catch(e){if(e.code!=='auth')out.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;return;}
+  ZS.rows=j.rows;ZS.sup=j.suppliers||[];const t=j.total;
+  $('#zTiles').innerHTML=`<div class="tile"><span class="mono">Ждём товар</span><b class="tnum">${t.wait}</b></div><div class="tile acc"><span class="mono">Приехал — позвонить</span><b class="tnum">${t.came}</b></div>
+    <div class="tile"><span class="mono">Авансы в показанных</span><b class="tnum">${rub(t.prepay)}</b></div><div class="tile"><span class="mono">К доплате</span><b class="tnum">${rub(t.due)}</b></div>`;
+  if(!j.rows.length){out.innerHTML=`<div class="empty"><b>${ZS.q?'Ничего не нашли':ZS.st==='open'?'Заказов в работе нет':'Пусто'}</b>${ZS.st==='open'&&!ZS.q?'Нажмите «+ Заказ», когда клиент что-то заказал.':''}</div>`;return;}
+  out.innerHTML=`<div class="zl">${j.rows.map((z,i)=>{const due=Math.max(0,z.total-z.prepay);return `<div class="zc st-${z.status}" data-zi="${i}" tabindex="0" role="button">
+    <div class="zc-a"><span class="tnum zd">${fmtDay(z.day)}</span><b>${esc(z.name||'Без имени')}</b><span class="tnum">${z.phone?esc(fmtPhone(z.phone)):'нет телефона'}</span></div>
+    <div class="zc-b"><div class="zit">${esc(z.items)}</div>${z.note?`<small class="pay">${esc(z.note)}</small>`:''}</div>
+    <div class="zc-c"><b class="tnum">${rub(z.total)}</b><small class="pay">аванс ${rub(z.prepay)}${due&&z.status!=='done'?` · <b style="color:var(--ink)">доплата ${rub(due)}</b>`:''}</small></div>
+    <div class="zc-d"><span class="pay">${esc(z.supplier||'поставщик не указан')}</span>${z.promo?`<span class="zpr">${z.promo==='bshm'?'БШМ':'−20% ШМ'}</span>`:''}</div>
+    <div class="zc-e"><span class="badge ${ZB[z.status]}">${ZST[z.status]}</span>${z.status==='wait'?`<button type="button" class="btn ghost zq" data-zq="came" data-zi="${i}">Приехал</button>`:z.status==='came'?`<button type="button" class="btn ghost zq" data-zq="done" data-zi="${i}">Выдали</button>`:''}</div></div>`;}).join('')}</div>`;
+  out.querySelectorAll('.zc').forEach(c=>{c.onclick=e=>{if(e.target.closest('.zq'))return;openZak(ZS.rows[+c.dataset.zi]);};c.onkeydown=e=>{if(e.key==='Enter')c.click();};});
+  out.querySelectorAll('.zq').forEach(b=>b.onclick=async()=>{const z=ZS.rows[+b.dataset.zi];try{await api('zak_save',{...z,status:b.dataset.zq});toast(`<b>${b.dataset.zq==='came'?'Товар приехал':'Заказ выдан'}</b>${esc(z.name||fmtPhone(z.phone))}${b.dataset.zq==='came'&&z.phone?'<br>Позвоните: '+esc(fmtPhone(z.phone)):''}`);loadZak();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}});}
+document.querySelectorAll('#zSt [data-zs]').forEach(c=>c.onclick=()=>{ZS.st=c.dataset.zs;loadZak();});
+$('#zQ').addEventListener('input',()=>{clearTimeout(zqT);zqT=setTimeout(()=>{ZS.q=$('#zQ').value.trim();loadZak();},350);});
+$('#zNew').onclick=()=>openZak(null);
+let Z=null;
+function openZak(z){Z=z?{...z}:{id:0,day:iso(new Date()),phone:'',name:'',items:'',total:'',prepay:'',supplier:'',promo:'',note:'',status:'wait'};
+  const v=(k,ph,t)=>`<input class="inp${t==='number'?' tnum':''}" id="z_${k}" ${t?`type="${t}"`:''} ${t==='number'?'inputmode="decimal" min="0"':''} value="${esc(Z[k]??'')}" placeholder="${ph||''}" autocomplete="off">`;
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${Z.id?'Заказ № '+Z.id:'Новый заказ'}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <div class="form" style="margin-top:0">
+    <label><span class="mono lbl">Телефон</span><input class="inp tnum" id="z_phone" type="tel" inputmode="tel" value="${Z.phone?esc(fmtPhone(Z.phone)):''}" placeholder="+7 900 000-00-00" autocomplete="off"></label>
+    <label><span class="mono lbl">Имя</span>${v('name','Как зовут клиента')}</label>
+    <div id="zHint" style="grid-column:1/-1"></div>
+    <label style="grid-column:1/-1"><span class="mono lbl">Заказ — какой товар</span><textarea class="inp" id="z_items" rows="3" placeholder="Например: 4 × 215/60/17 Ikon Autograph Snow 3 SUV">${esc(Z.items)}</textarea></label>
+    <label><span class="mono lbl">Общая сумма, ₽</span>${v('total','0','number')}</label>
+    <label><span class="mono lbl">Аванс, ₽</span>${v('prepay','0','number')}</label>
+    <p class="note" id="zDue" style="grid-column:1/-1;margin:-4px 0 0"></p>
+    <label><span class="mono lbl">От какого поставщика везём</span><input class="inp" id="z_supplier" list="zSup" value="${esc(Z.supplier)}" autocomplete="off"><datalist id="zSup">${ZS.sup.map(n=>`<option value="${esc(n)}">`).join('')}</datalist></label>
+    <label><span class="mono lbl">Дата заказа</span><input class="inp" type="date" id="z_day" value="${esc(Z.day)}"></label>
+    <div style="grid-column:1/-1"><span class="mono lbl">Шиномонтаж при покупке у нас</span><div class="row" id="zPromo">${[['','Не обещали'],['bshm','БШМ — бесплатно'],['m20','Скидка 20%']].map(([k,t])=>`<button type="button" class="chip" data-zp="${k}" aria-pressed="${Z.promo===k}">${t}</button>`).join('')}</div></div>
+    <label style="grid-column:1/-1"><span class="mono lbl">Комментарий</span>${v('note','Например: привезут в четверг, клиент просил смс')}</label>
+    <div style="grid-column:1/-1"><span class="mono lbl">Состояние</span><div class="row" id="zStat">${Object.entries(ZST).map(([k,t])=>`<button type="button" class="chip" data-zt="${k}" aria-pressed="${Z.status===k}">${t[0].toUpperCase()+t.slice(1)}</button>`).join('')}</div></div>
+  </div>
+  <p class="err" id="zErr" hidden></p>
+  <div class="row" style="margin:14px 0 40px"><button class="btn sig" type="button" id="zSave">Сохранить</button>${Z.id?`<button class="btn ghost" type="button" id="zSale">Оформить продажу</button><button class="btn ghost" type="button" id="zBk">Записать на шиномонтаж</button>`:''}</div>`;
+  const due=()=>{const t=+$('#z_total').value||0,p=+$('#z_prepay').value||0;$('#zDue').textContent=t?(p>=t?'Оплачено полностью':'К доплате при получении: '+rub(t-p)):'';};due();
+  $('#z_total').oninput=due;$('#z_prepay').oninput=due;
+  document.querySelectorAll('#zPromo [data-zp]').forEach(b=>b.onclick=()=>{Z.promo=b.dataset.zp;document.querySelectorAll('#zPromo [data-zp]').forEach(x=>x.setAttribute('aria-pressed',x===b));});
+  document.querySelectorAll('#zStat [data-zt]').forEach(b=>b.onclick=()=>{Z.status=b.dataset.zt;document.querySelectorAll('#zStat [data-zt]').forEach(x=>x.setAttribute('aria-pressed',x===b));});
+  let hT=null;const ph=$('#z_phone');ph.oninput=()=>{clearTimeout(hT);hT=setTimeout(()=>zHint(phoneKey(ph.value)),400);};if(Z.phone)zHint(Z.phone);
+  const read=()=>({id:Z.id,day:$('#z_day').value,phone:ph.value,name:$('#z_name').value,items:$('#z_items').value,total:+$('#z_total').value||0,prepay:+$('#z_prepay').value||0,supplier:$('#z_supplier').value,promo:Z.promo,note:$('#z_note').value,status:Z.status});
+  const save=async()=>{const er=$('#zErr');er.hidden=true;try{const r=read();const j=await api('zak_save',r);Z={...r,id:j.id,phone:phoneKey(r.phone)};return true;}catch(e){er.textContent=e.message;er.hidden=false;return false;}};
+  $('#zSave').onclick=async()=>{if(await save()){toast('<b>Заказ сохранён</b>'+esc(Z.items.slice(0,60)));closeSheet();if(S.view==='zak')loadZak();else if(S.view==='cli')searchClients();}};
+  const zs=document.getElementById('zSale');if(zs)zs.onclick=async()=>{if(!await save())return;openDoc(null,{type:'sale',phone:Z.phone,partner:Z.name,note:'По заказу № '+Z.id+(Z.prepay?', аванс '+rub(Z.prepay):''),lines:[]});};
+  const zb=document.getElementById('zBk');if(zb)zb.onclick=async()=>{if(!await save())return;openBk(null,{name:Z.name,phone:Z.phone?fmtPhone(Z.phone):'',note:(Z.promo?ZPR[Z.promo]+'. ':'')+'Заказ № '+Z.id+': '+Z.items.slice(0,80)});};
+  $('#close').onclick=closeSheet;
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
+  setTimeout(()=>(Z.id?$('#z_items'):ph).focus(),60);}
+/* всё, что знаем о клиенте по телефону: шиномонтаж, покупки, записи, другие заказы */
+async function zHint(k){const out=document.getElementById('zHint');if(!out)return;if(!k){out.innerHTML='';return;}
+  let j;try{j=await api('clients',null,{q:k});}catch(_){return;}if(!document.getElementById('zHint'))return;
+  const vs=(j.orders||[]).filter(v=>phoneKey(v.phone)===k),bs=(j.buys||[]).filter(x=>x.phone===k&&x.type==='sale'),zs=(j.zak||[]).filter(x=>x.phone===k&&x.id!==Z.id),c=(j.clients||{})[k]||{};
+  const today=iso(new Date()),nb=(j.bookings||[]).filter(b=>phoneKey(b.phone)===k&&b.status==='planned'&&b.day>=today)[0];
+  const nm=$('#z_name');const name=c.name||(vs.find(v=>v.name)||{}).name||(bs.find(x=>x.name)||{}).name||'';if(nm&&!nm.value&&name)nm.value=name;
+  if(!vs.length&&!bs.length&&!zs.length&&!nb){out.innerHTML='<div class="hint">Новый клиент — раньше по этому номеру ничего не было.</div>';return;}
+  const L=[];
+  if(name||c.model)L.push('<b>'+esc(name||'Клиент')+'</b>'+(c.model?' · '+esc(c.model):''));
+  if(vs.length)L.push(`Шиномонтаж: ${vs.length} ${plural(vs.length,'раз','раза','раз')}, последний ${fmtDay(vs[0].day)} — ${esc(vs[0].works)}${vs[0].d?' (R'+vs[0].d+')':''}`);
+  if(bs.length)L.push(`Покупки в магазине: ${bs.length} на ${rub(bs.reduce((a,x)=>a+x.sum,0))}, последняя ${fmtDay(bs[0].day)} — ${esc(bs[0].items.slice(0,80))}`);
+  if(nb)L.push(`Записан на шиномонтаж ${fmtDay(nb.day)}${nb.tm?' в '+nb.tm:''}`);
+  if(zs.length)L.push(`Другие заказы: ${zs.slice(0,3).map(x=>fmtDay(x.day)+' '+esc(x.items.slice(0,50))+' ('+ZST[x.status]+')').join('; ')}`);
+  out.innerHTML=`<div class="hint">${L.join('<br>')}<br><button type="button" class="out" id="zAll" style="min-height:30px;padding:0;text-decoration:underline">Вся история клиента</button></div>`;
+  document.getElementById('zAll').onclick=()=>{closeSheet();$('#cq').value=fmtPhone(k);show('cli');searchClients();};}
 /* ---------- лист машины ---------- */
 let O=null;
 function blank(){return{car:'car',d:16,mods:{lp:false,rf:false,season:null},lines:[],mode:'full',paid:0,pay:'card',plate:'',phone:'',note:'',name:''};}
@@ -1818,19 +1920,20 @@ $('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.yea
 /* тема: магазин — светлая, шиномонтаж — тёмная; на устройстве можно закрепить вручную */
 function themePref(){try{return localStorage.getItem('ivanor_theme')||'auto';}catch(_){return 'auto';}}
 function applyTheme(){let area=S.area;if(!area){try{area=localStorage.getItem('ivanor_area')||'m';}catch(_){area='m';}if(/shop|magazin/.test(location.search))area='s';}
-  const p=themePref(),t=p==='light'||p==='dark'?p:(area==='s'?'light':'dark');
+  const p=themePref(),t=p==='light'||p==='dark'?p:(area==='s'||area==='z'?'light':'dark');
   document.body.classList.toggle('t-dark',t==='dark');document.body.classList.toggle('t-light',t==='light');
   const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=t==='dark'?'#1B1E24':'#FFFFFF';
   const l=document.getElementById('thLbl');if(l)l.textContent=p==='auto'?'':p==='light'?'светлая':'тёмная';}
 applyTheme();
 document.getElementById('thBtn').onclick=()=>{const n={auto:'light',light:'dark',dark:'auto'}[themePref()];try{localStorage.setItem('ivanor_theme',n);}catch(_){}applyTheme();
   toast('<b>Тема: '+(n==='auto'?'по разделу':n==='light'?'всегда светлая':'всегда тёмная')+'</b>'+(n==='auto'?'Магазин светлый, шиномонтаж тёмный':'Только на этом устройстве'));};
-function setArea(a,first){S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');applyTheme();
+function setArea(a,first){if(a==='z'&&S.role!=='owner')a='m';S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');document.body.classList.toggle('area-z',a==='z');applyTheme();
   document.querySelectorAll('[data-area]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.area===a));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('off-area',!t.dataset.a.includes(a)));
-  $('#areaName').textContent=a==='s'?'Магазин':'Шиномонтаж';document.title=(a==='s'?'Магазин':'Шиномонтаж')+' IVANOR';
+  const AN={s:'Магазин',z:'Заказы',m:'Шиномонтаж'}[a];$('#areaName').textContent=AN;document.title=AN+' IVANOR';
   const cur=document.querySelector(`.tab[data-v="${S.view}"]`);
-  if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
+  if(a==='z')show('zak');
+  else if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
   else if(first||!cur||!cur.dataset.a.includes(a))show('day');
   setHdr();}
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
@@ -1850,7 +1953,7 @@ document.querySelectorAll('#side [data-p]').forEach(b=>b.onclick=()=>page(b.data
 document.querySelectorAll('[data-area]').forEach(b=>b.onclick=()=>setArea(b.dataset.area));
 function startArea(){const h=location.hash.slice(1),q=location.search;
   if(/shop|magazin/.test(q)||h==='stock')return 's';if(['day','cal','exp','sum'].includes(h))return 'm';
-  try{return localStorage.getItem('ivanor_area')==='s'?'s':'m';}catch(_){return 'm';}}
+  try{const x=localStorage.getItem('ivanor_area');return x==='s'||x==='z'?x:'m';}catch(_){return 'm';}}
 
 /* ---------- наименование товара в формате каталога IVANOR (как в CloudShop), как бы ни написал поставщик ----------
    Шины:  «215/65/16 Ikon Character Snow 2 SUV (Nordman RS2 SUV) 102R XL», шипы — «шип.» в конце или «(210 шип.)»
@@ -2164,7 +2267,7 @@ async function loadSup(){let L=[];try{L=(await api('suppliers')).suppliers;}catc
   $('#supOut').querySelectorAll('tr[data-s]').forEach(tr=>tr.onclick=()=>{const x=L[+tr.dataset.s];page('in');S.dl.partner=x.name==='Без поставщика'?'':x.name;S.dl.month=x.last.slice(0,7);loadDocs();});}
 
 /* ---------- вкладки ---------- */
-function show(v){S.view=v;document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
+function show(v){S.view=v;{const vz=document.getElementById('v-zak');if(vz)vz.hidden=v!=='zak';if(v==='zak')loadZak();}document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
   $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));

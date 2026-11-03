@@ -96,6 +96,8 @@ function db(array $cfg): PDO {
   // коды поставщиков: «у этого поставщика код X — это наш товар Y» (запоминается при загрузке документов)
   $pdo->exec('CREATE TABLE IF NOT EXISTS supcodes (pk TEXT NOT NULL, code TEXT NOT NULL, product_id INTEGER NOT NULL, updated INTEGER, PRIMARY KEY (pk, code))');
   $pdo->exec('CREATE TABLE IF NOT EXISTS photos (k TEXT PRIMARY KEY, file TEXT NOT NULL, source TEXT, src_url TEXT, updated INTEGER)');
+  // заказы клиентов (раньше — листок): что заказали, сумма и аванс, у кого везём, обещанный шиномонтаж
+  $pdo->exec('CREATE TABLE IF NOT EXISTS zak (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, phone TEXT NOT NULL DEFAULT \'\', name TEXT NOT NULL DEFAULT \'\', items TEXT NOT NULL DEFAULT \'\', total REAL NOT NULL DEFAULT 0, prepay REAL NOT NULL DEFAULT 0, supplier TEXT NOT NULL DEFAULT \'\', promo TEXT NOT NULL DEFAULT \'\', note TEXT NOT NULL DEFAULT \'\', status TEXT NOT NULL DEFAULT \'wait\', created INTEGER, updated INTEGER, closed INTEGER)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
   return $pdo;
 }
@@ -105,6 +107,11 @@ function logit(array $cfg, ?string $role, string $action, string $ref = ''): voi
 function body(): array { $j = json_decode(file_get_contents('php://input') ?: '', true); return is_array($j) ? $j : []; }
 function isDay($s): bool { return is_string($s) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $s) === 1; }
 function needRole(?string $role, array $allowed): void { if (!$role) fail('Нужно войти', 401); if (!in_array($role, $allowed, true)) fail('Недостаточно прав', 403); }
+function zakRow(array $r, ?string $role): array {
+  $x = ['id' => (int)$r['id'], 'day' => $r['day'], 'phone' => $r['phone'], 'name' => $r['name'], 'items' => $r['items'], 'total' => (float)$r['total'], 'prepay' => (float)$r['prepay'], 'promo' => $r['promo'], 'note' => $r['note'], 'status' => $r['status'], 'supplier' => $r['supplier']];
+  if ($role !== 'owner') unset($x['supplier']);
+  return $x;
+}
 function digits($s): string { return preg_replace('/\D/', '', (string)$s); }
 // телефон — основа клиента: храним как 7XXXXXXXXXX
 function phoneKey($s): string { $d = digits($s); if (strlen($d) === 11 && $d[0] === '8') $d = '7' . substr($d, 1); if (strlen($d) === 10) $d = '7' . $d; return (strlen($d) === 11 && $d[0] === '7') ? $d : ''; }
@@ -505,13 +512,56 @@ try {
     if ($buys) { $ids = array_keys($buys); $mv = db($cfg)->prepare('SELECT m.doc_id, m.qty, m.price, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY m.id'); $mv->execute($ids);
       foreach ($mv->fetchAll() as $m) { $x = &$buys[(int)$m['doc_id']]; $q = abs((float)$m['qty']); $x['items'][] = $m['name'] . ($q != 1 ? ' ×' . (0 + $q) : ''); $x['sum'] += ($x['type'] === 'ret' ? -1 : 1) * $q * (float)$m['price']; unset($x); } }
     $buys = array_values(array_map(function ($x) { $x['items'] = implode(', ', $x['items']); $x['sum'] = round($x['sum'], 2); return $x; }, $buys));
+    // 4) заказы клиентов
+    $zk = [];
+    foreach (db($cfg)->query('SELECT * FROM zak ORDER BY day DESC, id DESC LIMIT 3000')->fetchAll() as $r) {
+      $k = (string)$r['phone'];
+      if (!(($k !== '' && isset($phones[$k])) || ($r['name'] !== '' && mb_strpos(mb_strtoupper($r['name']), $Q) !== false) || (strlen($dq) >= 4 && $k !== '' && strpos($k, $dq) !== false))) continue;
+      $zk[] = zakRow($r, $role); if (count($zk) >= 100) break;
+    }
     // справочник по всем найденным телефонам
-    $all = array_merge($orders, $bk, $buys); $keys = [];
+    $all = array_merge($orders, $bk, $buys, $zk); $keys = [];
     foreach ($all as $x) { $k = phoneKey($x['phone'] ?? ''); if ($k) $keys[$k] = true; }
     foreach ($phones as $k => $_) $keys[$k] = true;
     $map = [];
     if ($keys) { $kk = array_keys($keys); $st = db($cfg)->prepare('SELECT phone, name, model FROM clients WHERE phone IN (' . implode(',', array_fill(0, count($kk), '?')) . ')'); $st->execute($kk); foreach ($st->fetchAll() as $c) $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model']]; }
-    out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'clients' => $map ?: new stdClass()]);
+    out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'zak' => $zk, 'clients' => $map ?: new stdClass()]);
+
+  case 'zak_list':
+    // заказы клиентов: поиск по телефону, имени, товару, поставщику
+    needRole($role, ['owner']);
+    $st = (string)($_GET['st'] ?? 'open'); $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); $dq = digits($q);
+    $rows = []; $tot = ['n' => 0, 'total' => 0, 'prepay' => 0, 'due' => 0, 'wait' => 0, 'came' => 0];
+    foreach (db($cfg)->query('SELECT * FROM zak ORDER BY day DESC, id DESC')->fetchAll() as $r) {
+      $open = in_array($r['status'], ['wait', 'came'], true);
+      if ($open) { $tot[$r['status']]++; }
+      if ($st === 'open' && !$open) continue; if (in_array($st, ['wait', 'came', 'done', 'cancel'], true) && $r['status'] !== $st) continue;
+      if ($q !== '') { $hay = mb_strtoupper($r['name'] . ' ' . $r['items'] . ' ' . $r['supplier'] . ' ' . $r['note']); if (mb_strpos($hay, $q) === false && !(strlen($dq) >= 4 && strpos($r['phone'], $dq) !== false)) continue; }
+      $x = zakRow($r, $role); $rows[] = $x;
+      if ($r['status'] !== 'cancel') { $tot['n']++; $tot['total'] += $x['total']; $tot['prepay'] += $x['prepay']; if ($r['status'] !== 'done') $tot['due'] += max(0, $x['total'] - $x['prepay']); }
+      if (count($rows) >= 400) break;
+    }
+    $sup = [];
+    foreach (db($cfg)->query("SELECT supplier FROM zak WHERE supplier != '' ORDER BY id DESC LIMIT 500")->fetchAll(PDO::FETCH_COLUMN) as $n) $sup[$n] = true;
+    foreach (db($cfg)->query("SELECT partner FROM docs WHERE type = 'in' AND partner != '' ORDER BY id DESC LIMIT 500")->fetchAll(PDO::FETCH_COLUMN) as $n) $sup[$n] = true;
+    out(['rows' => $rows, 'total' => $tot, 'suppliers' => array_slice(array_keys($sup), 0, 60)]);
+
+  case 'zak_save':
+    post(); needRole($role, ['owner']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $day = (string)($b['day'] ?? ''); if (!isDay($day)) $day = date('Y-m-d');
+    $items = mb_substr(trim((string)($b['items'] ?? '')), 0, 2000); if ($items === '') fail('Впишите, что заказали');
+    $ph = phoneKey($b['phone'] ?? ''); if (trim((string)($b['phone'] ?? '')) !== '' && $ph === '') fail('Проверьте телефон — нужен полный номер');
+    $stt = in_array($b['status'] ?? '', ['wait', 'came', 'done', 'cancel'], true) ? $b['status'] : 'wait';
+    $promo = in_array($b['promo'] ?? '', ['', 'bshm', 'm20'], true) ? $b['promo'] : '';
+    $v = [$day, $ph, mb_substr(trim((string)($b['name'] ?? '')), 0, 100), $items, max(0, round((float)($b['total'] ?? 0), 2)), max(0, round((float)($b['prepay'] ?? 0), 2)), mb_substr(trim((string)($b['supplier'] ?? '')), 0, 100), $promo, mb_substr(trim((string)($b['note'] ?? '')), 0, 1000), $stt, time(), in_array($stt, ['done', 'cancel'], true) ? time() : null];
+    if ($id) { $v[] = $id; db($cfg)->prepare('UPDATE zak SET day=?, phone=?, name=?, items=?, total=?, prepay=?, supplier=?, promo=?, note=?, status=?, updated=?, closed=? WHERE id=?')->execute($v); }
+    else { db($cfg)->prepare('INSERT INTO zak (day, phone, name, items, total, prepay, supplier, promo, note, status, updated, closed, created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute(array_merge($v, [time()])); $id = (int)db($cfg)->lastInsertId(); }
+    // имя клиента — в общий справочник, если его там ещё нет
+    if ($ph !== '' && $v[2] !== '') { $c = db($cfg)->prepare('SELECT name FROM clients WHERE phone = ?'); $c->execute([$ph]); $cn = $c->fetchColumn();
+      if ($cn === false) db($cfg)->prepare('INSERT INTO clients (phone, name, model, updated) VALUES (?,?,?,?)')->execute([$ph, $v[2], '', time()]);
+      elseif ($cn === '') db($cfg)->prepare('UPDATE clients SET name = ?, updated = ? WHERE phone = ?')->execute([$v[2], time(), $ph]); }
+    logit($cfg, $role, 'zak_save', (string)$id);
+    out(['ok' => true, 'id' => $id]);
 
   case 'client_set':
     // имя и машина клиента — как вам удобнее его называть
