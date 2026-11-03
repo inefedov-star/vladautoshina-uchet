@@ -1,0 +1,24 @@
+# Сохранённые предложения и загруженные картинки лежат рядом со скриптами.
+# Картинки отдавать нужно, а вот сами файлы КП и служебное — нет.
+<FilesMatch "\.(json|log|tmp)$">
+  Require all denied
+</FilesMatch>
+
+# На старых Apache директива другая, пусть работают обе.
+<IfModule !mod_authz_core.c>
+  <FilesMatch "\.(json|log|tmp)$">
+    Order allow,deny
+    Deny from all
+  </FilesMatch>
+</IfModule>
+
+# Папку с предложениями закрываем целиком
+RedirectMatch 404 ^/kp/data/
+
+# Листинг каталогов ни к чему
+Options -Indexes
+
+# Предложения из поиска убираем: они не для чужих глаз
+<IfModule mod_headers.c>
+  Header set X-Robots-Tag "noindex, nofollow"
+</IfModule>

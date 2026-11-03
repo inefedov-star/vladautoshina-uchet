@@ -1,0 +1,46 @@
+# ═══════════════════════════════════════════════════════════════════
+#  шинный отель внутри пульта: vladautoshina.ru/montazh/hotel/
+# ═══════════════════════════════════════════════════════════════════
+
+DirectoryIndex index.php
+AddDefaultCharset UTF-8
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteCond %{HTTP:X-Forwarded-SSL} !=on
+  RewriteCond %{SERVER_PORT} !^443$
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+# Короткая ссылка на фотоотчёт: /s/K7M2QX
+<IfModule mod_rewrite.c>
+  RewriteRule ^s/([A-Za-z0-9]{4,10})/?$ share.php?t=$1 [L,QSA]
+</IfModule>
+
+# База наружу не отдаётся никогда
+<FilesMatch "\.(db|db-wal|db-shm|sqlite|sqlite3)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "same-origin"
+  Header always set X-Frame-Options "SAMEORIGIN"
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript
+</IfModule>
+
+php_value upload_max_filesize 12M
+php_value post_max_size 60M

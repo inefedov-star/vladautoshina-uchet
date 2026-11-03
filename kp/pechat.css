@@ -1,0 +1,233 @@
+/* ═══════════════════════════════════════════════════════════════════
+   pechat.css — вёрстка коммерческого предложения под лист A4
+
+   Палитра и шрифты те же, что на сайте, но плотность другая: на экране
+   воздух помогает, на бумаге он гонит таблицу на лишнюю страницу.
+   Поэтому здесь свои отступы и свои размеры, а не сайтовые.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --paper:#FFFFFF;
+  --tint:#F2EFE8;
+  --ink:#16160F;
+  --ink-2:#3A382E;
+  --ink-3:#6E6B5D;
+  --rule:rgba(22,22,15,.22);
+  --rule-soft:rgba(22,22,15,.10);
+  --signal:#D8410C;
+  --f-display:'Fira Sans Extra Condensed','Golos Text',system-ui,sans-serif;
+  --f-text:'Golos Text',system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:#E7E4DC;color:var(--ink);
+  font-family:var(--f-text);font-size:10.5pt;line-height:1.46;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ── лист ───────────────────────────────────────────────────────── */
+.list{
+  width:210mm;min-height:297mm;margin:14px auto;background:var(--paper);
+  padding:13mm 13mm 16mm;position:relative;
+  box-shadow:0 2px 18px rgba(22,22,15,.18);
+}
+
+/* ── шапка ──────────────────────────────────────────────────────── */
+.shapka{display:flex;gap:8mm;align-items:flex-start;
+  border-bottom:1.6px solid var(--ink);padding-bottom:3.2mm;margin-bottom:3.6mm}
+.shapka-l{flex:1;min-width:0}
+.mark{display:flex;align-items:center;gap:2.4mm;margin-bottom:1.6mm}
+.mark svg{width:8.4mm;height:8.4mm;flex:none}
+.mark b{font-family:var(--f-display);font-weight:800;font-size:15pt;
+  letter-spacing:-.01em;line-height:1;display:block}
+.mark i{font-family:var(--f-mono);font-style:normal;font-size:6.2pt;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);display:block;margin-top:.7mm}
+.rekviz{font-size:7.8pt;line-height:1.38;color:var(--ink-2)}
+.rekviz span{white-space:nowrap}
+.shapka-r{text-align:right;flex:none}
+.shapka-r .nomer{font-family:var(--f-display);font-weight:800;font-size:14pt;
+  line-height:1;letter-spacing:-.01em}
+.shapka-r .data{font-family:var(--f-mono);font-size:7.6pt;color:var(--ink-3);margin-top:1.3mm}
+.srok--vyshel{border-left-color:var(--ink-3) !important;color:var(--ink-3)}
+.shapka-r .srok{font-size:7.8pt;margin-top:2mm;padding:1.2mm 2.2mm;
+  background:var(--tint);border-left:2px solid var(--signal);display:inline-block;text-align:left}
+
+/* ── заголовок и адресат ────────────────────────────────────────── */
+h1{font-family:var(--f-display);font-weight:800;font-size:17pt;line-height:1.02;
+  letter-spacing:-.02em;margin:0 0 2.6mm}
+h1 em{font-style:normal;color:var(--signal)}
+/* Четыре поля в две колонки вместо четырёх строк: экономит половину
+   высоты блока, а читается так же — пара «подпись — значение» рядом. */
+.komu{display:grid;grid-template-columns:auto 1fr auto 1fr;gap:.9mm 3.5mm;
+  font-size:9pt;margin-bottom:3.6mm;padding:2mm 3mm;background:var(--tint)}
+.komu dt{font-family:var(--f-mono);font-size:6.8pt;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);padding-top:.5mm;white-space:nowrap}
+.komu dd{margin:0;font-weight:500;min-width:0;overflow-wrap:anywhere}
+@media (max-width:700px){.komu{grid-template-columns:auto 1fr}}
+
+/* ── таблица позиций ────────────────────────────────────────────── */
+table.poz{width:100%;border-collapse:collapse;font-size:9.2pt;margin-bottom:3.6mm}
+table.poz thead th{
+  font-family:var(--f-mono);font-size:6.8pt;letter-spacing:.1em;text-transform:uppercase;
+  font-weight:700;color:var(--ink-3);text-align:left;padding:1.2mm 2mm 1.1mm;
+  border-bottom:1.4px solid var(--ink);white-space:nowrap}
+table.poz tbody td{padding:1.5mm 2mm;border-bottom:1px solid var(--rule-soft);
+  vertical-align:middle}
+table.poz tbody tr:last-child td{border-bottom:1px solid var(--rule)}
+.c-num{width:8mm;font-family:var(--f-mono);font-size:8.4pt;color:var(--ink-3);text-align:right}
+.c-img{width:15mm}
+/* Фон строго белый: у части снимков фон тоже белый, и бежевая подложка
+   вылезала вокруг картинки рамкой — особенно заметно при object-fit,
+   который вписывает снимок в квадрат и оставляет поля по бокам. */
+.c-img img{display:block;width:12.5mm;height:12.5mm;object-fit:contain;background:#fff}
+.c-name b{display:block;font-weight:600;line-height:1.3}
+.c-name i{display:block;font-style:normal;font-size:8.2pt;color:var(--ink-3);margin-top:.8mm}
+.c-q,.c-p,.c-s{text-align:right;white-space:nowrap;font-family:var(--f-mono);font-size:9.4pt}
+.c-q{width:17mm}
+.c-p{width:24mm}
+.c-s{width:26mm;font-weight:700}
+.c-p s{color:var(--ink-3);font-size:8pt;display:block;text-decoration:line-through}
+.razdel td{background:var(--tint);font-family:var(--f-mono);font-size:6.8pt;
+  letter-spacing:.11em;text-transform:uppercase;font-weight:700;color:var(--ink-2);
+  padding:1.1mm 2mm}
+
+/* ── плотность ───────────────────────────────────────────────────
+   Ступеней четыре: от крупных снимков к прайс-листу без картинок.
+   Первую выбирает сервер по числу строк, а дальше страница меряет
+   себя сама и спускается на ступень ниже, пока не уложится в лист, —
+   так документ не зависит ни от браузера, ни от длины названий.  */
+.krupno table.poz{font-size:10pt}
+.krupno table.poz tbody td{padding:2.4mm 2mm}
+.krupno .c-img{width:24mm}
+.krupno .c-img img{width:21mm;height:21mm}
+.krupno .c-name b{font-size:10.4pt}
+.krupno .c-name i{font-size:8.4pt;margin-top:1mm}
+.krupno h1{font-size:19pt;margin-bottom:3.4mm}
+.krupno .komu{padding:2.6mm 3.4mm;gap:1.3mm 4mm;margin-bottom:4.6mm;font-size:9.4pt}
+.krupno .itogi .vsego b{font-size:18pt}
+
+.plotno table.poz{font-size:8.6pt}
+.plotno table.poz tbody td{padding:1mm 2mm}
+.plotno .c-img{width:13mm}
+.plotno .c-img img{width:11mm;height:11mm}
+.plotno .c-name i{font-size:7.2pt;margin-top:.3mm}
+.plotno h1{font-size:15pt;margin-bottom:2mm}
+.plotno .itogi .vsego b{font-size:15pt}
+.plotno .usloviya{margin-top:3mm;padding-top:2mm;font-size:8pt}
+.plotno .podpis{margin-top:3.5mm}
+
+/* Ещё одна ступень между «плотно» и прайс-листом: снимки совсем мелкие,
+   но живые. Без неё на десятой позиции документ разом терял фотографии,
+   хотя до листа ему не хватало пары миллиметров. */
+.tesno table.poz{font-size:8.2pt}
+.tesno table.poz tbody td{padding:.7mm 1.6mm}
+.tesno .c-img{width:11mm}
+.tesno .c-img img{width:9mm;height:9mm}
+.tesno .c-name i{font-size:6.8pt;margin-top:.2mm}
+.tesno .komu{padding:1.6mm 2.6mm;gap:.7mm 3mm;margin-bottom:2.6mm;font-size:8.4pt}
+.tesno h1{font-size:14pt;margin-bottom:1.6mm}
+.tesno .shapka{padding-bottom:2.4mm;margin-bottom:2.6mm}
+.tesno .rekviz{font-size:7.2pt;line-height:1.32}
+.tesno .itogi .vsego b{font-size:14pt}
+.tesno .usloviya{margin-top:2.4mm;padding-top:1.8mm;font-size:7.6pt}
+.tesno .podpis{margin-top:2.6mm}
+.tesno .razdel td{padding:.8mm 1.6mm}
+
+.bez-foto table.poz{font-size:8.6pt}
+.bez-foto table.poz tbody td{padding:.9mm 2mm}
+
+/* ── итоги ──────────────────────────────────────────────────────── */
+.itogi{margin-left:auto;width:84mm;font-size:9.2pt}
+.itogi .row{display:flex;justify-content:space-between;gap:5mm;padding:.8mm 0;
+  border-bottom:1px solid var(--rule-soft)}
+.itogi .row span{color:var(--ink-2)}
+.itogi .row b{font-family:var(--f-mono);font-weight:500;white-space:nowrap}
+.itogi .vsego{border-bottom:0;border-top:1.6px solid var(--ink);margin-top:.9mm;
+  padding-top:1.4mm;align-items:baseline}
+.itogi .vsego span{font-family:var(--f-mono);font-size:7.4pt;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.itogi .vsego b{font-family:var(--f-display);font-weight:800;font-size:16pt;
+  letter-spacing:-.02em;color:var(--ink)}
+.propis{font-size:8.4pt;color:var(--ink-2);margin-top:1.6mm;text-align:right;line-height:1.35}
+.nds{font-size:8.4pt;color:var(--ink-3);margin-top:1.4mm;text-align:right}
+/* когда итог выключен: предложение — выбор, а не счёт */
+.bez-itoga{margin:1.8mm 0 0;padding-top:1.6mm;border-top:1.6px solid var(--ink);
+  font-size:9pt;color:var(--ink-2);text-align:right}
+
+/* ── условия и подпись ──────────────────────────────────────────── */
+.usloviya{margin-top:4mm;padding-top:2.6mm;border-top:1px solid var(--rule);
+  font-size:8.4pt;line-height:1.42;color:var(--ink-2)}
+.usloviya h3{font-family:var(--f-mono);font-size:6.8pt;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 1.2mm;font-weight:700}
+.usloviya p{margin:0 0 1.8mm}
+.podpis{display:flex;justify-content:space-between;gap:8mm;margin-top:4.5mm;
+  align-items:flex-end}
+.podpis-l{font-size:8.6pt;line-height:1.42}
+.podpis-l b{display:block;font-weight:600}
+.podpis-l span{color:var(--ink-3);font-size:8pt}
+.podpis-r{text-align:center;flex:none;width:58mm}
+.podpis-r .liniya{border-bottom:1px solid var(--ink);height:9mm}
+
+/* Факсимиле. Подпись заходит на линию, печать частично перекрывает
+   подпись — как и бывает на живом документе, где печать ставят поверх.
+   Выравниваем по правому краю блока, но без выезда за поле листа. */
+.podpis-r--faks{position:relative}
+.podpis-r--faks{padding-bottom:1mm}
+.krupno .podpis-r--faks .liniya{height:15mm}
+.krupno .faks-podpis{height:17mm}
+.krupno .faks-pechat{width:30mm}
+.podpis-r--faks .liniya{height:13mm}
+.faks-podpis{position:absolute;left:9mm;bottom:3mm;height:15mm;width:auto}
+.faks-pechat{position:absolute;right:0;bottom:-1mm;width:27mm;height:auto}
+.podpis-r i{font-style:normal;font-family:var(--f-mono);font-size:6.8pt;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);display:block;margin-top:1mm}
+
+/* ── подвал листа ───────────────────────────────────────────────── */
+.podval{position:absolute;left:13mm;right:13mm;bottom:6mm;
+  display:flex;justify-content:space-between;gap:6mm;
+  font-family:var(--f-mono);font-size:6.6pt;letter-spacing:.08em;
+  color:var(--ink-3);border-top:1px solid var(--rule-soft);padding-top:1.8mm}
+
+/* ── панель поверх листа: её на бумаге быть не должно ────────────── */
+.panel{position:sticky;top:0;z-index:5;background:var(--ink);color:#F2EFE8;
+  padding:9px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  font-size:13px}
+.panel b{font-family:var(--f-display);font-weight:800;font-size:16px;margin-right:auto}
+.panel a,.panel button{font-family:var(--f-text);font-size:12.5px;font-weight:600;
+  color:var(--ink);background:#F2EFE8;border:0;border-radius:2px;padding:7px 13px;
+  text-decoration:none;cursor:pointer}
+.panel a:hover,.panel button:hover{background:#fff}
+.panel .sig{background:var(--signal);color:#fff}
+.panel .tihaya{background:transparent;color:rgba(242,239,232,.75);
+  border:1px solid rgba(242,239,232,.3)}
+
+/* ═══════════════════ ПЕЧАТЬ ═══════════════════ */
+/* Поля задаём здесь, а не своим padding. Раньше стояло margin:0 плюс
+   padding 12 мм у листа — и когда в диалоге печати выбраны поля
+   «по умолчанию», браузер добавлял к ним ещё свои, отчего документ
+   уезжал на второй лист. Теперь поля ровно одни и наши. */
+@page{size:A4;margin:10mm 10mm 12mm}
+
+@media print{
+  body{background:#fff}
+  .panel{display:none !important}
+  .list{width:auto;min-height:auto;margin:0;padding:0;box-shadow:none}
+
+  /* Строку таблицы рвать между страницами нельзя: снимок уедет на один
+     лист, а цена на другой. Шапку таблицы, наоборот, повторяем. */
+  tr{page-break-inside:avoid}
+  thead{display:table-header-group}
+  tfoot{display:table-footer-group}
+  .itogi,.podpis,.usloviya{page-break-inside:avoid}
+
+  /* Браузеры по умолчанию не печатают фоны и могут ослабить картинки —
+     для подписи и печати это критично, они должны лечь как на экране. */
+  .faks-podpis,.faks-pechat{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  h1{page-break-after:avoid}
+
+  .podval{position:fixed;bottom:5mm}
+  a{color:inherit;text-decoration:none}
+}

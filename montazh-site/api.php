@@ -107,6 +107,19 @@ function logit(array $cfg, ?string $role, string $action, string $ref = ''): voi
 function body(): array { $j = json_decode(file_get_contents('php://input') ?: '', true); return is_array($j) ? $j : []; }
 function isDay($s): bool { return is_string($s) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $s) === 1; }
 function needRole(?string $role, array $allowed): void { if (!$role) fail('Нужно войти', 401); if (!in_array($role, $allowed, true)) fail('Недостаточно прав', 403); }
+/* шинный отель: та же база, что у sklad.shinhotel33.ru; пульт её только читает */
+require_once __DIR__ . '/hotel_path.php';
+function hotelPdo(array $cfg): ?PDO {
+  static $h = false; if ($h !== false) return $h;
+  $d = hotelDir($cfg); if ($d === '') return $h = null;
+  try { $h = new PDO('sqlite:' . $d . '/sklad.db', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]); $h->exec('PRAGMA busy_timeout=4000'); }
+  catch (Throwable $e) { $h = null; }
+  return $h;
+}
+function storRow(array $r): array {
+  return ['id' => (int)$r['id'], 'num' => (int)$r['num'], 'season' => (string)$r['season'], 'kind' => (string)$r['kind'], 'name' => (string)$r['client'], 'phone' => (string)$r['phone_digits'],
+    'size' => (string)$r['size'], 'descr' => (string)$r['descr'], 'qty' => (int)$r['qty'], 'cell' => (string)$r['cell'], 'day' => substr((string)$r['accepted_at'], 0, 10), 'due' => (string)$r['due_at'], 'status' => (string)$r['status'], 'issued' => substr((string)$r['issued_at'], 0, 10), 'paid' => (int)$r['paid']];
+}
 function zakRow(array $r, ?string $role): array {
   $x = ['id' => (int)$r['id'], 'day' => $r['day'], 'phone' => $r['phone'], 'name' => $r['name'], 'items' => $r['items'], 'total' => (float)$r['total'], 'prepay' => (float)$r['prepay'], 'promo' => $r['promo'], 'note' => $r['note'], 'status' => $r['status'], 'supplier' => $r['supplier']];
   if ($role !== 'owner') unset($x['supplier']);
@@ -519,13 +532,28 @@ try {
       if (!(($k !== '' && isset($phones[$k])) || ($r['name'] !== '' && mb_strpos(mb_strtoupper($r['name']), $Q) !== false) || (strlen($dq) >= 4 && $k !== '' && strpos($k, $dq) !== false))) continue;
       $zk[] = zakRow($r, $role); if (count($zk) >= 100) break;
     }
+    // 5) шинный отель: что клиент сдавал на хранение
+    $stor = [];
+    if ($hp = hotelPdo($cfg)) { try {
+      foreach ($hp->query("SELECT * FROM items WHERE status IN ('stored','issued') AND (deleted_at IS NULL OR deleted_at = '') ORDER BY accepted_at DESC, id DESC LIMIT 3000")->fetchAll() as $r) {
+        $k = (string)$r['phone_digits'];
+        if (!(($k !== '' && isset($phones[$k])) || mb_strpos(mb_strtoupper((string)$r['client']), $Q) !== false || (strlen($dq) >= 4 && $k !== '' && strpos($k, $dq) !== false))) continue;
+        $stor[] = storRow($r); if (count($stor) >= 60) break;
+      } } catch (Throwable $e) {} }
     // справочник по всем найденным телефонам
-    $all = array_merge($orders, $bk, $buys, $zk); $keys = [];
+    $all = array_merge($orders, $bk, $buys, $zk, $stor); $keys = [];
     foreach ($all as $x) { $k = phoneKey($x['phone'] ?? ''); if ($k) $keys[$k] = true; }
     foreach ($phones as $k => $_) $keys[$k] = true;
     $map = [];
     if ($keys) { $kk = array_keys($keys); $st = db($cfg)->prepare('SELECT phone, name, model FROM clients WHERE phone IN (' . implode(',', array_fill(0, count($kk), '?')) . ')'); $st->execute($kk); foreach ($st->fetchAll() as $c) $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model']]; }
-    out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'zak' => $zk, 'clients' => $map ?: new stdClass()]);
+    out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'zak' => $zk, 'stor' => $stor, 'clients' => $map ?: new stdClass()]);
+
+  case 'hotel_info':
+    // нашлась ли база отеля и сколько сейчас на хранении — для кнопки «Хранение»
+    needRole($role, ['owner', 'master', 'cashier']);
+    $hp = hotelPdo($cfg); if (!$hp) out(['ok' => false]);
+    try { $n = (int)$hp->query("SELECT COUNT(*) FROM items WHERE status = 'stored'")->fetchColumn(); } catch (Throwable $e) { out(['ok' => false]); }
+    out(['ok' => true, 'stored' => $n]);
 
   case 'zak_list':
     // заказы клиентов: поиск по телефону, имени, товару, поставщику

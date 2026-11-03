@@ -9,3 +9,13 @@ __pycache__/
 *.sqlite3
 montazh-site/config.php
 montazh-site/data/*.sqlite*
+# шинный отель: база и фото клиентов живут только на хостинге
+*.db
+*.db-wal
+*.db-shm
+montazh-site/hotel/uploads/
+# КП: настройки с паролем и реквизитами, сохранённые предложения, подпись и печать
+kp/nastroyki.php
+kp/data/
+kp/foto-kp/
+kp/*.png

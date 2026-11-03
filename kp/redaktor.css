@@ -1,0 +1,180 @@
+/* ═══════════════════════════════════════════════════════════════════
+   redaktor.css — рабочий стол: слева предложение, справа итог и список.
+   Палитра сайта, но плотнее: это инструмент, а не витрина.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --paper:#F2EFE8; --paper-2:#EAE6DB; --paper-3:#E1DCCE;
+  --ink:#16160F; --ink-2:#3A382E; --ink-3:#6E6B5D;
+  --rule:rgba(22,22,15,.16); --rule-soft:rgba(22,22,15,.08);
+  --signal:#D8410C; --signal-deep:#A82F06; --signal-tint:rgba(216,65,12,.09);
+  --ok:#4B6A38;
+  --f-display:'Fira Sans Extra Condensed','Golos Text',system-ui,sans-serif;
+  --f-text:'Golos Text',system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--f-text);font-size:15px;line-height:1.5}
+.mono{font-family:var(--f-mono);font-size:.66rem;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3)}
+
+/* ── верхняя полоса ─────────────────────────────────────────────── */
+.top{position:sticky;top:0;z-index:20;background:var(--ink);color:var(--paper);
+  display:flex;align-items:center;gap:12px;padding:10px 18px;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit}
+.logo svg{width:26px;height:26px}
+.logo span{font-family:var(--f-display);font-weight:800;font-size:17px;line-height:1}
+.logo i{display:block;font-family:var(--f-mono);font-style:normal;font-size:8px;
+  letter-spacing:.16em;color:rgba(242,239,232,.55);margin-top:2px}
+.top .nom{font-family:var(--f-mono);font-size:12px;letter-spacing:.1em;
+  color:rgba(242,239,232,.7);margin-left:8px}
+.top .itog{margin-left:auto;font-family:var(--f-display);font-weight:800;font-size:20px}
+.top button,.top a:not(.logo){font-family:var(--f-text);font-size:13px;font-weight:600;
+  color:var(--ink);background:var(--paper);border:0;border-radius:2px;
+  padding:8px 14px;text-decoration:none;cursor:pointer;white-space:nowrap}
+.top .sig{background:var(--signal);color:#fff}
+.top .tihaya{background:transparent;color:rgba(242,239,232,.7);
+  border:1px solid rgba(242,239,232,.28)}
+.top .off{opacity:.4;pointer-events:none}
+
+/* ── каркас ─────────────────────────────────────────────────────── */
+.wrap{display:grid;grid-template-columns:1fr 300px;gap:1.5px;background:var(--rule);
+  min-height:calc(100vh - 47px);align-items:start}
+.main{background:var(--paper);padding:0}
+.bok{background:var(--paper-2);padding:18px;position:sticky;top:47px}
+
+.blok{padding:20px 22px;border-bottom:1.5px solid var(--rule)}
+.blok h2{font-family:var(--f-display);font-weight:800;font-size:21px;letter-spacing:-.015em;
+  margin:0 0 14px;display:flex;align-items:center;gap:10px}
+.schet{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;font-weight:500;
+  color:var(--ink-3);background:var(--paper-3);padding:2px 7px;border-radius:2px}
+
+/* ── поля ───────────────────────────────────────────────────────── */
+.setka{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.setka .shir{grid-column:1 / -1}
+label{display:flex;flex-direction:column;gap:5px;font-family:var(--f-mono);
+  font-size:.62rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+input,textarea,select{font-family:var(--f-text);font-size:14.5px;color:var(--ink);
+  background:#fff;border:1.5px solid var(--rule);border-radius:2px;padding:8px 10px;
+  width:100%;font-weight:500}
+textarea{resize:vertical;line-height:1.5}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--signal)}
+
+/* ── поиск по каталогу ──────────────────────────────────────────── */
+.poisk{position:relative;margin-bottom:14px}
+.poisk input{font-size:15.5px;padding:11px 13px}
+.hint{font-family:var(--f-mono);font-size:.62rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin:7px 0 0}
+/* беду видно сразу: иначе «каталог не прочитался» теряется серым мелким */
+.hint.beda{color:#fff;background:var(--signal);display:inline-block;
+  padding:4px 9px;border-radius:2px;text-transform:none;letter-spacing:.02em;
+  font-family:var(--f-text);font-size:.8rem}
+.podskazki{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:12;
+  background:#fff;border:1.5px solid var(--ink);border-radius:2px;
+  max-height:340px;overflow:auto;box-shadow:0 10px 26px rgba(22,22,15,.16)}
+.pod{display:flex;align-items:center;gap:11px;padding:9px 12px;cursor:pointer;
+  border-bottom:1px solid var(--rule-soft);text-align:left;width:100%;background:none;
+  border-left:0;border-right:0;border-top:0;font-family:inherit;font-size:14px}
+.pod:last-child{border-bottom:0}
+.pod:hover,.pod.vybran{background:var(--signal-tint)}
+.pod img{width:34px;height:34px;object-fit:contain;background:#fff;flex:none}
+.pod .im{flex:1;min-width:0}
+.pod .im b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;line-height:1.3}
+.pod .im i{display:block;font-style:normal;font-size:12px;color:var(--ink-3)}
+.pod .ce{font-family:var(--f-mono);font-size:13.5px;font-weight:500;white-space:nowrap}
+.pod .net{color:var(--signal-deep);font-size:11px;font-family:var(--f-mono)}
+
+/* ── ссылка на товар поставщика ─────────────────────────────────── */
+.ssylka{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.ssylka input{flex:1;min-width:240px;font-size:14px;padding:9px 11px}
+.ssylka button{font-family:var(--f-text);font-size:13px;font-weight:600;color:var(--ink);
+  background:var(--paper-3);border:1.5px solid var(--rule);border-radius:2px;
+  padding:9px 14px;cursor:pointer;white-space:nowrap}
+.ssylka button:hover{background:var(--signal-tint);border-color:var(--signal)}
+.ssylka #bufer{background:var(--signal);color:#fff;border-color:var(--signal)}
+.pro-zakladku{font-family:var(--f-mono);font-size:.6rem;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);text-decoration:none;
+  border-bottom:1px solid var(--rule)}
+.pro-zakladku:hover{color:var(--signal-deep)}
+
+/* строка с чужой ценой: видно, что цену надо поправить на свою */
+.redt tr.chuzhaya td{background:rgba(216,65,12,.055)}
+.redt tr.chuzhaya .t-p input,.redt tr.chuzhaya td.chislo input{
+  border-color:var(--signal);background:#fff}
+.metka{display:block;font-family:var(--f-mono);font-size:.58rem;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--signal-deep);margin-top:3px}
+
+/* ── таблицы строк ──────────────────────────────────────────────── */
+.redt{width:100%;border-collapse:collapse;font-size:14px}
+.redt thead th{font-family:var(--f-mono);font-size:.58rem;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);text-align:left;font-weight:700;
+  padding:0 8px 7px;border-bottom:1.5px solid var(--rule);white-space:nowrap}
+.redt td{padding:7px 8px;border-bottom:1px solid var(--rule-soft);vertical-align:middle}
+.redt tbody:empty{display:none}
+.t-img{width:52px}.t-q{width:84px}.t-u{width:74px}.t-p{width:104px}
+.t-d{width:86px}.t-s{width:106px}.t-x{width:38px}
+.redt .t-s,.redt td.summa{text-align:right;font-family:var(--f-mono);font-weight:700;
+  white-space:nowrap}
+.redt input{padding:6px 8px;font-size:14px}
+.redt .chislo input{text-align:right;font-family:var(--f-mono)}
+.mini{width:40px;height:40px;object-fit:contain;background:#fff;display:block;cursor:pointer;
+  border:1px solid var(--rule-soft)}
+.mini-net{width:40px;height:40px;background:var(--paper-3);border:1px dashed var(--rule);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  font-family:var(--f-mono);font-size:8px;color:var(--ink-3);text-align:center;line-height:1.1}
+.ubrat{width:26px;height:26px;border:0;background:var(--paper-3);border-radius:2px;
+  cursor:pointer;color:var(--ink-3);font-size:15px;line-height:1}
+.ubrat:hover{background:var(--signal);color:#fff}
+
+.knopki{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
+.knopki button{font-family:var(--f-text);font-size:13px;font-weight:600;color:var(--ink);
+  background:var(--paper-3);border:1.5px solid var(--rule);border-radius:2px;
+  padding:7px 12px;cursor:pointer}
+.knopki button:hover{background:var(--signal-tint);border-color:var(--signal)}
+
+/* ── правая колонка ─────────────────────────────────────────────── */
+.svodka{background:var(--ink);color:var(--paper);padding:17px;margin-bottom:16px}
+.svodka>.mono{color:rgba(242,239,232,.6)}
+.svodka>b{display:block;font-family:var(--f-display);font-weight:800;
+  font-size:31px;letter-spacing:-.02em;margin:7px 0 13px;line-height:1}
+.svodka-row{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;
+  padding:5px 0;border-top:1px solid rgba(242,239,232,.14)}
+.svodka-row span{color:rgba(242,239,232,.6)}
+.svodka-row b{font-family:var(--f-mono);font-weight:500}
+.mal{margin:13px 0 0;font-size:.58rem}
+.svodka .mal{color:rgba(242,239,232,.5)}
+.svodka .mal.est{color:#9BC08F}
+/* итог посчитан, но в документ не пойдёт — об этом надо помнить */
+.svodka .mal.vnimanie{color:#F0A080}
+
+.spisok h3{font-family:var(--f-display);font-weight:800;font-size:17px;margin:0 0 10px;
+  display:flex;justify-content:space-between;align-items:baseline}
+.spisok h3 a{font-family:var(--f-text);font-size:12.5px;font-weight:600;
+  color:var(--signal-deep);text-decoration:none}
+.pusto{font-size:13px;color:var(--ink-3);margin:0}
+.pos{display:block;text-decoration:none;color:inherit;background:var(--paper);
+  border:1.5px solid var(--rule);border-radius:2px;padding:9px 11px;margin-bottom:6px}
+.pos:hover{border-color:var(--signal)}
+.pos.tek{border-color:var(--ink);background:#fff}
+.pos b{display:block;font-family:var(--f-mono);font-size:12.5px;font-weight:700}
+.pos i{display:block;font-style:normal;font-size:13px;margin:2px 0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pos span{font-size:11.5px;color:var(--ink-3);font-family:var(--f-mono)}
+
+/* галочка с пояснением */
+.galka{flex-direction:row;align-items:flex-start;gap:9px;text-transform:none;
+  letter-spacing:0;font-family:var(--f-text);font-size:14px;color:var(--ink);
+  cursor:pointer;background:var(--paper-2);padding:11px 13px;
+  border:1.5px solid var(--rule);border-radius:2px}
+.galka input{width:17px;height:17px;flex:none;margin-top:1px;accent-color:var(--signal)}
+.galka i{display:block;font-style:normal;font-size:12.5px;color:var(--ink-3);
+  margin-top:2px;line-height:1.4}
+
+@media (max-width:980px){
+  .wrap{grid-template-columns:1fr}
+  .bok{position:static}
+  .setka{grid-template-columns:1fr}
+  .redt{display:block;overflow-x:auto}
+}
