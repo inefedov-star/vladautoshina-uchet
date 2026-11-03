@@ -176,6 +176,8 @@ body.master .owner-only,body.cashier .owner-only{display:none!important}
 .areas button{border:0;background:transparent;padding:0 12px;min-height:40px;font-weight:700;font-size:.9rem;color:var(--ink-2)}
 .areas button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
 .tab.off-area{display:none}
+.dropov{position:fixed;inset:0;z-index:50;background:rgba(255,102,0,.12);border:4px dashed var(--signal);display:grid;place-items:center;pointer-events:none}
+.dropov div{background:var(--paper);border-radius:18px;padding:22px 28px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.15);color:var(--ink-3)}.dropov b{display:block;font-family:var(--f-display);font-size:1.4rem;color:var(--ink);margin-bottom:4px}
 .thumb{width:34px;height:34px;object-fit:contain;background:#fff;border:1px solid var(--rule);border-radius:2px;vertical-align:middle;margin-right:8px}
 .phgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 .phc{border:1.5px solid var(--rule);border-radius:3px;background:var(--paper-2);display:flex;flex-direction:column}
@@ -611,7 +613,7 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
         <div class="spacer"></div>
       </div>
       <div id="dlPartner"></div>
-      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Приход</button><button class="btn ghost" type="button" data-newdoc="ret">+ Возврат</button><button class="btn ghost" type="button" data-newdoc="iss">+ Выдача с ответхранения</button><label class="btn ghost" id="dlImp" style="cursor:pointer">Загрузить документ (PDF / XML)<input type="file" accept=".pdf,.xml,application/pdf,text/xml" id="dlImpF" hidden></label></div>
+      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Приход</button><button class="btn ghost" type="button" data-newdoc="ret">+ Возврат</button><button class="btn ghost" type="button" data-newdoc="iss">+ Выдача с ответхранения</button><label class="btn ghost" id="dlImp" style="cursor:pointer">Загрузить документ (PDF / XML) — или перетащите файл сюда<input type="file" accept=".pdf,.xml,application/pdf,text/xml" id="dlImpF" hidden></label></div>
       <div class="tiles" id="dlTiles" style="margin-top:0"></div>
       <div class="row" id="dlTypes" style="margin-bottom:12px"><button type="button" class="chip" data-t="sale">Продажи</button><button type="button" class="chip" data-t="ret">Возвраты</button><button type="button" class="chip" data-t="in">Приход</button><button type="button" class="chip" data-t="iss">Выдача</button><button type="button" class="chip" data-t="open">Ввод остатков</button></div>
       <div id="dlOut" style="margin-bottom:40px"></div>
@@ -1835,6 +1837,62 @@ function startArea(){const h=location.hash.slice(1),q=location.search;
   if(/shop|magazin/.test(q)||h==='stock')return 's';if(['day','cal','exp','sum'].includes(h))return 'm';
   try{return localStorage.getItem('ivanor_area')==='s'?'s':'m';}catch(_){return 'm';}}
 
+/* ---------- наименование товара в формате каталога IVANOR (как в CloudShop), как бы ни написал поставщик ----------
+   Шины:  «215/65/16 Ikon Character Snow 2 SUV (Nordman RS2 SUV) 102R XL», шипы — «шип.» в конце или «(210 шип.)»
+   Диски: «17 7.0/5*114.3 ET37 dia 66.6 X'trike X-131 HSB Haval Jolion»
+   АКБ:   «Аккумулятор ASIA о/п 65 а/ч Zubr EFB 650A»;  кольца: «Кольцо центровочное 65.1-60.1» */
+const CANON_BRAND={'IKON TYRES':'Ikon','IKON':'Ikon','NOKIAN TYRES':'Nokian','NOKIAN':'Nokian','ATTAR':'Attar','KAMA':'КАМА','КАМА':'КАМА','KUMHO':'Kumho','GOODYEAR':'Goodyear','BFGOODRICH':'BFGoodrich','DOUBLESTAR':'DoubleStar','LINGLONG':'LingLong','HIFLY':'HiFly','TRACMAX':'Tracmax','CORDIANT':'Cordiant','VIATTI':'Viatti','SAILUN':'Sailun','FORTUNE':'Fortune','LANDSAIL':'Landsail','ROADSTONE':'Roadstone','HANKOOK':'Hankook','LAUFENN':'Laufenn','PIRELLI':'Pirelli','MICHELIN':'Michelin','CONTINENTAL':'Continental','BRIDGESTONE':'Bridgestone','YOKOHAMA':'Yokohama','TOYO':'Toyo','NEXEN':'Nexen','MATADOR':'Matador','GISLAVED':'Gislaved','TIGAR':'Tigar','KORMORAN':'Kormoran','TUNGA':'Tunga','TRIANGLE':'Triangle','MAXXIS':'Maxxis','DUNLOP':'Dunlop','ANTARES':'Antares','GOODRIDE':'Goodride','ARMSTRONG':'Armstrong','MIRAGE':'Mirage','БЕЛШИНА':'Белшина','BELSHINA':'Белшина',"X'TRIKE":"X'trike",'XTRIKE':"X'trike",'X-TRIKE':"X'trike",'REPLIKEY':'RepliKey','СКАД':'СКАД','SKAD':'СКАД','КИК':'КиК','K&K':'КиК','KHOMEN':'Khomen','TREBL':'Trebl','ACCURIDE':'Accuride'};
+const canonBrand=b=>{const u=String(b||'').toUpperCase().replace(/\s+/g,' ').trim();return CANON_BRAND[u]||(u.length>4&&b===b.toUpperCase()?b.charAt(0)+b.slice(1).toLowerCase():b);};
+const canonWord=w=>/^[A-ZА-ЯЁ]{5,}$/.test(w)?w.charAt(0)+w.slice(1).toLowerCase():w;   // NORDMAN → Nordman; SUV, SC, RS2 — как есть
+/* в JS \b не видит русские буквы — границы слова задаём сами: ‹ и › */
+const _W='0-9A-Za-zА-Яа-яЁё';
+const RX=(src,fl)=>new RegExp(src.replace(/‹/g,`(?<![${_W}])`).replace(/›/g,`(?![${_W}])`),fl||'i');
+/* категория по нашему наименованию — чтобы карточка разобралась на поля как в каталоге */
+function catHint(n){n=String(n||'');return /^Аккумулятор/.test(n)?'Аккумуляторы':/^(Кольцо|Гайка|Болт|Шпилька)|секрет/i.test(n)?'Крепеж':/^\d{2} \d+(\.\d)?\/\d\*/.test(n)?'Диски литые':'';}
+function canonName(src){
+  let s=' '+String(src||'').replace(/\s+/g,' ').trim()+' ';
+  // кольцо центровочное
+  if(RX('кольц').test(s)){const m=s.match(/(\d{2,3}(?:[.,]\d)?)\s*[-–\s\/]\s*(\d{2,3}(?:[.,]\d)?)/);if(m){const f=x=>(+x.replace(',','.')).toFixed(1);return `Кольцо центровочное ${f(m[1])}-${f(m[2])}`;}}
+  // шины: размер 215/65R16, 185/65/15, 195/75 16C, 225/55 ZR17
+  const t=s.match(/(\d{3})\s*\/\s*(\d{2})\s*(?:\/|\s|Z?R)\s*Z?R?\s*(\d{2})(\s*C(?![A-Za-z]))?/i);
+  if(t&&!RX('‹диск').test(s)){
+    const w=t[1],p=t[2],d=t[3],c=t[4]?'C':'';s=s.replace(t[0],' ');
+    let studN=null;const sn=s.match(/\(\s*(\d{2,3})\s*шип[^)]*\)/i);if(sn){studN=sn[1];s=s.replace(sn[0],' ');}
+    const studRx=RX('‹(шип(ы|ов|ованн[а-яё]*)?\\.?|ш\\.|studded|stud)(?=\\s|$|\\))','gi');
+    const stud=!!studN||studRx.test(s);s=s.replace(studRx,' ');
+    s=s.replace(RX('^\\s*(авто)?шин[аы]›(\\s+легков[а-яё]*)?'),' ').replace(/(^|\s)(TL|TT|M\+S|3PMSF)(?=\s|$)/g,' ');
+    const xl=/(^|\s)XL(?=\s|$)/i.test(s);s=s.replace(/(^|\s)XL(?=\s|$)/gi,' ');
+    let idx='';let m=s.match(/(?:^|\s)(\d{2,3}(?:\/\d{2,3})?)\s*([HJKLMNPQRSTUVWYZ])(?=\s|$)/);
+    if(m){idx=m[1]+m[2];s=s.replace(m[0],' ');}
+    else if((m=s.match(/(?:^|\s)([HJKLMNPQRSTUVWYZ])\s+(\d{2,3})(?=\s|$)/))){idx=m[2]+m[1];s=s.replace(m[0],' ');}
+    const words=s.trim().split(/\s+/).filter(Boolean);
+    let brand=words.shift()||'';if(words[0]&&/^tyres?$/i.test(words[0]))words.shift();
+    brand=canonBrand(brand);
+    const model=words.map(canonWord).join(' ').replace(/\s+\)/g,')').replace(/\(\s+/g,'(');
+    return `${w}/${p}/${d}${c} ${brand} ${model} ${idx}${xl?' XL':''}${studN?` (${studN} шип.)`:stud?' шип.':''}`.replace(/\s+/g,' ').trim();}
+  // диски: R17 / 7,0 / 5*114,3 / ET37 / d66,6
+  const pm=s.match(/(?:^|\s|\/)(\d)\s*[*xх×]\s*(\d{2,3}(?:[.,]\d+)?)(?![\d])/);
+  if(pm&&(RX('‹диск').test(s)||/ET\s*-?\d/i.test(s))){
+    const d=(s.match(/[\\\/\s]R\s?(\d{2})(?!\d)/i)||s.match(/^\s*(?:диск\S*\s+)?(\d{2})\s+\d/i)||[])[1];
+    const w=(s.match(/(?:^|\s)(\d{1,2}(?:[.,]\d)?)\s*(?:J|x|\\|\/)\s*R?\s?\d{2}(?!\d)/i)||s.match(/(?:^|\s)(\d{1,2}[.,]\d)(?=\s|\\|\/|$)/)||[])[1];
+    const et=(s.match(/ET\s*(-?\d+(?:[.,]\d+)?)/i)||[])[1];
+    const dia=(s.match(/(?:^|\s)(?:dia|d|цо)\s*(\d{2,3}(?:[.,]\d+)?)/i)||[])[1];
+    if(d){let rest=s.replace(RX('‹диск[а-яё]*›'),' ').replace(/(\d{1,2}(?:[.,]\d)?)\s*[\\\/]\s*R\s?\d{2}(?!\d)/i,' ').replace(/[\\\/\s]R\s?\d{2}(?!\d)/i,' ').replace(pm[0],' ').replace(/ET\s*-?\d+(?:[.,]\d+)?/i,' ')
+        .replace(/(^|\s)(dia|d|цо)\s*\d{2,3}(?:[.,]\d+)?/i,' ').replace(/(^|\s)\d{1,2}[.,]\d(?=\s|$)/,' ').replace(/(^|\s)Fb\s*max\s*\d+(\s*(kg|кг))?/i,' ').replace(RX('‹(литой|штампованный|штамп\\.?|кованый)›','gi'),' ').replace(/\s+/g,' ').trim();
+      const rw=rest.split(' ').filter(Boolean);if(rw[0])rw[0]=canonBrand(rw[0]);
+      const n=x=>String(x).replace(',','.');const wv=w?(+n(w)).toFixed(1):'';
+      return `${d} ${wv}/${pm[1]}*${n(pm[2])}${et!=null?' ET'+n(et):''}${dia?' dia '+n(dia):''} ${rw.join(' ')}`.replace(/\s+/g,' ').trim();}}
+  // аккумуляторы
+  if(RX('аккумулятор|‹акб›|‹батаре').test(s)){
+    const ahm=s.match(RX('(\\d{2,3})\\s*(?:а\\s*\\/?\\s*ч|ач|ah)›'));
+    if(ahm){const ah=ahm[1];const pol=RX('о\\/п|‹обр|‹R\\+|\\(0\\)').test(s)?'о/п':(RX('п\\/п|‹прям|‹L\\+|\\(1\\)').test(s)?'п/п':'');
+      const asia=RX('‹asia›|‹jis›|‹\\d{2,3}[BD]\\d{2}[LR]?›').test(s);
+      let rest=s.replace(RX('аккумуляторн[а-яё]*\\s+батаре[а-яё]*|аккумулятор[а-яё]*|‹акб›','gi'),' ').replace(ahm[0],' ')
+        .replace(RX('о\\/п|п\\/п|‹обратн[а-яё]*(\\s*полярн[а-яё]*)?|‹прям[а-яё]*(\\s*полярн[а-яё]*)?|‹обр\\.?(\\s*пол\\.?)?|‹asia›','gi'),' ').replace(RX('‹пол\\.?(?=\\s|$)','gi'),' ')
+        .replace(/(\d{3})\s*[xх×*]\s*(\d{3})\s*[xх×*]\s*(\d{3})/,'$1*$2*$3').replace(/\s+/g,' ').trim();
+      return `Аккумулятор ${asia?'ASIA ':''}${pol?pol+' ':''}${ah} а/ч ${rest}`.replace(/\s+/g,' ').trim();}}
+  return s.replace(RX('^\\s*(товар|автотовар)›'),'').replace(/\s+/g,' ').trim();}
+
 /* ---------- загрузка документа поставщика (PDF или XML УПД из Диадока) ---------- */
 function loadScriptChain(urls,test){return new Promise((ok,no)=>{if(test())return ok();let i=0;const next=()=>{if(i>=urls.length)return no(new Error('Не загрузился модуль чтения PDF. Проверьте папку lib на сайте.'));
   const s=document.createElement('script');s.src=urls[i++];s.onload=()=>test()?ok():next();s.onerror=()=>{s.remove();next();};document.head.appendChild(s);};next();});}
@@ -1914,7 +1972,7 @@ function parseSupplierDoc(pages){
   return{type,docNum,docDay,partner,lines:rows};}
 let IM=null;
 const IM_T={in:'Приход на наш склад',custody:'Приход на ответхранение',iss:'Выдача с ответхранения'};
-const HOW={saved:['запомнено','cp'],article:['по артикулу','cp'],barcode:['по штрихкоду','cp'],name:['по названию','cp'],guess:['похоже — проверьте','ds'],none:['не найдено','ds']};
+const HOW={saved:['запомнено','cp'],article:['по артикулу','cp'],barcode:['по штрихкоду','cp'],name:['по названию — совпало всё','cp'],picked:['выбрано вручную','cp'],created:['новая карточка','cp'],none:['не найдено','ds']};
 async function openDocImport(file){
   const sc=$('#scrim'),sh=$('#sheet');$('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Документ поставщика</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div><p class="note">Читаю «${esc(file.name)}»…</p>`;
   $('#close').onclick=closeSheet;sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
@@ -1923,8 +1981,9 @@ async function openDocImport(file){
   if(r.type==='bill'){$('#shIn').insertAdjacentHTML('beforeend',`<p class="err">Это счёт на оплату, а не документ о получении товара. Загрузите УПД (или акт МХ-1 / МХ-3 для ответхранения) — их присылают через Диадок.</p>`);return;}
   if(!r.lines.length){$('#shIn').insertAdjacentHTML('beforeend',`<p class="err">${esc(r.error||'Не нашёл строк с товарами.')} Если это скан (картинка), а не документ из Диадока — его так не прочитать.</p>`);return;}
   IM={...r,type:r.type||'in',file:file.name,day:r.docDay||iso(new Date())};
-  try{const j=await api('doc_match',{partner:IM.partner,num:IM.docNum,lines:IM.lines.map(l=>({code:l.code,scode:l.scode,name:l.name}))});
-    IM.dup=j.dup;IM.lines.forEach((l,i)=>{const m=j.lines[i]||{};l.alts=m.alts||[];l.pick=m.match||(l.alts[0]?{...l.alts[0],how:'guess'}:null);if(l.pick&&!m.match)l.pick.how='guess';});}
+  IM.lines.forEach(l=>{l.canon=canonName(l.name);const c=classify(l.canon,'',catHint(l.canon),1);l.kind=c.kind;l.attrs=c.attrs;});
+  try{const j=await api('doc_match',{partner:IM.partner,num:IM.docNum,lines:IM.lines.map(l=>({code:l.code,scode:l.scode,name:l.name,kind:l.kind,attrs:l.attrs}))});
+    IM.dup=j.dup;IM.lines.forEach((l,i)=>{const m=j.lines[i]||{};l.alts=m.alts||[];l.pick=m.match||null;});}
   catch(e){toast('<b>Ошибка</b>'+esc(e.message));return;}
   renderImport();}
 function renderImport(){const T=IM.type,cust=T!=='in';
@@ -1935,15 +1994,20 @@ function renderImport(){const T=IM.type,cust=T!=='in';
   <div><span class="mono lbl">Что это за документ</span><div class="row" style="margin-bottom:10px">${Object.entries(IM_T).map(([k,v])=>`<button type="button" class="chip" data-imt="${k}" aria-pressed="${T===k}">${v}</button>`).join('')}</div></div>
   <div class="dhead"><label><span class="mono lbl">Поставщик</span><input class="inp" id="imP" value="${esc(IM.partner)}"></label><label><span class="mono lbl">Номер документа</span><input class="inp" id="imN" value="${esc(IM.docNum)}"></label><label><span class="mono lbl">Дата</span><input class="inp" type="date" id="imD" value="${IM.day}"></label></div>
   <div class="tw"><table class="dtab"><thead><tr><th style="text-align:left">В документе</th><th>Кол-во</th><th>${T==='in'?'Закупка с НДС, шт.':T==='custody'?'Оценка, шт.':'Цена'}</th><th style="text-align:left">Наша карточка</th></tr></thead><tbody>
-  ${IM.lines.map((l,i)=>{const p=l.pick,h=HOW[p?p.how:'none'];return `<tr data-i="${i}"><td class="nm">${esc(l.name)}<small class="pay" style="display:block">${l.code?'код '+esc(l.code):''}${l.scode?' · код продавца '+esc(l.scode):''}</small></td>
+  ${IM.lines.map((l,i)=>{const p=l.pick,h=HOW[p?p.how:'none'];return `<tr data-i="${i}"><td class="nm">${esc(l.name)}<small class="pay" style="display:block">${l.code?'код '+esc(l.code):''}${l.scode?' · код продавца '+esc(l.scode):''}</small>${l.canon&&l.canon!==l.name?`<small style="display:block;color:var(--ink-2)">по-нашему: ${esc(l.canon)}</small>`:''}</td>
     <td class="tnum">${fmtQty(l.qty)}</td><td class="tnum">${l.cost!=null?rub(l.cost):'—'}</td>
     <td class="nm">${p?`${esc(p.name)}<small class="pay" style="display:block">${p.article?'арт. '+esc(p.article)+' · ':''}${T==='iss'?'на ответхранении '+fmtQty(p.custody):'остаток '+fmtQty(p.qty)} · цена ${rub(p.price)}</small>`:'<span class="pay">карточка не выбрана — строка не войдёт в документ</span>'}
-      <div class="row" style="margin-top:4px;align-items:center"><span class="badge ${h[1]}" style="margin-left:0">${h[0]}</span><button type="button" class="out" data-chg="${i}" style="min-height:30px">${p?'Другая карточка':'Выбрать'}</button>${T!=='iss'?`<button type="button" class="out" data-new="${i}" style="min-height:30px">Новая карточка</button>`:''}${p?`<button type="button" class="out" data-clr="${i}" style="min-height:30px">Не брать</button>`:''}</div>
+      <div class="row" style="margin-top:4px;align-items:center"><span class="badge ${h[1]}" style="margin-left:0">${h[0]}</span><button type="button" class="out" data-chg="${i}" style="min-height:30px">${p?'Другая карточка':(l.alts.length?'Выбрать ('+l.alts.length+' похожих)':'Выбрать')}</button>${T!=='iss'?`<button type="button" class="out" data-new="${i}" style="min-height:30px">Новая карточка</button>`:''}${p?`<button type="button" class="out" data-clr="${i}" style="min-height:30px">Не брать</button>`:''}</div>
       <div id="imx${i}"></div></td></tr>`;}).join('')}</tbody></table></div>
   <div class="dtot"><span>Строк: <b>${IM.lines.length}</b></span><span>Сопоставлено: <b>${ok}</b></span><span>Штук: <b class="tnum">${fmtQty(IM.lines.filter(l=>l.pick).reduce((a,l)=>a+(l.qty||0),0))}</b></span>${T!=='iss'?`<span>Сумма: <b class="tnum">${rub(sum)}</b></span>`:''}</div>
   <p class="err" id="imErr" hidden></p>
-  <div class="row" style="margin:14px 0 40px"><button class="btn sig" type="button" id="imGo">Создать черновик</button><button class="btn ghost" type="button" id="imX">Отмена</button></div>`;
+  <div class="row" style="margin:14px 0 40px"><button class="btn sig" type="button" id="imGo">Создать черновик</button>${T!=='iss'&&IM.lines.some(l=>!l.pick)?`<button class="btn" type="button" id="imNewAll">Новые карточки для ненайденных (${IM.lines.filter(l=>!l.pick).length})</button>`:''}<button class="btn ghost" type="button" id="imX">Отмена</button></div>`;
   $('#close').onclick=closeSheet;$('#imX').onclick=closeSheet;
+  const na=document.getElementById('imNewAll');if(na)na.onclick=async()=>{rh();na.disabled=true;let n=0;
+    for(const l of IM.lines.filter(x=>!x.pick)){const name=l.canon||l.name,c=classify(name,'',catHint(name),0);
+      try{const j=await api('prod_create',{name,article:l.code||'',price:0,kind:c.kind==='svc'?'acc':c.kind,attrs:c.attrs});l.pick={id:j.id,name,article:l.code||'',price:0,qty:0,custody:0,how:'created'};n++;}
+      catch(e){toast('<b>Не создалась карточка</b>'+esc(name)+': '+esc(e.message));}}
+    toast(`<b>Создано карточек: ${n}</b>Цену продажи укажите в черновике прихода`);renderImport();};
   const dp=document.getElementById('imDup');if(dp)dp.onclick=()=>openDoc(IM.dup.id);
   const rh=()=>{IM.partner=$('#imP').value.trim();IM.docNum=$('#imN').value.trim();IM.day=$('#imD').value;};
   document.querySelectorAll('[data-imt]').forEach(b=>b.onclick=()=>{rh();IM.type=b.dataset.imt;renderImport();});
@@ -1952,16 +2016,16 @@ function renderImport(){const T=IM.type,cust=T!=='in';
     const pickList=list=>`<div class="found" style="max-height:220px">${list.map((p,n)=>`<button type="button" class="fnd" data-pk="${n}"><span>${esc(p.name)}</span><small>${p.article?'арт. '+esc(p.article)+' · ':''}остаток ${fmtQty(p.qty)} · цена ${rub(p.price)}</small></button>`).join('')||'<p class="note" style="padding:8px">Ничего</p>'}</div>`;
     box.innerHTML=`<input class="inp" placeholder="Поиск карточки: размер, бренд, артикул" style="margin:6px 0;min-height:40px"><div class="pl">${l.alts.length?pickList(l.alts):''}</div>`;
     const inp=box.querySelector('input'),pl=box.querySelector('.pl');let cur=l.alts;
-    const bindPick=()=>pl.querySelectorAll('[data-pk]').forEach(x=>x.onclick=()=>{rh();l.pick={...cur[+x.dataset.pk],how:'name'};l.manual=true;renderImport();});bindPick();
+    const bindPick=()=>pl.querySelectorAll('[data-pk]').forEach(x=>x.onclick=()=>{rh();l.pick={...cur[+x.dataset.pk],how:'picked'};l.manual=true;renderImport();});bindPick();
     let t=null;inp.oninput=()=>{clearTimeout(t);t=setTimeout(async()=>{if(inp.value.trim().length<2)return;try{const j=await api('prod_find',null,{q:inp.value.trim(),wh:IM.type==='iss'?'custody':'shop'});cur=[...j.exact,...j.rows].map(p=>({...p,article:p.article||''}));pl.innerHTML=pickList(cur);bindPick();}catch(_){}},300);};inp.focus();});
   document.querySelectorAll('[data-new]').forEach(b=>b.onclick=()=>{const i=+b.dataset.new,l=IM.lines[i],box=document.getElementById('imx'+i);
-    const nm=l.name.replace(/^(Автошин[аы]|Диск|Аккумулятор)\s+/i,'');
+    const nm=l.canon||l.name;
     box.innerHTML=`<div class="form" style="margin:6px 0;padding:10px"><label style="grid-column:1/-1"><span class="mono lbl">Название, как в CloudShop</span><input class="inp" id="nn${i}" value="${esc(nm)}"></label>
       <label><span class="mono lbl">Артикул производителя</span><input class="inp" id="na${i}" value="${esc(l.code)}"></label><label><span class="mono lbl">Цена продажи, ₽</span><input class="inp tnum" id="np${i}" type="number" min="0"></label>
       <div class="row"><button class="btn" type="button" id="ng${i}">Создать</button></div></div>`;
-    document.getElementById('ng'+i).onclick=async()=>{const name=document.getElementById('nn'+i).value.trim(),c=classify(name,'','',0);
+    document.getElementById('ng'+i).onclick=async()=>{const name=document.getElementById('nn'+i).value.trim(),c=classify(name,'',catHint(name),0);
       try{const j=await api('prod_create',{name,article:document.getElementById('na'+i).value.trim(),price:+document.getElementById('np'+i).value||0,kind:c.kind==='svc'?'acc':c.kind,attrs:c.attrs});
-        rh();l.pick={id:j.id,name,article:document.getElementById('na'+i).value.trim(),price:+document.getElementById('np'+i).value||0,qty:0,custody:0,how:'name'};l.manual=true;renderImport();}catch(e){toast('<b>Не создалась</b>'+esc(e.message));}};});
+        rh();l.pick={id:j.id,name,article:document.getElementById('na'+i).value.trim(),price:+document.getElementById('np'+i).value||0,qty:0,custody:0,how:'created'};l.manual=true;renderImport();}catch(e){toast('<b>Не создалась</b>'+esc(e.message));}};});
   $('#imGo').onclick=async()=>{rh();const L=IM.lines.filter(l=>l.pick);const er=$('#imErr');
     if(!L.length){er.textContent='Ни одна строка не сопоставлена с карточкой.';er.hidden=false;return;}
     const T=IM.type,lines=L.map(l=>({product_id:l.pick.id,qty:l.qty,cost:T==='iss'?'':l.cost,price:T==='in'?l.pick.price:(T==='custody'?l.cost:null)}));
@@ -1970,6 +2034,15 @@ function renderImport(){const T=IM.type,cust=T!=='in';
       toast(`<b>Черновик № ${j.id} создан</b>Проверьте и нажмите «Провести»`);openDoc(j.id);loadDocs();}
     catch(e){er.textContent='Не сохранилось: '+e.message;er.hidden=false;}};}
 
+window.ivanorNames={canonName,catHint,classify};   // для проверки названий из консоли
+/* перетаскивание файла документа в окно магазина */
+(function(){let ov=null,depth=0;const ok=e=>S.role==='owner'&&S.area==='s'&&e.dataTransfer&&[...e.dataTransfer.types].includes('Files');
+  const show=on=>{if(!ov){ov=document.createElement('div');ov.className='dropov';ov.innerHTML='<div><b>Отпустите файл</b>УПД, акт МХ-1/МХ-3 — PDF или XML из Диадока</div>';document.body.appendChild(ov);}ov.hidden=!on;};
+  document.addEventListener('dragenter',e=>{if(!ok(e))return;e.preventDefault();depth++;show(true);});
+  document.addEventListener('dragover',e=>{if(!ok(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';});
+  document.addEventListener('dragleave',e=>{if(!ok(e))return;depth=Math.max(0,depth-1);if(!depth)show(false);});
+  document.addEventListener('drop',e=>{if(!ok(e))return;e.preventDefault();depth=0;show(false);const f=e.dataTransfer.files[0];if(!f)return;
+    if(!/\.(pdf|xml)$/i.test(f.name)){toast('<b>Нужен PDF или XML</b>'+esc(f.name));return;}openDocImport(f);});})();
 $('#dlImpF').onchange=()=>{const f=$('#dlImpF').files[0];$('#dlImpF').value='';if(f)openDocImport(f);};
 
 /* ---------- фото товаров ---------- */

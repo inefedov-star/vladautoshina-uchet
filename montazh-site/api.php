@@ -963,24 +963,46 @@ try {
       if (!$res['match'] && $code !== '' && !empty($byArt[codeNorm($code)])) { $ids = $byArt[codeNorm($code)]; $res['match'] = $card($ids[0], 'article'); foreach (array_slice($ids, 1, 4) as $i) $res['alts'][] = $card($i, 'article'); }
       if (!$res['match'] && $code !== '' && !empty($byBc[ltrim($code, '0')])) $res['match'] = $card($byBc[ltrim($code, '0')][0], 'barcode');
       if (!$res['match']) {
-        // по названию: размер шины / параметры диска + совпадающие слова
-        $tz = tireSize($name); $ds = $tz ? null : diskSpec($name); $tk = nameTokens($name); $sc = [];
-        foreach ($prods as $p) { $a = json_decode($p['attrs'], true) ?: [];
-          if ($tz) { if ($p['kind'] !== 'tire' || (int)($a['w'] ?? 0) !== $tz['w'] || (int)($a['p'] ?? 0) !== $tz['p'] || (int)($a['d'] ?? 0) !== $tz['d']) continue; }
-          elseif ($ds && ($ds['pcd'] || $ds['d'])) { if ($p['kind'] !== 'disk') continue; if ($ds['d'] && (int)($a['d'] ?? 0) !== $ds['d']) continue;
-            if ($ds['pcd'] && !in_array($ds['pcd'], array_map(fn($x) => str_replace(['×'], ['×'], preg_replace('/(\d)×(\d+(?:\.\d+)?)/u', '$1×$2', (string)$x)), (array)($a['pcds'] ?? [])), true) && (string)($a['pcd'] ?? '') !== $ds['pcd']) continue;
-            if ($ds['et'] !== null && isset($a['et']) && abs((float)$a['et'] - $ds['et']) > 0.01) continue; }
-          // совпавшие слова добавляют (модель с цифрами важнее), слова карточки, которых нет у поставщика, — убавляют
-          $ptk = nameTokens($p['name']); $sf = array_flip($tk);
-          $ring = preg_grep('/^RING/', $tk); if ($ring && !array_intersect($ring, $ptk)) continue; $hit = 0; $miss = 0; $nn = 0; $nh = 0;
-          $wgt = fn($w) => ctype_digit(str_replace(['.', ','], '', $w)) ? 0.5 : (preg_match('/\d/', $w) ? 3 : 2);
-          foreach ($ptk as $w) { $dig = ctype_digit(str_replace(['.', ','], '', $w)); if (!$dig) $nn++;
-            if (isset($sf[$w])) { $hit += $wgt($w); if (!$dig) $nh++; } elseif (!$dig) $miss += 1.5; }
-          if ($hit > 0) $sc[(int)$p['id']] = ['s' => $hit - $miss + (($sm[(int)$p['id']]['q'] ?? 0) > 0 ? 0.3 : 0), 'cov' => $nn ? $nh / $nn : 0];
+        // по названию — строго: шина = тот же размер, бренд, модель и шипы; диск = те же диаметр, разболтовка, вылет и модель.
+        // Совпало не всё — ничего не выбираем сами, только показываем варианты того же размера.
+        $kind = (string)($l['kind'] ?? ''); $at = (array)($l['attrs'] ?? []); $exact = []; $near = [];
+        $nm = fn($x) => preg_replace('/[^0-9A-ZА-ЯЁ]+/u', '', mb_strtoupper(preg_replace('/\(.*$/u', '', preg_replace('/\([^)]*\)/u', '', (string)$x))));
+        $nb = fn($x) => preg_replace('/[^0-9A-ZА-ЯЁ]+/u', '', str_replace(['TYRES', 'TIRES'], '', mb_strtoupper((string)$x)));
+        if ($kind === 'tire' && !empty($at['w'])) {
+          foreach ($prods as $p) { if ($p['kind'] !== 'tire') continue; $a = json_decode($p['attrs'], true) ?: [];
+            if ((int)($a['w'] ?? 0) !== (int)$at['w'] || (int)($a['p'] ?? 0) !== (int)$at['p'] || (int)($a['d'] ?? 0) !== (int)$at['d']) continue;
+            if ($nb($a['brand'] ?? '') !== $nb($at['brand'] ?? '')) continue;
+            $same = $nm($a['model'] ?? '') === $nm($at['model'] ?? '') && !empty($a['stud']) === !empty($at['stud']);
+            if ($same) $exact[] = ['id' => (int)$p['id'], 'ix' => ($a['index'] ?? '') === ($at['index'] ?? '')]; else $near[] = (int)$p['id']; }
+          usort($exact, fn($x, $y) => $y['ix'] <=> $x['ix']);
+          if ($exact && (count($exact) === 1 || $exact[0]['ix'] && !$exact[1]['ix'])) $res['match'] = $card($exact[0]['id'], 'name');
+          foreach ($exact as $e) if (!$res['match'] || $e['id'] !== $res['match']['id']) $res['alts'][] = $card($e['id'], 'name');
+          foreach (array_slice($near, 0, 6) as $i2) $res['alts'][] = $card($i2, 'size');
+        } elseif ($kind === 'disk' && !empty($at['d'])) {
+          foreach ($prods as $p) { if ($p['kind'] !== 'disk') continue; $a = json_decode($p['attrs'], true) ?: [];
+            if ((int)($a['d'] ?? 0) !== (int)$at['d']) continue;
+            $pc = array_map(fn($x) => str_replace(',', '.', (string)$x), (array)($a['pcds'] ?? [])); if (!empty($at['pcd']) && !in_array(str_replace(',', '.', (string)$at['pcd']), $pc, true)) continue;
+            if (isset($at['et'], $a['et']) && abs((float)$a['et'] - (float)$at['et']) > 0.01) continue;
+            if (isset($at['dia'], $a['dia']) && abs((float)$a['dia'] - (float)$at['dia']) > 0.15) continue;
+            $tm = array_filter(explode(' ', preg_replace('/[^0-9A-ZА-ЯЁ\- ]+/u', ' ', mb_strtoupper((string)($at['model'] ?? '')))), fn($w) => mb_strlen($w) > 1);
+            $pm = array_filter(explode(' ', preg_replace('/[^0-9A-ZА-ЯЁ\- ]+/u', ' ', mb_strtoupper((string)($a['model'] ?? '')))), fn($w) => mb_strlen($w) > 1);
+            // модель диска: все слова с цифрами (X-131, KHW1711, 6355) должны совпасть
+            $code = fn($ws) => array_values(array_filter($ws, fn($w) => preg_match('/\d/', $w)));
+            $ct = $code($tm); $cp = $code($pm);
+            if ($ct && !array_diff($ct, $cp)) $exact[] = (int)$p['id']; else $near[] = (int)$p['id']; }
+          if (count($exact) === 1) $res['match'] = $card($exact[0], 'name');
+          foreach ($exact as $e) if (!$res['match'] || $e !== $res['match']['id']) $res['alts'][] = $card($e, 'name');
+          foreach (array_slice($near, 0, 6) as $i2) $res['alts'][] = $card($i2, 'size');
+        } else {
+          // прочее: кольца — по двум диаметрам точно, остальное — только варианты по словам
+          $tk = nameTokens($name); $ring = preg_grep('/^RING/', $tk); $sc = [];
+          foreach ($prods as $p) { if (in_array($p['kind'], ['tire', 'disk'], true)) continue; $ptk = nameTokens($p['name']);
+            if ($ring) { if (array_intersect($ring, $ptk)) $exact[] = (int)$p['id']; continue; }
+            $hit = count(array_intersect($tk, $ptk)); if ($hit >= 2) $sc[(int)$p['id']] = $hit - 0.3 * count(array_diff($ptk, $tk)); }
+          if (count($exact) === 1) $res['match'] = $card($exact[0], 'name');
+          arsort($sc); foreach (array_slice(array_keys($sc), 0, 5) as $i2) $res['alts'][] = $card($i2, 'words');
         }
-        uasort($sc, fn($x, $y) => $y['s'] <=> $x['s']); $top = array_slice(array_keys($sc), 0, 6);
-        if ($top) { $best = $sc[$top[0]]['s']; $sure = ($tz || $ds) && $best >= 3 && $sc[$top[0]]['cov'] >= 0.6 && (count($top) === 1 || $sc[$top[1]]['s'] < $best - 2);
-          $res['match'] = $sure ? $card($top[0], 'name') : null; foreach ($top as $i) if (!$res['match'] || $i !== $res['match']['id']) $res['alts'][] = $card($i, 'name'); $res['alts'] = array_slice($res['alts'], 0, 5); }
+        $res['alts'] = array_slice($res['alts'], 0, 6);
       }
       $out[] = $res;
     }
