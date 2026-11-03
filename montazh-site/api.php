@@ -900,6 +900,22 @@ try {
     $p->commit(); logit($cfg, $role, 'doc_post', (string)$id);
     out(['ok' => true]);
 
+  case 'doc_reprice':
+    // новая оценка поставщика в проведённом акте ОХ: не молча — изменение дописывается в комментарий документа
+    post(); needRole($role, ['owner']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $pid = (int)($b['product_id'] ?? 0); $new = round((float)($b['cost'] ?? 0), 2); if ($new <= 0) fail('Укажите новую цену');
+    $p = db($cfg); $st = $p->prepare('SELECT * FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404);
+    if ($d['type'] !== 'in' || $d['wh'] !== 'custody' || $d['status'] !== 'posted') fail('Цену так можно менять только в проведённом акте приёма на ответхранение', 409);
+    $m = $p->prepare('SELECT m.cost, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ? AND m.product_id = ? LIMIT 1'); $m->execute([$id, $pid]); $old = $m->fetch(); if (!$old) fail('Строка не найдена', 404);
+    $p->beginTransaction();
+    $p->prepare('UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ?')->execute([$new, $id, $pid]);
+    // по желанию — и в уже проведённых продажах этой позиции с ОХ после даты акта
+    $n = 0; if (!empty($b['resale'])) { $u = $p->prepare("UPDATE moves SET cost = ? WHERE product_id = ? AND wh = 'custody' AND qty < 0 AND doc_id IN (SELECT id FROM docs WHERE type = 'sale' AND status = 'posted' AND day >= ?)"); $u->execute([$new, $pid, $d['day']]); $n = $u->rowCount(); }
+    $line = date('d.m.Y') . ': оценка «' . $old['name'] . '» ' . (0 + (float)$old['cost']) . ' → ' . (0 + $new) . ' ₽' . ($n ? ' (и в ' . $n . ' стр. продаж с ОХ)' : '');
+    $p->prepare('UPDATE docs SET note = ? WHERE id = ?')->execute([trim(trim((string)$d['note']) . "\n" . $line), $id]);
+    $p->commit(); logit($cfg, $role, 'doc_reprice', $id . ': ' . $line);
+    out(['ok' => true, 'sales' => $n]);
+
   case 'doc_cancel':
     // отмена проведения: документ остаётся в списке зачёркнутым, с причиной и временем
     post(); needRole($role, ['owner']);

@@ -524,8 +524,12 @@ body.area-fr{overflow:hidden}
 @media (max-width:900px){.zc{grid-template-columns:1fr auto;gap:6px 12px}.zc-a{grid-column:1}.zc-c{grid-column:2;grid-row:1}.zc-b{grid-column:1/-1}.zc-d{grid-column:1;flex-direction:row;flex-wrap:wrap;gap:8px;align-items:center}.zc-e{grid-column:2;flex-direction:row;align-items:center}}
 .asn{display:none}.zxl{display:none}.zc-a .tnum{white-space:nowrap}.zc .badge{white-space:nowrap}.zc-c small b{white-space:nowrap}
 @media (max-width:760px){header .xlinks{display:none}.zxl{display:flex;margin:0 0 0 auto}.zh1{font-size:1.2rem}}
-@media (max-width:560px){.aln{display:none}.asn{display:inline}header.top .bar{flex-wrap:wrap;row-gap:6px}.areas{order:9;flex:1 1 100%;display:flex!important;margin:0 0 4px!important}.areas button{flex:1 1 0;min-width:0;padding:0 2px!important;font-size:.8rem!important;white-space:nowrap}.zhd{flex-wrap:wrap}.zhd .zh1{width:100%}.zxl{margin:0}}
-.ohb{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;background:var(--amber-tint,#FFF1D6);color:var(--amber,#9A6400);font-weight:700;font-size:.74rem;vertical-align:1px;white-space:nowrap}
+@media (max-width:560px){.aln{display:none}.asn{display:inline}header.top .bar{flex-wrap:wrap;row-gap:6px}.areas{order:9;flex:1 1 100%;display:flex!important;margin:0 0 4px!important}.areas button{flex:1 1 0;min-width:0;padding:0 1px!important;font-size:.74rem!important;white-space:nowrap}.zhd{flex-wrap:wrap}.zhd .zh1{width:100%}.zxl{margin:0}}
+.ohb,.ourb{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;font-weight:700;font-size:.74rem;vertical-align:1px;white-space:nowrap}
+.ohb{background:#DCEBFF;color:#1D4FA8}.ourb{background:#E3F4E8;color:#1E6B39}
+body.t-dark .ohb{background:#1F3554;color:#A9CBFF}body.t-dark .ourb{background:#1E3A27;color:#9FE0B4}
+.plates{display:inline-flex;gap:4px;margin-left:2px}.plates .ohb,.plates .ourb{margin-left:4px}
+.whsel button[data-wh2="custody"][aria-pressed="true"]{background:#1D4FA8;border-color:#1D4FA8;color:#fff}
 .whsel{display:inline-flex;gap:4px;margin-top:6px}.whsel button{min-height:30px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--paper);font-weight:600;font-size:.8rem;color:var(--ink-2)}
 .whsel button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 </style>
@@ -549,7 +553,7 @@ body.area-fr{overflow:hidden}
         <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="2" fill="var(--ink)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="var(--signal)" stroke-width="3"/><circle cx="16" cy="16" r="3.4" fill="var(--paper)"/></svg>
         <span><b id="areaName">Шиномонтаж</b><i>IVANOR · НОЯБРЬСКАЯ 129</i></span>
       </div>
-      <div class="areas" role="group" aria-label="Раздел"><button type="button" data-area="m" aria-pressed="true"><span class="aln">Шиномонтаж</span><span class="asn">Монтаж</span></button><button type="button" data-area="s" aria-pressed="false">Магазин</button><button type="button" data-area="h" aria-pressed="false">Хранение</button><button type="button" class="owner-only" data-area="z" aria-pressed="false">Заказы</button><button type="button" class="owner-only" data-area="k" aria-pressed="false">КП</button></div>
+      <div class="areas" role="group" aria-label="Раздел"><button type="button" data-area="m" aria-pressed="true"><span class="aln">Шиномонтаж</span><span class="asn">Монтаж</span></button><button type="button" data-area="s" aria-pressed="false">Магазин</button><button type="button" data-area="h" aria-pressed="false"><span class="aln">Хранение</span><span class="asn">Отель</span></button><button type="button" class="owner-only" data-area="z" aria-pressed="false">Заказы</button><button type="button" class="owner-only" data-area="k" aria-pressed="false">КП</button><button type="button" data-area="v" aria-pressed="false">Витрина</button></div>
       <div class="spacer"></div>
       <span class="status" id="status"></span><span class="mono" id="who" style="color:var(--ink-3)"></span><button class="out" type="button" id="thBtn" aria-label="Тема оформления" title="Тема: авто / светлая / тёмная"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span id="thLbl" style="margin-left:4px;font-size:.8rem"></span></button><button class="out" type="button" id="logout">Выйти</button>
     </div>
@@ -1060,7 +1064,7 @@ function renderStock(){const t=S.st.total||{},own=S.role==='owner';
   const el=$('#stOut');
   if(!S.st.rows.length){el.innerHTML=`<div class="empty"><b>${S.st.q||S.st.kind?'Ничего не нашлось':'Склад пуст'}</b>${S.st.q||S.st.kind?'Измените поиск или уберите фильтр.':(own?'Загрузите каталог из CloudShop кнопкой выше.':'Собственник ещё не загрузил каталог.')}</div>`;return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Товар</th><th>Остаток</th><th>Цена</th>${own?'<th>Себест.</th><th>Наценка</th>':''}</tr></thead><tbody>
-    ${S.st.rows.map((r,i)=>`<tr data-p="${r.id}"><td class="nm">${r.photo?`<img class="thumb" src="${esc(r.photo)}" alt="" loading="lazy">`:''}<span class="kb">${KIND_ONE[r.kind]||''}</span>${esc(r.name)}</td><td class="${r.qty<=0&&!r.qc?'neg':''}">${r.qc?`<span style="white-space:nowrap">наш ${fmtQty(r.qty)}</span><span class="ohb" title="на ответхранении поставщика">+ ОХ ${fmtQty(r.qc)}</span>`:fmtQty(r.qty)+' '+esc(r.unit||'')}</td><td>${rub(r.price)}</td>
+    ${S.st.rows.map((r,i)=>`<tr data-p="${r.id}"><td class="nm">${r.photo?`<img class="thumb" src="${esc(r.photo)}" alt="" loading="lazy">`:''}<span class="kb">${KIND_ONE[r.kind]||''}</span>${esc(r.name)}</td><td class="${r.qty<=0&&!r.qc?'neg':''}"><b class="tnum">${fmtQty((+r.qty>0?+r.qty:0)+(+r.qc||0)||r.qty)} ${esc(r.unit||'')}</b>${r.qc?`<span class="plates">${r.qty>0?`<span class="ourb" title="наш склад">наш ${fmtQty(r.qty)}</span>`:''}<span class="ohb" title="ответхранение поставщика">ОХ ${fmtQty(r.qc)}</span></span>`:''}</td><td>${rub(r.price)}</td>
       ${own?`<td>${r.cost!=null?rub(r.cost):'—'}</td><td>${r.cost?Math.round((r.price/r.cost-1)*100)+'%':'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>
     ${S.st.more?`<p class="note">Показаны первые ${S.st.rows.length} из ${t.n}. Уточните поиск, например «205 55 R16» или бренд.</p>`:''}`;
   el.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
@@ -1245,7 +1249,7 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
   const saleRets=T==='sale'&&D.returns.length?`<p class="note" style="margin:0 0 10px">Возвраты по этой продаже: ${D.returns.map(r=>`<button type="button" class="out" data-open="${r.id}" style="min-height:30px;padding:0 4px;text-decoration:underline">№ ${r.id}${r.status==='cancelled'?' (отменён)':r.status==='draft'?' (черновик)':''}</button>`).join(', ')}</p>`:'';
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${D.id?DT[T].t+' № '+D.id:DT[T].n} <span class="badge ${st[1]}" style="vertical-align:6px">${stLbl(T,D.status)}</span></h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
   ${D.status==='cancelled'?`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)">Отменён ${D.cancelled_at?new Date(D.cancelled_at*1000).toLocaleString('ru-RU'):''}. Причина: ${esc(D.cancel_reason||'—')}. Остатки по нему не считаются.</div>`:''}
-  <div class="dhead">${head}</div>${retInfo}${saleRets}
+  <div class="dhead">${head}</div>${ro&&/\n/.test(D.note||'')?`<p class="note" style="white-space:pre-line;margin:-4px 0 10px">${esc(D.note)}</p>`:''}${retInfo}${saleRets}
   ${cust?'<p class="note" style="margin:0 0 10px">Товар поставщика на ответхранении: в стоимость нашего склада не входит, цена — оценка поставщика (для справки).</p>':''}
   ${T==='iss'?'<p class="note" style="margin:0 0 10px">Товар просто убирается с ответхранения — денег и прибыли в документе нет.</p>':''}
   ${ro?'':`<div class="dadd"><input class="inp" id="dSearch" placeholder="${ph}" autocomplete="off">${T==='in'?'<button class="btn ghost" type="button" id="dNew">+ Новая карточка</button>':''}</div><div id="dFound"></div>${T==='sale'||T==='iss'?`<div class="dqp"><div class="row" id="dqKinds">${[['tire','Шины'],['disk','Диски'],['akb','АКБ'],['fast','Крепёж'],['other','Прочее']].map(([k,v])=>`<button type="button" class="chip" data-qk="${k}" aria-pressed="${DQ.kind===k}">${v}</button>`).join('')}</div><div id="dqF"></div><div id="dqOut"></div></div>`:''}`}
@@ -1272,7 +1276,7 @@ function docLine(l,i,ro){const T=D.type,cust=T==='in'&&D.wh==='custody',q=+l.qty
   const inp=(f,v,ph,cls)=>`<input class="inp tnum din ${cls||''}" type="number" inputmode="decimal" min="0" step="${f==='qty'?1:0.01}" data-f="${f}" value="${v===''||v==null?'':v}" placeholder="${ph||''}">`;
   const nm=`<td class="nm">${T==='sale'&&l.wh==='custody'?'<span class="ohb" style="margin:0 6px 0 0">ОХ</span>':''}${esc(l.name)}${l.barcode?`<small class="pay" style="display:block">${esc(l.barcode)}</small>`:''}${ro?'':stockText(l)}${T==='ret'&&l.maxq!=null?`<small class="pay" style="display:block">можно вернуть до ${fmtQty(l.maxq)}</small>`:''}${ro&&T==='sale'&&l.returned?`<small class="pay" style="display:block">возвращено ${fmtQty(l.returned)}</small>`:''}</td>`;
   const qtyC=`<td>${ro?fmtQty(q):inp('qty',l.qty)}</td>`,rm=ro?'':`<td><button type="button" class="arrow" data-rm="${i}" aria-label="Убрать строку" style="width:40px;height:40px">×</button></td>`;
-  if(T==='in')return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.cost):inp('cost',l.cost,l.last?Math.round(l.last):'')}</td><td class="lsum tnum">${rub(q*(+l.cost||0))}</td>
+  if(T==='in')return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.cost)+(cust&&D.status==='posted'?`<button type="button" class="out" data-rp="${i}" style="display:block;min-height:28px;padding:0;margin-left:auto;text-decoration:underline;font-size:.82rem">изменить цену</button>`:''):inp('cost',l.cost,l.last?Math.round(l.last):'')}</td><td class="lsum tnum">${rub(q*(+l.cost||0))}</td>
     ${cust?'':`<td>${ro?rub(l.price||0):inp('price',l.price,'',l.price!=l.cur_price?'chg':'')}<small class="pay mk" style="display:block">${mkText(l,ro)}</small></td>`}${rm}</tr>`;
   if(T==='iss')return `<tr data-i="${i}">${nm}${qtyC}${rm}</tr>`;
   if(T==='inv'||T==='open')return `<tr data-i="${i}">${nm}<td class="tnum" style="font-weight:700;color:${q<0?'var(--signal-deep)':'var(--moss)'}">${q>0&&T==='inv'?'+':''}${fmtQty(q)}</td><td>${rub(l.cost)}</td></tr>`;
@@ -1316,6 +1320,12 @@ function bindDoc(){const T=D.type;
     const mk=tr.querySelector('.mk');if(mk)mk.innerHTML=T==='in'?mkText(l,false):saleText(l,false);
     const lp=tr.querySelector('.lprof');if(lp){const c=+(l.avg??l.last)||0;lp.textContent='прибыль '+rub(q*((+l.price||0)-c));}
     if(T==='in'&&inp.dataset.f==='price')inp.classList.toggle('chg',l.price!=l.cur_price);$('#dTot').innerHTML=totLine(docTotals());}));
+  document.querySelectorAll('[data-rp]').forEach(b=>b.onclick=()=>{const l=D.lines[+b.dataset.rp],td=b.parentElement;
+    td.innerHTML=`<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><input class="inp tnum" type="number" inputmode="decimal" min="0" step="0.01" value="${l.cost}" style="max-width:130px" id="rpV">
+      <label class="pay" style="display:flex;gap:6px;align-items:center;font-size:.8rem"><input type="checkbox" id="rpS" checked>и в уже проданном с ОХ</label>
+      <span class="row" style="gap:6px"><button class="btn" type="button" id="rpOk" style="min-height:36px">Сохранить</button><button class="btn ghost" type="button" id="rpNo" style="min-height:36px">×</button></span></div>`;
+    $('#rpNo').onclick=()=>openDoc(D.id);
+    $('#rpOk').onclick=async()=>{try{const j=await api('doc_reprice',{id:D.id,product_id:l.product_id,cost:+$('#rpV').value,resale:$('#rpS').checked});toast('<b>Цена поставщика изменена</b>'+esc(l.name)+(j.sales?'<br>Пересчитано строк продаж: '+j.sales:''));openDoc(D.id);}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};});
   document.querySelectorAll('[data-wh2]').forEach(b=>b.onclick=()=>{const i=+b.closest('tr').dataset.i,l=D.lines[i];l.wh=b.dataset.wh2;l.avg=l.wh==='custody'?l.avgc:l.avgs;
     const dup=D.lines.findIndex((x,j)=>j!==i&&x.product_id===l.product_id&&(x.wh||'shop')===l.wh);if(dup>=0){D.lines[dup].qty=(+D.lines[dup].qty||0)+(+l.qty||0);D.lines.splice(i,1);}
     dDirty=true;readHead();const sc=$('#sheet').scrollTop;renderDoc();$('#sheet').scrollTop=sc;});
@@ -1674,9 +1684,9 @@ async function searchClients(){const q=$('#cq').value.trim(),out=$('#cliOut');
     document.getElementById('rn'+i).focus();
     document.getElementById('rs'+i).onclick=async()=>{try{await api('client_set',{phone:g.phone,name:document.getElementById('rn'+i).value,model:document.getElementById('rm'+i).value});toast('<b>Сохранено</b>Клиент подписан');searchClients();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};});}
 /* ---------- хранение (шинный отель) и КП — внутри пульта, в той же вкладке ---------- */
-const FR={h:'hotel/',k:'/kp/'};
+const FR={h:'hotel/',k:'/kp/',v:'/vitrina/'};
 function openFrame(a,path){const box=$('#v-fr');let f=document.getElementById('fr-'+a);
-  if(!f){f=document.createElement('iframe');f.id='fr-'+a;f.className='frm';f.title=a==='h'?'Шинный отель':'Коммерческие предложения';f.src=path?FR[a].replace(/\/$/,'/')+path:FR[a];box.appendChild(f);}
+  if(!f){f=document.createElement('iframe');f.id='fr-'+a;f.allow='fullscreen';f.setAttribute('allowfullscreen','');f.className='frm';f.title={h:'Шинный отель',k:'Коммерческие предложения',v:'Витрина'}[a];f.src=path?FR[a].replace(/\/$/,'/')+path:FR[a];box.appendChild(f);}
   else if(path)f.src=FR[a]+path;
   box.querySelectorAll('.frm').forEach(x=>x.hidden=x!==f);show('fr');setHdr();}
 function openHotel(path){setArea('h');openFrame('h',path);}
@@ -1956,12 +1966,12 @@ function applyTheme(){let area=S.area;if(!area){try{area=localStorage.getItem('i
 applyTheme();
 document.getElementById('thBtn').onclick=()=>{const n={auto:'light',light:'dark',dark:'auto'}[themePref()];try{localStorage.setItem('ivanor_theme',n);}catch(_){}applyTheme();
   toast('<b>Тема: '+(n==='auto'?'по разделу':n==='light'?'всегда светлая':'всегда тёмная')+'</b>'+(n==='auto'?'Магазин светлый, шиномонтаж тёмный':'Только на этом устройстве'));};
-function setArea(a,first){if((a==='z'||a==='k')&&S.role!=='owner')a='m';if(!['m','s','z','h','k'].includes(a))a='m';S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');document.body.classList.toggle('area-z',a==='z');document.body.classList.toggle('area-fr',a==='h'||a==='k');applyTheme();
+function setArea(a,first){if((a==='z'||a==='k')&&S.role!=='owner')a='m';if(!['m','s','z','h','k','v'].includes(a))a='m';S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}document.body.classList.toggle('area-s',a==='s');document.body.classList.toggle('area-z',a==='z');document.body.classList.toggle('area-fr',a==='h'||a==='k'||a==='v');applyTheme();
   document.querySelectorAll('[data-area]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.area===a));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('off-area',!t.dataset.a.includes(a)));
-  const AN={s:'Магазин',z:'Заказы',m:'Шиномонтаж',h:'Хранение',k:'КП'}[a];$('#areaName').textContent=AN;document.title=AN+' IVANOR';
+  const AN={s:'Магазин',z:'Заказы',m:'Шиномонтаж',h:'Хранение',k:'КП',v:'Витрина'}[a];$('#areaName').textContent=AN;document.title=AN+' IVANOR';
   const cur=document.querySelector(`.tab[data-v="${S.view}"]`);
-  if(a==='h'||a==='k'){openFrame(a);}
+  if(a==='h'||a==='k'||a==='v'){openFrame(a);}
   else if(a==='z')show('zak');
   else if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
   else if(first||!cur||!cur.dataset.a.includes(a))show('day');
@@ -1983,7 +1993,7 @@ document.querySelectorAll('#side [data-p]').forEach(b=>b.onclick=()=>page(b.data
 document.querySelectorAll('[data-area]').forEach(b=>b.onclick=()=>setArea(b.dataset.area));
 function startArea(){const h=location.hash.slice(1),q=location.search;
   if(/shop|magazin/.test(q)||h==='stock')return 's';if(['day','cal','exp','sum'].includes(h))return 'm';
-  try{const x=localStorage.getItem('ivanor_area');return ['s','z','h','k'].includes(x)?x:'m';}catch(_){return 'm';}}
+  try{const x=localStorage.getItem('ivanor_area');return ['s','z','h','k','v'].includes(x)?x:'m';}catch(_){return 'm';}}
 
 /* ---------- наименование товара в формате каталога IVANOR (как в CloudShop), как бы ни написал поставщик ----------
    Шины:  «215/65/16 Ikon Character Snow 2 SUV (Nordman RS2 SUV) 102R XL», шипы — «шип.» в конце или «(210 шип.)»
