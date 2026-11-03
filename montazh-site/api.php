@@ -91,6 +91,9 @@ function db(array $cfg): PDO {
   if (!in_array('bonus', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN bonus REAL NOT NULL DEFAULT 0");
   // продажа по заказу клиента: при проведении заказ закрывается сам
   if (!in_array('zak_id', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN zak_id INTEGER");
+  // продажа, оформленная продавцом на витрине: кто оформил и что ждёт подтверждения собственника
+  if (!in_array('seller', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN seller TEXT NOT NULL DEFAULT ''");
+  if (!in_array('req', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN req INTEGER NOT NULL DEFAULT 0");
   $mcols = array_column($pdo->query('PRAGMA table_info(moves)')->fetchAll(), 'name');
   // цена по прайсу на момент продажи — чтобы видеть скидку
   if (!in_array('list', $mcols, true)) $pdo->exec("ALTER TABLE moves ADD COLUMN list REAL");
@@ -126,6 +129,32 @@ function storRow(array $r): array {
 }
 /* розничная цена по закупке: шины +23%, диски +20%, АКБ +30%, вниз до десятков (так же считает страница) */
 function retailPrice(string $kind, float $cost): float { $mk = ['tire' => 23, 'disk' => 20, 'akb' => 30][$kind] ?? null; return $mk === null || $cost <= 0 ? 0.0 : floor($cost * (1 + $mk / 100) / 10) * 10; }
+/* ===== резервные копии: раз в сутки сами, на хостинге в data/backup (закрыто от браузера) =====
+   montazh-ДАТА.sqlite.gz — пульт (магазин, шиномонтаж, заказы, клиенты);
+   hotel-ДАТА.db.gz — шинный отель; kp-ДАТА.json.gz — сохранённые КП.
+   Хранятся 30 последних дней и копия за 1-е число каждого месяца. */
+function backupDir(array $cfg): string { $d = dirname($cfg['db_path']) . '/backup'; if (!is_dir($d)) @mkdir($d, 0755, true); return $d; }
+function sqliteSnapshot(string $file): ?string {
+  if (!is_file($file)) return null;
+  try { $x = new PDO('sqlite:' . $file, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); $x->exec('PRAGMA busy_timeout=5000');
+    try { $x->query('PRAGMA wal_checkpoint(TRUNCATE)')->fetchAll(); } catch (Throwable $e) {}
+    $x->beginTransaction(); $x->query('SELECT COUNT(*) FROM sqlite_master')->fetchColumn(); $raw = file_get_contents($file); $x->commit(); return $raw === false ? null : $raw; }
+  catch (Throwable $e) { $raw = @file_get_contents($file); return $raw === false ? null : $raw; }
+}
+function backupNow(array $cfg, bool $force = false): array {
+  $dir = backupDir($cfg); $day = date('Y-m-d'); $f = $dir . '/montazh-' . $day . '.sqlite.gz'; $made = [];
+  if (!$force && is_file($f)) return [];
+  if (($raw = sqliteSnapshot($cfg['db_path'])) !== null && @file_put_contents($f, gzencode($raw, 6)) !== false) $made[] = basename($f);
+  $hd = hotelDir($cfg); if ($hd !== '' && ($raw = sqliteSnapshot($hd . '/sklad.db')) !== null && @file_put_contents($dir . '/hotel-' . $day . '.db.gz', gzencode($raw, 6)) !== false) $made[] = 'hotel-' . $day . '.db.gz';
+  $kd = dirname(__DIR__) . '/kp/data'; if (is_dir($kd)) { $all = []; foreach ((array)glob($kd . '/*.json') as $j) $all[basename($j)] = @file_get_contents($j); if ($all && @file_put_contents($dir . '/kp-' . $day . '.json.gz', gzencode(json_encode($all, JSON_UNESCAPED_UNICODE), 6)) !== false) $made[] = 'kp-' . $day . '.json.gz'; }
+  // чистка: старше 30 дней удаляем, кроме копий за 1-е число
+  foreach ((array)glob($dir . '/*-????-??-??.*') as $old) if (preg_match('/-(\d{4}-\d{2}-(\d{2}))\./', basename($old), $m) && $m[2] !== '01' && strtotime($m[1]) < time() - 30 * 86400) @unlink($old);
+  // по желанию — раз в неделю копия пульта на почту (config.php: 'backup_email' => 'адрес')
+  if ($made && !empty($cfg['backup_email']) && date('N') === '1' && is_file($f) && function_exists('mail')) {
+    $bd = md5((string)time()); $body = "--$bd\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nРезервная копия пульта IVANOR за $day.\r\n--$bd\r\nContent-Type: application/gzip; name=\"" . basename($f) . "\"\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=\"" . basename($f) . "\"\r\n\r\n" . chunk_split(base64_encode((string)file_get_contents($f))) . "--$bd--";
+    @mail((string)$cfg['backup_email'], '=?UTF-8?B?' . base64_encode('Резервная копия пульта ' . $day) . '?=', $body, "MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"$bd\""); }
+  return $made;
+}
 /* ===== аналитика ===== */
 // группа для советов: шины — размер и сезон, диски — диаметр и разболтовка, АКБ — ёмкость и полярность; остальное — сама позиция
 function groupOf(string $kind, array $a, string $name): array {
@@ -302,7 +331,8 @@ try {
   switch ($a) {
 
   case 'me':
-    out(['role' => $role, 'coupon' => $role ? couponValue($cfg) : null]);
+    if ($role === 'owner' || $role === 'master') { try { backupNow($cfg); } catch (Throwable $e) {} }
+    out(['role' => $role, 'seller' => $_SESSION['seller'] ?? '', 'coupon' => $role && $role !== 'seller' ? couponValue($cfg) : null]);
 
   case 'login':
     post();
@@ -315,9 +345,12 @@ try {
     if ($pin !== '' && hash_equals((string)$cfg['owner_pin'], $pin)) $r = 'owner';
     elseif ($pin !== '' && hash_equals((string)$cfg['master_pin'], $pin)) $r = 'master';
     elseif ($pin !== '' && !empty($cfg['cashier_pin']) && hash_equals((string)$cfg['cashier_pin'], $pin)) $r = 'cashier';
+    // продавцы витрины: в config.php 'sellers' => ['Сергей' => '2468', ...]
+    $seller = '';
+    if (!$r && $pin !== '') foreach ((array)($cfg['sellers'] ?? []) as $nm => $sp) if ((string)$sp !== '' && hash_equals((string)$sp, $pin)) { $r = 'seller'; $seller = (string)$nm; break; }
     if (!$r) { $_SESSION['tries'][] = $now; fail('Неверный PIN', 403); }
     session_regenerate_id(true);
-    $_SESSION['role'] = $r; $_SESSION['tries'] = [];
+    $_SESSION['role'] = $r; $_SESSION['tries'] = []; $_SESSION['seller'] = $seller !== '' ? $seller : ($r === 'cashier' ? 'Касса' : ($r === 'owner' ? 'Собственник' : ''));
     logit($cfg, $r, 'login');
     out(['role' => $r]);
 
@@ -845,7 +878,12 @@ try {
     // у продажи — какие возвраты по ней уже есть
     $rets = []; $retq = [];
     if ($d['type'] === 'sale') { $r = db($cfg)->prepare("SELECT id, day, status FROM docs WHERE type = 'ret' AND base_id = ? ORDER BY id"); $r->execute([$id]); $rets = $r->fetchAll(); $retq = returnedMap($cfg, $id); }
-    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'wh' => $r['wh'], 'kind' => $r['kind'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
+    $lines = array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'wh' => $r['wh'], 'kind' => $r['kind'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll());
+    // черновик продажи (в т. ч. с витрины): остатки наш / ОХ и средняя себестоимость — для выбора склада и оценки прибыли
+    if ($d['type'] === 'sale' && $d['status'] === 'draft') { $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $last = lastCosts($cfg);
+      foreach ($lines as $i => $x) { $k = $x['product_id']; $q = $sm[$k]['q'] ?? 0; $qc = $smc[$k]['q'] ?? 0; $lines[$i]['stock'] = $q; $lines[$i]['qc'] = $qc;
+        $lines[$i]['avgs'] = $q > 0 ? round($sm[$k]['c'] / $q, 2) : ($last[$k] ?? null); $lines[$i]['avgc'] = $qc > 0 ? round($smc[$k]['c'] / $qc, 2) : null; $lines[$i]['avg'] = $x['wh'] === 'custody' ? $lines[$i]['avgc'] : $lines[$i]['avgs']; } }
+    out(['doc' => $d, 'returns' => $rets, 'lines' => $lines]);
 
   case 'doc_save':
     // черновик прихода: шапка и строки целиком; проведённый документ так не меняется
@@ -924,15 +962,71 @@ try {
     $p->commit(); logit($cfg, $role, 'doc_post', (string)$id);
     out(['ok' => true]);
 
+  case 'evo_export':
+    // каталог для кассы Эвотор: всё, что в наличии (наш склад + ОХ), розничные цены, штрихкоды. Без себестоимости
+    needRole($role, ['owner']);
+    $all = ($_GET['all'] ?? '') === '1'; $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $rows = [];
+    foreach (db($cfg)->query("SELECT id, name, kind, barcode, article, unit, price FROM products WHERE archived = 0 AND kind != 'svc' ORDER BY name")->fetchAll() as $r) {
+      $q = max(0, $sm[(int)$r['id']]['q'] ?? 0) + max(0, $smc[(int)$r['id']]['q'] ?? 0); if (!$all && $q <= 0) continue;
+      $rows[] = ['id' => (int)$r['id'], 'name' => $r['name'], 'kind' => $r['kind'], 'barcode' => $r['barcode'], 'article' => $r['article'], 'unit' => $r['unit'] ?: 'шт', 'price' => (float)$r['price'], 'q' => $q]; }
+    out(['rows' => $rows]);
+
+  case 'backups':
+    // список резервных копий и «сделать сейчас»
+    needRole($role, ['owner']);
+    if (($_GET['now'] ?? '') === '1') backupNow($cfg, true); else backupNow($cfg);
+    $L = []; foreach ((array)glob(backupDir($cfg) . '/*.gz') as $f) $L[] = ['f' => basename($f), 'size' => filesize($f), 't' => filemtime($f)];
+    usort($L, fn($a, $b) => $b['t'] <=> $a['t']); out(['files' => $L, 'email' => !empty($cfg['backup_email'])]);
+
+  case 'backup_get':
+    needRole($role, ['owner']);
+    $f = basename((string)($_GET['f'] ?? '')); if (!preg_match('/^(montazh|hotel|kp)-\d{4}-\d{2}-\d{2}\.(sqlite|db|json)\.gz$/', $f)) fail('Неверное имя файла');
+    $path = backupDir($cfg) . '/' . $f; if (!is_file($path)) fail('Копия не найдена', 404);
+    header('Content-Type: application/gzip'); header('Content-Disposition: attachment; filename="' . $f . '"'); header('Content-Length: ' . filesize($path)); readfile($path); exit;
+
+  case 'sale_request':
+    // продажа с витрины: продавец собирает товары, собственник подтверждает (проводит) в пульте
+    post(); needRole($role, ['seller', 'cashier', 'owner']);
+    $b = body(); $p = db($cfg); $L = (array)($b['lines'] ?? []); if (!$L) fail('Добавьте товары');
+    $byExt = []; foreach ($p->query("SELECT id, ext_id, price FROM products WHERE archived = 0")->fetchAll() as $r) { if ($r['ext_id'] !== null && $r['ext_id'] !== '') $byExt[(string)$r['ext_id']] = $r; $byExt['p' . $r['id']] = $r; }
+    $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody');
+    $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'sbp', 'bank'], true) ? $b['pay'] : '';
+    $who = (string)($_SESSION['seller'] ?? '') ?: 'Продавец';
+    $p->beginTransaction();
+    $p->prepare("INSERT INTO docs (type, day, partner, num, note, wh, phone, pay, status, author, created, seller, req) VALUES ('sale', ?, ?, '', ?, 'shop', ?, ?, 'draft', ?, ?, ?, 1)")
+      ->execute([date('Y-m-d'), mb_substr(trim((string)($b['name'] ?? '')), 0, 200), mb_substr(trim((string)($b['note'] ?? '')), 0, 500), $phone, $pay, $role, time(), $who]);
+    $id = (int)$p->lastInsertId(); $ins = $p->prepare('INSERT INTO moves (doc_id, product_id, wh, qty, cost, price, list) VALUES (?,?,?,?,0,?,?)'); $n = 0;
+    foreach (array_slice($L, 0, 100) as $l) { $pr = $byExt[(string)($l['id'] ?? '')] ?? null; $q = max(0, (float)($l['q'] ?? 0)); if (!$pr || $q <= 0) continue;
+      $pid = (int)$pr['id']; $wh = ($sm[$pid]['q'] ?? 0) >= $q || ($smc[$pid]['q'] ?? 0) <= 0 ? 'shop' : 'custody';
+      $price = isset($l['price']) && (float)$l['price'] > 0 ? round((float)$l['price'], 2) : (float)$pr['price'];
+      $ins->execute([$id, $pid, $wh, -$q, $price, (float)$pr['price']]); $n++; }
+    if (!$n) { $p->rollBack(); fail('Товары не найдены — обновите витрину'); }
+    $p->commit(); if ($phone !== '' && trim((string)($b['name'] ?? '')) !== '') touchClient($cfg, $phone, trim((string)$b['name']), '');
+    logit($cfg, $role, 'sale_request', $id . ' ' . $who);
+    out(['ok' => true, 'id' => $id]);
+
+  case 'my_sales':
+    // продавцу: его продажи за сегодня и их состояние
+    needRole($role, ['seller', 'cashier', 'owner']);
+    $who = (string)($_SESSION['seller'] ?? ''); $st = db($cfg)->prepare("SELECT id, status, created, cancel_reason FROM docs WHERE type = 'sale' AND seller = ? AND day = ? ORDER BY id DESC"); $st->execute([$who, date('Y-m-d')]);
+    $rows = []; $m = db($cfg)->prepare('SELECT m.qty, m.price, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ?');
+    foreach ($st->fetchAll() as $d) { $m->execute([$d['id']]); $it = []; $sum = 0; foreach ($m->fetchAll() as $x) { $q = abs((float)$x['qty']); $it[] = $x['name'] . ($q != 1 ? ' ×' . (0 + $q) : ''); $sum += $q * (float)$x['price']; }
+      $rows[] = ['id' => (int)$d['id'], 'status' => $d['status'], 'time' => date('H:i', (int)$d['created']), 'items' => implode(', ', $it), 'sum' => round($sum, 2), 'reason' => (string)$d['cancel_reason']]; }
+    out(['seller' => $who, 'rows' => $rows]);
+
+  case 'req_count':
+    needRole($role, ['owner']);
+    out(['n' => (int)db($cfg)->query("SELECT COUNT(*) FROM docs WHERE type = 'sale' AND status = 'draft' AND req = 1")->fetchColumn()]);
+
   case 'an_sum':
     // итоги за период: выручка, себестоимость, прибыль, чеки; по дням или месяцам, категориям, диаметрам, брендам, товарам
     needRole($role, ['owner']);
     $from = (string)($_GET['from'] ?? ''); $to = (string)($_GET['to'] ?? ''); if (!isDay($from) || !isDay($to)) fail('Укажите период');
     $days = (int)round((strtotime($to) - strtotime($from)) / 86400) + 1; $gb = $days > 62 ? 'month' : 'day';
     $agg = function (string $f, string $t) use ($cfg) {
-      $st = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.pay, m.product_id pid, m.wh, m.qty, m.cost, m.price, m.list, p.name, p.kind, p.attrs FROM moves m JOIN docs d ON d.id = m.doc_id JOIN products p ON p.id = m.product_id WHERE d.status = 'posted' AND d.type IN ('sale','ret') AND d.day >= ? AND d.day <= ?");
+      $st = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.pay, d.seller, m.product_id pid, m.wh, m.qty, m.cost, m.price, m.list, p.name, p.kind, p.attrs FROM moves m JOIN docs d ON d.id = m.doc_id JOIN products p ON p.id = m.product_id WHERE d.status = 'posted' AND d.type IN ('sale','ret') AND d.day >= ? AND d.day <= ?");
       $st->execute([$f, $t]); return $st->fetchAll(); };
-    $K = ['rev' => 0, 'cost' => 0, 'qty' => 0, 'checks' => 0, 'disc' => 0]; $ser = []; $kinds = []; $dia = []; $brands = []; $prod = []; $pay = []; $whs = ['shop' => ['rev' => 0, 'cost' => 0], 'custody' => ['rev' => 0, 'cost' => 0]]; $docs = [];
+    $K = ['rev' => 0, 'cost' => 0, 'qty' => 0, 'checks' => 0, 'disc' => 0]; $ser = []; $sel = []; $selc = []; $kinds = []; $dia = []; $brands = []; $prod = []; $pay = []; $whs = ['shop' => ['rev' => 0, 'cost' => 0], 'custody' => ['rev' => 0, 'cost' => 0]]; $docs = [];
     $add = function (array &$b, float $r, float $c, float $q) { $b['rev'] = ($b['rev'] ?? 0) + $r; $b['cost'] = ($b['cost'] ?? 0) + $c; $b['qty'] = ($b['qty'] ?? 0) + $q; };
     foreach ($agg($from, $to) as $m) {
       $q = -(float)$m['qty']; $r = $q * (float)$m['price']; $c = $q * (float)$m['cost']; $a = json_decode($m['attrs'], true) ?: [];
@@ -944,6 +1038,7 @@ try {
       $pk = (int)$m['pid']; $prod[$pk] = $prod[$pk] ?? ['id' => $pk, 'name' => $m['name'], 'kind' => $m['kind']]; $add($prod[$pk], $r, $c, $q);
       $pm = $m['pay'] ?: '—'; $pay[$pm] = $pay[$pm] ?? []; $add($pay[$pm], $r, $c, $q);
       $w = $m['wh'] === 'custody' ? 'custody' : 'shop'; $whs[$w]['rev'] += $r; $whs[$w]['cost'] += $c;
+      $sk = (string)$m['seller'] !== '' ? (string)$m['seller'] : 'В пульте'; $sel[$sk] = $sel[$sk] ?? []; $add($sel[$sk], $r, $c, $q); if ($m['type'] === 'sale') $selc[$sk][$m['doc']] = true;
     }
     $K['checks'] = count($docs);
     // прошлый такой же период — для сравнения
@@ -958,7 +1053,7 @@ try {
     $low = array_values(array_filter($pr, fn($x) => $x['rev'] > 0 && $x['qty'] >= 2 && ($x['rev'] - $x['cost']) / $x['rev'] < 0.12)); usort($low, fn($a, $b) => $b['rev'] <=> $a['rev']);
     $br = $fix($brands); usort($br, fn($a, $b) => $b['rev'] <=> $a['rev']); $dd = $fix($dia); usort($dd, fn($a, $b) => (int)$a['k'] <=> (int)$b['k']);
     out(['from' => $from, 'to' => $to, 'gb' => $gb, 'kpi' => array_map($R, $K), 'prev' => array_map($R, $P), 'series' => $series, 'kinds' => $fix($kinds), 'dia' => $dd, 'brands' => array_slice($br, 0, 12),
-      'top' => array_slice($byRev, 0, 15), 'topProfit' => array_slice($byProf, 0, 15), 'low' => array_slice($low, 0, 15), 'pay' => $fix($pay), 'wh' => $fix($whs)]);
+      'top' => array_slice($byRev, 0, 15), 'topProfit' => array_slice($byProf, 0, 15), 'low' => array_slice($low, 0, 15), 'pay' => $fix($pay), 'wh' => $fix($whs), 'sellers' => array_map(function ($x) use ($selc) { $x['checks'] = count($selc[$x['k']] ?? []); return $x; }, $fix($sel))]);
 
   case 'hist_upload':
     // отчёт CloudShop «Продажи по товарам» за период → архив; тот же период загружается заново поверх
@@ -1084,6 +1179,7 @@ try {
     $b = body(); $id = (int)($b['id'] ?? 0); $reason = mb_substr(trim((string)($b['reason'] ?? '')), 0, 300); if ($reason === '') fail('Напишите причину отмены');
     $st = db($cfg)->prepare('SELECT * FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404);
     if ($d['type'] === 'open') fail('Стартовые остатки не отменяются — исправляются инвентаризацией', 409);
+    if ($d['status'] === 'draft' && !empty($d['req'])) { db($cfg)->prepare("UPDATE docs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?")->execute([time(), $role, $reason, $id]); out(['ok' => true]); }
     if ($d['status'] === 'draft') { db($cfg)->prepare('DELETE FROM moves WHERE doc_id = ?')->execute([$id]); db($cfg)->prepare('DELETE FROM docs WHERE id = ?')->execute([$id]); out(['deleted' => true]); }
     if ($d['status'] !== 'posted') fail('Документ уже отменён', 409);
     if ($d['type'] === 'sale') { $r = db($cfg)->prepare("SELECT id FROM docs WHERE type = 'ret' AND status = 'posted' AND base_id = ?"); $r->execute([$id]); $ids = $r->fetchAll(PDO::FETCH_COLUMN);

@@ -591,6 +591,11 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
 .moreg{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
 .moret{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:14px;border:0;border-radius:14px;background:var(--paper-2);color:var(--ink);font-weight:600;text-align:left;min-height:84px}
 .moret svg{width:24px;height:24px;color:var(--acc)}.moret[aria-current="page"]{box-shadow:inset 0 0 0 2px var(--acc)}
+.selb{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:6px;background:var(--cold-tint);color:var(--cold);font-weight:600;font-size:.74rem}
+.rq{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--signal);color:#fff;font-size:.72rem;font-weight:700;margin-left:6px}
+.bnav button{position:relative}.bnav .rq{position:absolute;top:2px;right:calc(50% - 22px);margin:0}
+.bkr{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule-soft)}.bkr span:first-child{flex:1;font-weight:600}.bkr:last-child{border-bottom:0}
+.offb{position:fixed;left:50%;top:calc(var(--hdr,64px) + 8px);transform:translateX(-50%);z-index:30;max-width:min(92vw,720px);background:#3A2A00;color:#FFE7B0;padding:10px 16px;border-radius:12px;font-size:.88rem;box-shadow:0 8px 20px rgba(0,0,0,.25)}
 </style>
 </head>
 <body>
@@ -635,7 +640,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
   <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
   <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="month">Все документы</button></div>
-  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button></div>
+  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button></div>
 </aside>
 <main class="wrap">
   <section id="v-day">
@@ -774,6 +779,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
       <div class="ancard"><div class="anch"><h2>Шины по диаметрам</h2></div><div id="anDia"></div></div>
       <div class="ancard"><div class="anch"><h2>Бренды шин</h2></div><div id="anBr"></div></div>
       <div class="ancard"><div class="anch"><h2>Оплата</h2></div><div id="anPay"></div></div>
+      <div class="ancard"><div class="anch"><h2>Продавцы</h2><span class="pay">кто оформил продажу</span></div><div id="anSel"></div></div>
     </div>
     <div class="angrid">
       <div class="ancard"><div class="anch"><h2>Лучшие по выручке</h2></div><div id="anTop"></div></div>
@@ -898,6 +904,11 @@ async function api(a,body,q){
   status('');return j;
 }
 async function loadDay(){try{const j=await api('day',null,{day:S.day});S.orders=j.orders||[];S.bookings=j.bookings||[];S.days[S.day]={helper:!!j.helper};renderDay();if(!S.ms||S._msMonth!==S.day.slice(0,7)){S._msMonth=S.day.slice(0,7);loadMonth();}}catch(e){if(e.code!=='auth')status(e.message,true);}}
+/* заявки с витрины: счётчик на «Продажи» */
+async function reqBadge(){if(S.role!=='owner')return;let n=0;try{n=(await api('req_count')).n||0;}catch(_){return;}S.reqN=n;
+  const b=document.querySelector('#side [data-p="sale"]');if(b){b.querySelector('.rq')?.remove();if(n)b.insertAdjacentHTML('beforeend',` <span class="rq">${n}</span>`);}
+  const bb=document.querySelector('#bnav [data-bn="p:sale"]');if(bb){bb.querySelector('.rq')?.remove();if(n)bb.insertAdjacentHTML('beforeend',`<span class="rq">${n}</span>`);}}
+setInterval(()=>{if(document.visibilityState==='visible'&&S.role==='owner')reqBadge();},45000);
 function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(()=>{if(document.visibilityState==='visible'&&S.view==='day'&&$('#sheet').hidden){loadDay();loadQueue();}},12000);}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.role&&S.view==='day')loadDay();});
 
@@ -910,7 +921,7 @@ $('#keys').querySelectorAll('button').forEach(b=>b.onclick=()=>{const k=b.datase
 document.addEventListener('keydown',e=>{if($('#login').hidden)return;if(/^\d$/.test(e.key)&&pin.length<8){pin+=e.key;drawPin();}else if(e.key==='Backspace'){pin=pin.slice(0,-1);drawPin();}else if(e.key==='Enter')doLogin();});
 async function doLogin(){const err=$('#pinErr');err.hidden=true;if(pin.length<4){err.textContent='PIN — от 4 цифр';err.hidden=false;return;}
   try{const j=await api('login',{pin});pin='';enter(j.role);}catch(e){pin='';drawPin();if(e.code!=='auth'){err.textContent=e.message;err.hidden=false;}}}
-function enter(role){S.role=role;api('me').then(j=>{if(j&&j.coupon!=null)S.coupon=j.coupon;}).catch(()=>{});document.body.classList.toggle('master',role==='master');document.body.classList.toggle('cashier',role==='cashier');$('#who').textContent=role==='owner'?'Собственник':role==='cashier'?'Касса':'Мастер';
+function enter(role){if(role==='seller'){location.href='/vitrina/';return;}try{if(localStorage.getItem('ivanor_lastrole')!==role){navigator.serviceWorker&&navigator.serviceWorker.controller&&navigator.serviceWorker.controller.postMessage('clear');localStorage.setItem('ivanor_lastrole',role);}}catch(_){}S.role=role;setTimeout(reqBadge,1500);setTimeout(offlineWarm,4000);api('me').then(j=>{if(j&&j.coupon!=null)S.coupon=j.coupon;}).catch(()=>{});document.body.classList.toggle('master',role==='master');document.body.classList.toggle('cashier',role==='cashier');$('#who').textContent=role==='owner'?'Собственник':role==='cashier'?'Касса':'Мастер';
   $('#login').hidden=true;$('#app').hidden=false;setArea(startArea(),true);renderAll();loadDay();loadWeek();loadSpins();loadQueue();loadWeather();startPoll();}
 $('#logout').onclick=async()=>{try{await api('logout',{});}catch(_){}showLogin();};
 
@@ -1267,7 +1278,7 @@ const stLbl=(t,st)=>t==='sale'||t==='iss'||t==='inv'?{draft:'черновик',p
 const isMoney=t=>t==='sale'||t==='ret'||t==='iss';
 
 /* ---------- список документов и итоги месяца ---------- */
-async function loadDocs(){const[y,m]=S.dl.month.split('-').map(Number);$('#dlTitle').textContent=`${MONTHS[m-1]} ${y}`;
+async function loadDocs(){reqBadge();const[y,m]=S.dl.month.split('-').map(Number);$('#dlTitle').textContent=`${MONTHS[m-1]} ${y}`;
   document.querySelectorAll('#dlTypes .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.t===S.dl.type));
   let all=[];try{all=(await api('docs',null,{month:S.dl.month})).docs;}catch(e){}
   const P=all.filter(d=>d.status==='posted'),sum=(t,f)=>P.filter(d=>d.type===t).reduce((a,d)=>a+f(d),0);
@@ -1289,7 +1300,7 @@ async function loadDocs(){const[y,m]=S.dl.month.split('-').map(Number);$('#dlTit
     $('#dlPartner').insertAdjacentHTML('beforeend',`<p class="mono" style="color:var(--ink-3);margin:0 0 10px">Проведено: ${ps.length} · ${S.dl.type==='iss'?fmtQty(tot)+' шт.':S.dl.type==='in'?'закупка на '+rub(tot)+(ps.some(d=>d.wh==='custody')?' (без ответхранения)':''):rub(tot)}${S.dl.type==='sale'?' · прибыль '+rub(ps.reduce((a,d)=>a+d.rev-d.cost,0)):''}</p>`);}
   const el=$('#dlOut');if(!S.dl.docs.length){el.innerHTML=`<div class="empty"><b>Документов нет</b>«+ Продажа» или «+ Приход» — оформить первый.</div>`;return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th style="text-align:left">Кто</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>
-    ${S.dl.docs.map(d=>`<tr data-d="${d.id}" class="${d.status==='cancelled'?'cxl':''}"><td>${fmtDay(d.day)}</td><td style="text-align:left">${esc(d.label)} № ${d.id}${d.num&&d.type!=='open'?' <span class="pay">('+esc(d.num)+')</span>':''}${d.base_id?' <span class="pay">по продаже № '+d.base_id+'</span>':''} <span class="badge ${DOC_ST[d.status][1]}">${stLbl(d.type,d.status)}</span>${d.type==='in'&&d.wh==='custody'?' <span class="badge cp">ответхранение</span>':''}</td>
+    ${S.dl.docs.map(d=>`<tr data-d="${d.id}" class="${d.status==='cancelled'?'cxl':''}"><td>${fmtDay(d.day)}</td><td style="text-align:left">${esc(d.label)} № ${d.id}${d.num&&d.type!=='open'?' <span class="pay">('+esc(d.num)+')</span>':''}${d.base_id?' <span class="pay">по продаже № '+d.base_id+'</span>':''} <span class="badge ${DOC_ST[d.status][1]}">${+d.req&&d.status==='draft'?'ждёт подтверждения':stLbl(d.type,d.status)}</span>${d.type==='in'&&d.wh==='custody'?' <span class="badge cp">ответхранение</span>':''}${d.seller?` <span class="selb">${+d.req?'витрина · ':''}${esc(d.seller)}</span>`:''}</td>
       <td style="text-align:left">${esc(d.partner||(d.phone?fmtPhone(d.phone):'')||'—')}${d.pay?` <span class="pay">· ${DPAY[d.pay]}</span>`:''}</td><td>${fmtQty(d.qty)}</td><td>${d.type==='iss'?'—':rub(isMoney(d.type)?d.rev:d.cost)}${d.type==='sale'&&d.status==='posted'?`<small class="pay" style="display:block">прибыль ${rub(d.rev-d.cost)}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`;
   el.querySelectorAll('tr[data-d]').forEach(tr=>tr.onclick=()=>openDoc(+tr.dataset.d));}
 $('#dlPrev').onclick=()=>{const[y,m]=S.dl.month.split('-').map(Number);S.dl.month=iso(new Date(y,m-2,1)).slice(0,7);loadDocs();};
@@ -1334,6 +1345,7 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
   const saleRets=T==='sale'&&D.returns.length?`<p class="note" style="margin:0 0 10px">Возвраты по этой продаже: ${D.returns.map(r=>`<button type="button" class="out" data-open="${r.id}" style="min-height:30px;padding:0 4px;text-decoration:underline">№ ${r.id}${r.status==='cancelled'?' (отменён)':r.status==='draft'?' (черновик)':''}</button>`).join(', ')}</p>`:'';
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${D.id?DT[T].t+' № '+D.id:DT[T].n} <span class="badge ${st[1]}" style="vertical-align:6px">${stLbl(T,D.status)}</span></h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
   ${D.status==='cancelled'?`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)">Отменён ${D.cancelled_at?new Date(D.cancelled_at*1000).toLocaleString('ru-RU'):''}. Причина: ${esc(D.cancel_reason||'—')}. Остатки по нему не считаются.</div>`:''}
+  ${+D.req?`<p class="zakchip" style="background:var(--cold-tint)">Оформил на витрине: <b>${esc(D.seller||'продавец')}</b>${D.status==='draft'?' — проверьте товар, склад (наш / ОХ) и цену, потом «Провести» или «Отклонить»':''}${D.status==='cancelled'&&D.cancel_reason?' · отклонено: '+esc(D.cancel_reason):''}</p>`:''}
   <div class="dhead">${head}</div>${T==='sale'?`<div id="dZak">${D.zak_id?`<p class="zakchip">По заказу № ${D.zak_id}${D.zak?' · '+esc(D.zak.items.slice(0,70))+(D.zak.prepay?' · аванс '+rub(D.zak.prepay):''):''} — при проведении заказ станет «выдан»${ro?'':' <button type="button" class="out" id="dZakX" style="min-height:28px;padding:0 6px">отвязать</button>'}</p>`:''}</div>`:''}${ro&&/\n/.test(D.note||'')?`<p class="note" style="white-space:pre-line;margin:-4px 0 10px">${esc(D.note)}</p>`:''}${retInfo}${saleRets}
   ${cust?'<p class="note" style="margin:0 0 10px">Товар поставщика на ответхранении: в стоимость нашего склада не входит, цена — оценка поставщика (для справки).</p>':''}
   ${T==='iss'?'<p class="note" style="margin:0 0 10px">Товар просто убирается с ответхранения — денег и прибыли в документе нет.</p>':''}
@@ -1343,7 +1355,7 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
   <div class="dtot" id="dTot">${totLine(t)}</div>
   <p class="err" id="dErr" hidden></p>
   <div class="row" style="margin:14px 0 40px">${ro?`${D.status==='posted'?'<button class="btn danger" type="button" id="dCancel">Отменить проведение</button>':''}${T==='inv'||T==='open'?'':'<button class="btn ghost" type="button" id="dCopy">Создать копию</button>'}`
-    :`<button class="btn sig" type="button" id="dPost">Провести</button><button class="btn ghost" type="button" id="dSave">Сохранить черновик</button>${D.id?'<button class="btn danger" type="button" id="dDel">Удалить черновик</button>':''}`}</div>
+    :`<button class="btn sig" type="button" id="dPost">Провести</button><button class="btn ghost" type="button" id="dSave">Сохранить черновик</button>${D.id?`<button class="btn danger" type="button" id="dDel">${+D.req?'Отклонить':'Удалить черновик'}</button>`:''}`}</div>
   <div id="dCancelBox"></div>`;
   bindDoc();}
 /* наценка при закупке: шины 23%, диски 20%, аккумуляторы 30%; цена — вниз до десятков рублей */
@@ -1445,7 +1457,9 @@ function bindDoc(){const T=D.type,cust=T==='in'&&D.wh==='custody';
   document.querySelectorAll('#dqKinds [data-qk]').forEach(c=>c.onclick=()=>{DQ.kind=DQ.kind===c.dataset.qk?'':c.dataset.qk;DQ.f={};dqLoad();});dqLoad();
   const sv=document.getElementById('dSave');if(sv)sv.onclick=async()=>{if(await saveDoc(true)){toast('<b>Черновик сохранён</b>'+DT[T].t+' № '+D.id);}};
   const ps=document.getElementById('dPost');if(ps)ps.onclick=()=>postDoc(false);
-  const dl=document.getElementById('dDel');if(dl)dl.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="confirm">Удалить черновик? <button class="btn danger" type="button" id="dDel2">Да, удалить</button><button class="btn ghost" type="button" id="dDel0">Нет</button></div>`;
+  if(+D.req&&D.status==='draft'){const dl0=document.getElementById('dDel');if(dl0)dl0.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="form" style="margin:0 0 40px"><label style="grid-column:1/-1"><span class="mono lbl">Почему отклоняем — продавец увидит</span><input class="inp" id="dRej" placeholder="Например: нет в наличии, неверная цена"></label><div class="row"><button class="btn danger" type="button" id="dRej2">Отклонить</button><button class="btn ghost" type="button" id="dRej0">Нет</button></div></div>`;
+    $('#dRej0').onclick=()=>$('#dCancelBox').innerHTML='';$('#dRej2').onclick=async()=>{const r=$('#dRej').value.trim()||'отклонено';try{await api('doc_cancel',{id:D.id,reason:r});dDirty=false;closeSheet();toast('<b>Продажа отклонена</b>Продавец увидит причину');loadDocs();reqBadge();}catch(e){docErr(e.message);}};};}
+  else{  const dl=document.getElementById('dDel');if(dl)dl.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="confirm">Удалить черновик? <button class="btn danger" type="button" id="dDel2">Да, удалить</button><button class="btn ghost" type="button" id="dDel0">Нет</button></div>`;}
     $('#dDel0').onclick=()=>$('#dCancelBox').innerHTML='';$('#dDel2').onclick=async()=>{try{await api('doc_cancel',{id:D.id,reason:'удалён черновик'});dDirty=false;closeSheet();loadDocs();}catch(e){docErr(e.message);}};};
   const cx=document.getElementById('dCancel');if(cx)cx.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="form" style="margin:0 0 40px"><label style="grid-column:1/-1"><span class="mono lbl">Причина отмены — обязательно</span><input class="inp" id="dReason" placeholder="${T==='sale'?'Например: пробили не тот товар':'Например: ошибка в количестве, поставщик заменил накладную'}"></label>
       <div class="row"><button class="btn danger" type="button" id="dCx2">Отменить проведение</button><button class="btn ghost" type="button" id="dCx0">Не отменять</button></div><p class="err" id="dCxErr" hidden></p></div>`;
@@ -1798,16 +1812,53 @@ function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;c
   const main=['sale','in','goods','cli'];
   const cur=x=>x==='more'?(a==='s'&&!main.includes(S.page)):x.startsWith('p:')?S.page===x.slice(2):x.startsWith('z:')?ZS.st===x.slice(2):false;
   nav.innerHTML=it.map(([k,l,i,big])=>`<button type="button" data-bn="${k}"${big?' class="bplus"':''}${cur(k)?' aria-current="page"':''}>${big?`<span class="pi">${bic(i)}</span>`:bic(i)}<span>${l}</span></button>`).join('');
-  nav.querySelectorAll('[data-bn]').forEach(b=>b.onclick=()=>{const k=b.dataset.bn;
+  if(S.reqN)setTimeout(reqBadge,0);nav.querySelectorAll('[data-bn]').forEach(b=>b.onclick=()=>{const k=b.dataset.bn;
     if(k.startsWith('p:'))page(k.slice(2));else if(k==='n:sale')openDoc(null,{type:'sale'});else if(k==='more')openMore();
     else if(k.startsWith('z:')){ZS.st=k.slice(2);loadZak();}else if(k==='zn')openZak(null);renderBnav();});}
 function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['p:iss','Выдачи с ОХ','list']]],
     ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:month','Все документы','docs']]],
-    ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]]];
+    ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up']]]];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
   $('#close').onclick=closeSheet;
   $('#shIn').querySelectorAll('[data-mo]').forEach(b=>b.onclick=()=>{const k=b.dataset.mo;if(k.startsWith('n:'))openDoc(null,{type:k.slice(2)});else{closeSheet();page(k.slice(2));renderBnav();}});
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
+/* ---------- каталог для кассы Эвотор (файл Excel) ---------- */
+async function openEvotor(){
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Каталог для Эвотора</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <p class="note" style="margin-top:0">Файл Excel с товарами для кассы: наименование, штрихкод, артикул, розничная цена, единица, НДС («Без НДС» — АУСН), тип (шины — маркированный товар). Себестоимости в файле нет. Загружается в Эвотор приложением обмена через Excel; когда выберем приложение, подгоню колонки под его шаблон.</p>
+  <div class="row"><button class="btn sig" type="button" id="evGo">Скачать: что в наличии</button><button class="btn ghost" type="button" id="evAll">Скачать весь каталог</button></div><p class="pay" id="evMsg"></p>`;
+  $('#close').onclick=closeSheet;
+  const go=async all=>{const m=$('#evMsg');m.textContent='Готовлю файл…';try{await loadXlsxLib();const j=await api('evo_export',null,all?{all:'1'}:{});
+      const rows=j.rows.map(r=>({'Наименование':r.name,'Штрихкод':r.barcode||'','Артикул':r.article||'','Код в пульте':r.id,'Цена продажи':r.price,'Единица':r.unit,'НДС':'Без НДС','Тип':r.kind==='tire'?'Шины (маркированный)':'Обычный','Остаток':r.q}));
+      const ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=[{wch:60},{wch:16},{wch:14},{wch:12},{wch:12},{wch:8},{wch:10},{wch:20},{wch:9}];const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Товары');
+      XLSX.writeFile(wb,`evotor-katalog-${iso(new Date())}.xlsx`);m.textContent=`Готово: ${rows.length} товаров. Без штрихкода: ${rows.filter(r=>!r['Штрихкод']).length} — им на кассе нужен поиск по названию или этикетка.`;}catch(e){m.textContent=e.message;}};
+  $('#evGo').onclick=()=>go(false);$('#evAll').onclick=()=>go(true);
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
+/* ---------- без интернета: сохраняем на устройстве последнее и показываем его, когда связи нет ---------- */
+if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('sw.js').catch(()=>{});
+function netState(){const off=!navigator.onLine;document.body.classList.toggle('is-offline',off);let b=document.getElementById('offb');
+  if(off&&!b){b=document.createElement('div');b.id='offb';b.className='offb';b.innerHTML='<b>Нет интернета.</b> Показываю то, что сохранено на этом устройстве: каталог, цены, хранение, запись. Изменения сейчас не сохранятся.';document.body.appendChild(b);}
+  else if(!off&&b)b.remove();}
+window.addEventListener('online',()=>{netState();offlineWarm();});window.addEventListener('offline',netState);netState();
+/* раз в 15 минут подкачиваем главное, чтобы без интернета было что показать */
+let warmAt=0;
+async function offlineWarm(){if(!navigator.onLine||!S.role||Date.now()-warmAt<14*60e3)return;warmAt=Date.now();const t=new Date(),d=k=>{const x=new Date(t);x.setDate(x.getDate()+k);return iso(x);};
+  const q=[['stock',{q:'',kind:'',instock:'1',limit:150,wh:'all',f:'{}'}],['vitrina'],['queue'],['week',{from:iso(t)}],['bookings',{from:d(0),to:d(13)}],...[0,1,2].map(k=>['day',{day:d(k)}])];
+  if(S.role==='owner')q.push(['zak_list',{st:'open',q:''}]);
+  for(const [a,p] of q){try{await api(a,null,p);}catch(_){}}
+  ['hotel/index.php','hotel/map.php'].forEach(u=>fetch(u,{credentials:'same-origin'}).catch(()=>{}));}
+setInterval(offlineWarm,15*60e3);
+/* ---------- резервные копии ---------- */
+async function openBackups(now){let j;try{j=await api('backups',null,now?{now:'1'}:{});}catch(e){toast('<b>Не получилось</b>'+esc(e.message));return;}
+  const KN={montazh:'Пульт: магазин, шиномонтаж, заказы, клиенты',hotel:'Шинный отель',kp:'Коммерческие предложения'};
+  const byDay={};j.files.forEach(f=>{const m=f.f.match(/^(\w+)-(\d{4}-\d{2}-\d{2})/);if(!m)return;(byDay[m[2]]=byDay[m[2]]||[]).push({...f,k:m[1]});});
+  const days=Object.keys(byDay).sort().reverse();
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Резервные копии</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <p class="note" style="margin-top:0">Копия делается сама раз в сутки, при первом входе в пульт. Хранятся 30 дней и копия за 1-е число каждого месяца — на хостинге, в закрытой папке. ${j.email?'Раз в неделю копия пульта уходит на почту.':'Раз в неделю скачивайте свежую копию себе на компьютер или в облако — на случай проблем с хостингом.'}</p>
+  <div class="row" style="margin-bottom:14px"><button class="btn sig" type="button" id="bkNow">Сделать копию сейчас</button></div>
+  ${days.length?days.map(d=>`<div class="ancard"><div class="anch"><h2>${fmtDay(d)}</h2></div>${byDay[d].map(f=>`<div class="bkr"><span>${KN[f.k]||f.k}</span><span class="pay tnum">${(f.size/1024/1024).toFixed(f.size>1048576?1:2).replace('.',',')} МБ</span><a class="btn ghost" href="api.php?a=backup_get&f=${encodeURIComponent(f.f)}" download style="min-height:36px">Скачать</a></div>`).join('')}</div>`).join(''):'<p class="note">Копий пока нет.</p>'}<div style="height:30px"></div>`;
+  $('#close').onclick=closeSheet;$('#bkNow').onclick=()=>openBackups(true).then(()=>toast('<b>Копия сделана</b>'));
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 /* ---------- аналитика магазина: итоги, графики, советы по ассортименту ---------- */
 const AN={mode:'month',d:iso(new Date())};
 const KIND_NAME={tire:'Шины',disk:'Диски',akb:'Аккумуляторы',fast:'Крепёж',other:'Прочее'};
@@ -1859,6 +1910,7 @@ async function loadAn(){const [f,t]=anRange();$('#anTitle').textContent=anTitle(
   $('#anDia').innerHTML=hbars(j.dia,r=>'R'+r.k);
   $('#anBr').innerHTML=hbars(j.brands,r=>r.k);
   const wh=j.wh.filter(x=>x.rev);$('#anPay').innerHTML=hbars(j.pay.sort((a,b)=>b.rev-a.rev),r=>PAY_NAME[r.k]||r.k)+(wh.length>1||(wh[0]&&wh[0].k==='custody')?'<h3 class="anh3">Откуда продано</h3>'+hbars(wh,r=>r.k==='custody'?'С ответхранения':'С нашего склада'):'');
+  $('#anSel').innerHTML=hbars((j.sellers||[]).sort((a,b)=>b.rev-a.rev),r=>r.k+(r.checks?' · '+r.checks+' чек.':''));
   $('#anTop').innerHTML=prodTable(j.top);$('#anTopP').innerHTML=prodTable(j.topProfit);
   $('#anLow').innerHTML=j.low.length?prodTable(j.low):'<p class="note">Все продажи с нормальной наценкой — меньше 12% не было.</p>';
   document.querySelectorAll('#v-an tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
@@ -1904,10 +1956,10 @@ async function loadAdv(){const box=$('#advArch'),out=$('#advOut');
   out.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
 
 /* ---------- хранение (шинный отель) и КП — внутри пульта, в той же вкладке ---------- */
-const FR={h:'hotel/',k:'/kp/',v:'/vitrina/'};
+const FR={h:'hotel/index.php',k:'/kp/',v:'/vitrina/'};
 function openFrame(a,path){const box=$('#v-fr');let f=document.getElementById('fr-'+a);
-  if(!f){f=document.createElement('iframe');f.id='fr-'+a;f.allow='fullscreen';f.setAttribute('allowfullscreen','');f.className='frm';f.title={h:'Шинный отель',k:'Коммерческие предложения',v:'Витрина'}[a];f.src=path?FR[a].replace(/\/$/,'/')+path:FR[a];box.appendChild(f);}
-  else if(path)f.src=FR[a]+path;
+  if(!f){f=document.createElement('iframe');f.id='fr-'+a;f.allow='fullscreen';f.setAttribute('allowfullscreen','');f.className='frm';f.title={h:'Шинный отель',k:'Коммерческие предложения',v:'Витрина'}[a];f.src=path?(a==='h'?'hotel/':FR[a])+path:FR[a];box.appendChild(f);}
+  else if(path)f.src=(a==='h'?'hotel/':FR[a])+path;
   box.querySelectorAll('.frm').forEach(x=>x.hidden=x!==f);show('fr');setHdr();}
 function openHotel(path){setArea('h');openFrame('h',path);}
 const SKIND={assembled:'колёса в сборе',tires:'шины без дисков',preseason:'новые шины до сезона'};
@@ -2200,7 +2252,7 @@ function setHdr(){const h=document.querySelector('header.top');if(h)document.doc
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
 const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',month:'Все документы'};
-function page(p){if(p==='import'){openImport();return;}
+function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');

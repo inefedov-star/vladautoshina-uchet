@@ -38,5 +38,6 @@ title_end = site.index("</style>") + len("</style>")
 site = head + site[:title_end].replace("*,*::before,*::after{box-sizing:border-box}", "*,*::before,*::after{box-sizing:border-box}\nhtml,body{margin:0}\n[hidden]{display:none!important}", 1) + "\n</head>\n<body>\n" + site[title_end:] + "\n</body>\n</html>\n"
 (here / "dist" / "site").mkdir(exist_ok=True)
 (here / "dist" / "site" / "index.html").write_text(site)
+(here / "dist" / "site" / "sw.js").write_text((here / "sw.js").read_text())
 (here / "dist" / "site" / ".htaccess").write_text('<IfModule mod_headers.c>\n  Header set X-Robots-Tag "noindex, nofollow"\n</IfModule>\nDirectoryIndex index.html\n')
 print("ok:", len(tires), "шин,", len(other), "прочих позиций")

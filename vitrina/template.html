@@ -209,6 +209,26 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
 .tw{background:var(--paper);border-radius:14px;padding:0 10px}
 .spec{font-family:var(--f-text)}
 .empty b{font-size:1.3rem}
+/* режим продавца */
+.addb{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:12px;border:0;background:var(--signal);color:#fff;font-size:1.5rem;font-weight:700;cursor:pointer;flex:none;margin-left:auto}
+.card .price .addb{margin-left:auto;align-self:center}.li .addb{margin-left:10px}
+.cartfab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:30;min-height:56px;padding:0 22px;border-radius:28px;border:0;background:var(--ink);color:var(--paper);font:600 1rem var(--f-text,inherit);box-shadow:0 8px 22px rgba(0,0,0,.25);cursor:pointer}
+.cartfab b{color:#FFB37A}
+.vtoast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);z-index:40;background:var(--ink);color:var(--paper);padding:12px 18px;border-radius:14px;opacity:0;transition:.2s;pointer-events:none;max-width:90vw}.vtoast.on{opacity:1;transform:translateX(-50%)}
+.pinv{font-size:2rem;letter-spacing:.3em;text-align:center;min-height:48px;margin:10px 0}
+.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:340px;margin:0 auto}.pinpad button{min-height:64px;border-radius:16px;border:1px solid var(--rule);background:var(--paper-2);font-size:1.4rem;font-weight:700;cursor:pointer}
+.pinpad button[data-k="Войти"]{background:var(--signal);color:#fff;border-color:var(--signal);font-size:1rem}
+.cart{display:flex;flex-direction:column;gap:8px}.cl{display:grid;grid-template-columns:1fr auto 110px auto 36px;gap:10px;align-items:center;padding:10px 12px;border-radius:14px;background:var(--paper-2)}
+.cn{font-weight:600}.cn small{display:block;font-weight:500;color:var(--ink-3);font-size:.8rem}
+.cq{display:flex;align-items:center;gap:8px}.cq button{width:38px;height:38px;border-radius:10px;border:1px solid var(--rule);background:var(--paper);font-size:1.2rem;cursor:pointer}
+.cp{width:110px;min-height:40px;border-radius:10px;border:1px solid var(--rule);padding:0 8px;font:inherit;text-align:right}.cx{width:36px;height:36px;border-radius:10px;border:0;background:none;font-size:1.3rem;cursor:pointer;color:var(--ink-3)}
+.ctot{text-align:right;font-size:1.2rem;margin:12px 0}.ctot b{font-size:1.5rem}
+.cform{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cform label{display:flex;flex-direction:column;gap:4px;font-size:.82rem;color:var(--ink-3)}.cform input{min-height:46px;border-radius:12px;border:1px solid var(--rule);padding:0 12px;font:inherit;font-size:16px;color:var(--ink);background:var(--paper)}
+.cpay{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap}.cpay button{min-height:42px;padding:0 16px;border-radius:12px;border:1px solid var(--rule);background:var(--paper);font-weight:600;cursor:pointer}.cpay button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.csend{width:100%;min-height:58px;margin-top:14px;border-radius:16px;border:0;background:var(--signal);color:#fff;font-size:1.1rem;font-weight:700;cursor:pointer}.csend:disabled{opacity:.5}
+.mysh{margin:24px 0 8px;font-size:1.05rem}.ms{display:grid;grid-template-columns:52px 1fr auto auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule-soft,#eee);font-size:.92rem}.ms small{display:block;color:var(--signal-deep)}
+.mst{font-size:.75rem;font-weight:700;padding:2px 8px;border-radius:8px}.mst.w{background:#FFF4E5;color:#8A4B00}.mst.ok{background:#E8F5EC;color:#1E6B39}.mst.x{background:#FDECEC;color:#A12A2A}
+@media (max-width:640px){.cl{grid-template-columns:1fr auto;}.cl .cp{grid-column:1}.cl .cs{text-align:right}.cform{grid-template-columns:1fr}}
 </style>
 
 <header class="top">
@@ -220,6 +240,7 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
       </div>
       <div class="spacer"></div>
       <span class="mono hide-sm" id="stamp" style="color:var(--ink-3)"></span>
+      <button class="tool" id="selBtn" type="button" title="Вход продавца">Продавец</button>
       <button class="tool" id="fs" type="button">На весь экран</button>
     </div>
     <nav class="tabs" id="tabs" role="tablist" aria-label="Разделы"></nav>
@@ -343,8 +364,8 @@ function tireSheet(x){const o=x.o;
     <dl class="facts"><div><dt class="mono">Сезон</dt><dd>${SEAS[o.s][0]}${o.s==='winter'?(o.st?', шипованная':', нешипованная'):''}</dd></div>
     <div><dt class="mono">Размеров в наличии</dt><dd class="tnum">${all.length}</dd></div>
     ${o.cy?`<div><dt class="mono">Производство</dt><dd>${esc(o.cy)}</dd></div>`:''}</dl></div></div>
-    <div class="tw"><table><thead><tr><th>Размер</th><th>Индекс</th><th style="text-align:right">За 1 шт.</th><th style="text-align:right">Комплект 4 шт.</th><th style="text-align:right">Наличие</th></tr></thead>
-    <tbody>${all.map(r=>`<tr class="${hit.has(r.id)&&(f.w||f.p||f.d)?'hit':''}"><td class="sz2">${tSize(r)}</td><td>${r.i||'—'}${r.xl?' XL':''}</td><td class="n">${rub(r.pr)}</td><td class="n"><b>${rub(r.pr*4)}</b></td><td class="n">${stockHtml(r.q)}</td></tr>`).join('')}</tbody></table></div>
+    <div class="tw"><table><thead><tr><th>Размер</th><th>Индекс</th><th style="text-align:right">За 1 шт.</th><th style="text-align:right">Комплект 4 шт.</th><th style="text-align:right">Наличие</th>${SEL?'<th></th>':''}</tr></thead>
+    <tbody>${all.map(r=>`<tr class="${hit.has(r.id)&&(f.w||f.p||f.d)?'hit':''}"><td class="sz2">${tSize(r)}</td><td>${r.i||'—'}${r.xl?' XL':''}</td><td class="n">${rub(r.pr)}</td><td class="n"><b>${rub(r.pr*4)}</b></td><td class="n">${stockHtml(r.q)}</td>${SEL?`<td class="n">${addBtn(r)}</td>`:''}</tr>`).join('')}</tbody></table></div>
     <p class="note">Шиномонтаж и балансировку посчитаем отдельно. Нужного размера нет — привезём под заказ.</p>`);}
 
 /* ---------- ДИСКИ ---------- */
@@ -370,7 +391,7 @@ function disksOut(){const rows=sortList(DISKS.filter(o=>dMatch(o)),o=>o.pr,o=>o.
   return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],diskSvg(o))}<div class="tags"><span class="tag ${o.k==='odd'?'stud':'all'}">${DK[o.k]}</span></div></div>
     <div class="cb"><span class="mono brand">R${o.d} · ${esc(o.pcd)}</span><span class="model" style="font-size:1.25rem">${esc(o.m)}</span>
     <span class="spec">${o.w}×${o.d} · ET${o.et} · DIA ${o.dia}</span>
-    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${o.k==='odd'?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,o.k==='odd'?1:4)}</span></div></div></div>`).join('')}</div>`];}
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${o.k==='odd'?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,o.k==='odd'?1:4)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
 
 /* ---------- АКБ ---------- */
 const STD={euro:'Легковые, евро',asia:'Азия',moto:'Мото',truck:'Грузовые'};
@@ -396,7 +417,7 @@ function akbOut(){const rows=sortList(AKB.filter(o=>aMatch(o)),o=>o.pr,o=>o.m);
     <div class="cb"><span class="mono brand">${o.pol==='rev'?'Обратная полярность':o.pol==='dir'?'Прямая полярность':''}</span>
     <span class="model" style="font-size:1.25rem">${esc(o.m.replace(/^(ASIA|Asia|MOTO)\s+/,'').replace(/^(о\/п|п\/п)\s+/,''))}</span>
     ${o.en?`<span class="spec">Пусковой ток ${o.en} А</span>`:''}
-    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${stockHtml(o.q,1)}</span></div></div></div>`).join('')}</div>`];}
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${stockHtml(o.q,1)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
 
 /* ---------- КРЕПЁЖ ---------- */
 const FK={nut:'Гайки',bolt:'Болты',lock:'Секретки',ring:'Центровочные кольца',stud:'Шпильки',other:'Ключи и прочее'};
@@ -422,7 +443,7 @@ function moreOut(){const rows=sortList(MORE.filter(o=>mMatch(o)),o=>o.pr,o=>o.n)
   return [listHtml(rows,o=>[o.n,S.more.g?'':MG[o.g]])];}
 
 function listHtml(rows,fn){return `<div class="list">${rows.map(o=>{const[a,b]=fn(o);
-  return `<div class="li"><div class="nm">${esc(a)}${b?`<small>${esc(b)}</small>`:''}</div><span class="pr tnum">${rub(o.pr)}</span>${stockHtml(o.q,1)}</div>`;}).join('')}</div>`;}
+  return `<div class="li"><div class="nm">${esc(a)}${b?`<small>${esc(b)}</small>`:''}</div><span class="pr tnum">${rub(o.pr)}</span>${stockHtml(o.q,1)}${addBtn(o)}</div>`;}).join('')}</div>`;}
 
 /* ---------- каркас ---------- */
 const TABS=[['tires','Шины',TIRES.length,TIRES_PICK,tiresOut],['disks','Диски',DISKS.length,DISKS_PICK,disksOut],['akb','Аккумуляторы',AKB.length,AKB_PICK,akbOut],
@@ -437,7 +458,55 @@ function renderOut(){const t=TABS.find(x=>x[0]===S.tab);const [html,bind]=t[4]()
   if(S.tab==='tires')renderPickLite();}
 function renderPickLite(){/* при поиске по шинам доступность фишек меняется — перерисуем без потери фокуса */
   if(document.activeElement&&document.activeElement.id==='q-tires'){renderPick();}}
-function renderAll(){renderTabs();renderPick();renderOut();psum();}
+function renderAll(){renderTabs();renderPick();renderOut();psum();renderCartBtn();}
+/* ===== режим продавца: показываем ассортимент и сразу оформляем продажу; собственник подтверждает в пульте ===== */
+var SEL=null,CART=[];try{CART=JSON.parse(localStorage.getItem('ivanor_cart')||'[]')||[];}catch(_){CART=[];}
+const saveCart=()=>{try{localStorage.setItem('ivanor_cart',JSON.stringify(CART));}catch(_){}renderCartBtn();};
+const PAPI='/montazh/api.php?a=';
+async function papi(a,b){const r=await fetch(PAPI+a,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),credentials:'same-origin'}:{credentials:'same-origin',cache:'no-cache'});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||'Нет связи с пультом');return j;}
+const findItem=id=>TIRES.find(x=>x.id===id)||OTHER.find(x=>x.id===id);
+function itName(o){if(o.b!==undefined&&o.w&&o.s!==undefined)return `${o.w}/${o.p} R${o.d} ${o.b} ${o.m}${o.i?' '+o.i:''}${o.xl?' XL':''}`;if(o.n)return o.n;if(o.pcd)return `Диск ${o.w}×${o.d} ${o.pcd} ${o.m}`;return o.m||'Товар';}
+function addBtn(o){return SEL?`<button class="addb" type="button" data-add="${esc(o.id)}" aria-label="В продажу">＋</button>`:'';}
+function vtoast(t){let el=document.getElementById('vtoast');if(!el){el=document.createElement('div');el.id='vtoast';el.className='vtoast';document.body.appendChild(el);}el.innerHTML=t;el.classList.add('on');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('on'),2600);}
+function renderCartBtn(){let b=document.getElementById('cartBtn');const sb=document.getElementById('selBtn');if(sb)sb.textContent=SEL?SEL.name+' · выйти':'Продавец';
+  if(!SEL){if(b)b.remove();return;}if(!b){b=document.createElement('button');b.id='cartBtn';b.type='button';b.className='cartfab';b.onclick=openCart;document.body.appendChild(b);}
+  const n=CART.reduce((a,x)=>a+x.q,0),sum=CART.reduce((a,x)=>a+x.q*x.price,0);b.innerHTML=n?`Продажа · ${n} шт · <b>${rub(sum)}</b>`:'Продажа · пусто';}
+document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-add]');if(!b)return;e.preventDefault();e.stopPropagation();const o=findItem(b.dataset.add);if(!o)return;
+  const ex=CART.find(x=>x.id===o.id);const set=(o.b!==undefined&&o.s!==undefined)||(o.pcd&&o.k!=='odd');const q0=set?Math.min(4,Math.max(1,o.q||4)):1;
+  if(ex)ex.q+=set?q0:1;else CART.push({id:o.id,name:itName(o),price:o.pr,list:o.pr,q:q0,stock:o.q});saveCart();vtoast(`<b>${ex?'+'+(set?q0:1):'В продаже'}</b> ${esc(itName(o))}`);},true);
+function pinPad(){sheet(`<h2 class="model" id="shTitle" style="font-size:1.6rem;margin:0 0 6px">Вход продавца</h2><p class="note" style="margin-top:0">PIN выдаёт собственник. Покупателю вход не нужен.</p>
+  <div class="pinv" id="pinv"></div><div class="pinpad">${['1','2','3','4','5','6','7','8','9','⌫','0','Войти'].map(k=>`<button type="button" data-k="${k}">${k}</button>`).join('')}</div><p class="err" id="pinE" hidden></p>`);
+  let pin='';const v=document.getElementById('pinv'),show=()=>v.textContent=pin.replace(/./g,'●')||' ';show();
+  document.querySelectorAll('.pinpad [data-k]').forEach(b=>b.onclick=async()=>{const k=b.dataset.k;if(k==='⌫')pin=pin.slice(0,-1);else if(k==='Войти'){try{await papi('login',{pin});await whoAmI();closeSheet();vtoast('<b>Режим продавца</b> Нажимайте «＋» у товара');}catch(e){const er=document.getElementById('pinE');er.textContent=e.message;er.hidden=false;pin='';}}else if(pin.length<8)pin+=k;show();});}
+async function whoAmI(){try{const j=await papi('me');SEL=j.role&&['seller','cashier','owner'].includes(j.role)?{name:j.seller||'Продавец',role:j.role}:null;}catch(_){SEL=null;}renderAll();}
+document.getElementById('selBtn').onclick=async()=>{if(SEL){if(!confirm('Выйти из режима продавца?'))return;try{await papi('logout',{});}catch(_){}SEL=null;renderAll();return;}pinPad();};
+var PAYS=[["card","Карта"],["cash","Наличные"],["sbp","Перевод"],["bank","Безнал"]],CPAY="card";
+async function openCart(){const sum=()=>CART.reduce((a,x)=>a+x.q*x.price,0);
+  sheet(`<h2 class="model" id="shTitle" style="font-size:1.6rem;margin:0 0 10px">Продажа</h2>
+  ${CART.length?`<div class="cart">${CART.map((x,i)=>`<div class="cl"><div class="cn">${esc(x.name)}${x.price<x.list?`<small>по прайсу ${rub(x.list)} · скидка ${Math.round((1-x.price/x.list)*100)}%</small>`:''}${x.q>x.stock?'<small style="color:var(--signal-deep)">в наличии '+x.stock+' шт</small>':''}</div>
+    <div class="cq"><button type="button" data-cq="${i}" data-d="-1">−</button><b>${x.q}</b><button type="button" data-cq="${i}" data-d="1">+</button></div>
+    <input class="cp" type="number" inputmode="decimal" min="0" value="${x.price}" data-cp="${i}" aria-label="Цена за штуку"><b class="cs tnum">${rub(x.q*x.price)}</b><button type="button" class="cx" data-cx="${i}" aria-label="Убрать">×</button></div>`).join('')}</div>
+    <div class="ctot">Итого: <b class="tnum" id="ctot">${rub(sum())}</b></div>
+    <div class="cform"><label>Телефон покупателя<input id="cPh" type="tel" inputmode="tel" placeholder="+7 900 000-00-00"></label><label>Имя<input id="cNm" placeholder="Как зовут"></label>
+      <div class="cpay">${PAYS.map(([k,t])=>`<button type="button" data-pay="${k}" aria-pressed="${CPAY===k}">${t}</button>`).join('')}</div>
+      <label style="grid-column:1/-1">Комментарий<input id="cNo" placeholder="Например: с монтажом, приедет в 15:00"></label></div>
+    <button type="button" class="csend" id="cSend">Отправить собственнику на подтверждение</button>
+    <p class="note">Чек пробивается на Эвоторе как обычно. Собственник проверит продажу и проведёт её в пульте.</p>`:'<p class="note">Пока пусто. Нажимайте «＋» у товара на витрине.</p>'}
+  <h3 class="mysh">Мои продажи сегодня</h3><div id="myS"><p class="note">Загружаю…</p></div>`);
+  document.querySelectorAll('[data-cq]').forEach(b=>b.onclick=()=>{const x=CART[+b.dataset.cq];x.q=Math.max(1,x.q+ +b.dataset.d);saveCart();openCart();});
+  document.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{CART.splice(+b.dataset.cx,1);saveCart();openCart();});
+  document.querySelectorAll('[data-cp]').forEach(inp=>inp.onchange=()=>{const x=CART[+inp.dataset.cp];x.price=Math.max(0,+inp.value||x.list);saveCart();openCart();});
+  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{CPAY=b.dataset.pay;document.querySelectorAll('[data-pay]').forEach(x=>x.setAttribute('aria-pressed',x===b));});
+  const sd=document.getElementById('cSend');if(sd)sd.onclick=async()=>{sd.disabled=true;try{const j=await papi('sale_request',{lines:CART.map(x=>({id:x.id,q:x.q,price:x.price})),phone:document.getElementById('cPh').value,name:document.getElementById('cNm').value,pay:CPAY,note:document.getElementById('cNo').value});
+      CART=[];saveCart();vtoast(`<b>Продажа № ${j.id} отправлена</b> собственник подтвердит в пульте`);openCart();}catch(e){sd.disabled=false;vtoast('<b>Не отправилось</b> '+esc(e.message));}};
+  try{const j=await papi('my_sales');const ST={draft:['ждёт подтверждения','w'],posted:['проведена','ok'],cancelled:['отклонена','x']};
+    const tot=j.rows.filter(r=>r.status==='posted').reduce((a,r)=>a+r.sum,0);
+    document.getElementById('myS').innerHTML=j.rows.length?`<p class="note" style="margin-top:0">Проведено на ${rub(tot)}</p>${j.rows.map(r=>`<div class="ms"><span class="tnum">${r.time}</span><span>№ ${r.id} · ${esc(r.items)}${r.reason?`<small>причина: ${esc(r.reason)}</small>`:''}</span><b class="tnum">${rub(r.sum)}</b><span class="mst ${ST[r.status][1]}">${ST[r.status][0]}</span></div>`).join('')}`:'<p class="note" style="margin-top:0">Сегодня продаж ещё не было.</p>';}
+  catch(e){document.getElementById('myS').innerHTML=`<p class="note">${esc(e.message)}</p>`;}}
+whoAmI();
+/* без интернета витрина открывается с последним сохранённым наличием */
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+window.addEventListener('offline',()=>vtoast('<b>Нет интернета</b> показываю последнее сохранённое наличие'));
 /* подбор прокручивается вместе со страницей; когда он ушёл вверх — в шапке короткая строка выбранного */
 function psum(){const sel=[...document.querySelectorAll('#pick .chip[aria-pressed="true"]')].map(b=>b.textContent.trim());if(S.q)sel.push('«'+S.q+'»');
   $('#psumT').textContent=sel.length?'Подбор: '+sel.join(' · '):'Подбор не выбран';}
