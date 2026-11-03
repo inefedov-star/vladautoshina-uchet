@@ -141,11 +141,38 @@ dl.kv dd{margin:0}
 .login input{width:100%;font:inherit;font-size:16px;padding:.85em;border:1.5px solid var(--ink);
   border-radius:3px;margin-bottom:10px;background:#fff}
 .err{color:var(--sig);font-size:.9rem;margin-bottom:10px}
+/* ═══ внутри пульта IVANOR: те же шрифты, белые карточки, скругления; фон раздела — тёплый песок ═══ */
+:root{--paper:#F6F1E9;--paper2:#FFFFFF;--paper3:#F1ECE3;--ink:#1B1D21;--ink2:#4A4F57;--ink3:#6B7079;
+  --rule:#E6DFD3;--rule2:#EFE9DF;--sig:#FF6600;--sig-t:#FFF1E8;--cold:#2563C9;--cold-t:#E5EEFC;--ok:#1E7A44;--ok-t:#E8F5EC;--warn:#8A4B00;--acc:#B0661A}
+body{font-family:'Golos Text',system-ui,sans-serif;background:var(--paper)}
+h1,h2,.stat b{font-family:'Montserrat','Golos Text',sans-serif;font-weight:700;letter-spacing:-.01em}
+.mn,.f label{font-family:'Golos Text',sans-serif;letter-spacing:0;text-transform:none;font-size:.78rem;font-weight:500}
+.top{background:#fff;color:var(--ink);border-bottom:1px solid var(--rule);padding:8px 14px}
+.top b{font-family:'Montserrat',sans-serif;color:var(--acc)}
+.top a{color:var(--ink2);font-weight:600;padding:6px 10px;border-radius:9px;background:var(--paper3)}
+.top a:hover{color:var(--ink)}
+.stats{gap:10px;background:none;border:0}
+.stat{background:#fff;border-radius:14px;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.search input,.f input,.f select,.f textarea{border:1px solid var(--rule);border-radius:10px}
+.search input:focus{outline:none;border-color:var(--sig)}
+.chip{border:1px solid var(--rule);background:#fff;font-weight:600}
+.chip.on{background:var(--ink);border-color:var(--ink)}
+.row,.card{background:#fff;border:0;border-radius:14px;box-shadow:0 1px 2px rgba(16,24,40,.06)}
+.card h3{font-family:'Montserrat',sans-serif;border-bottom:1px solid var(--rule)}
+.tag{font-family:'Golos Text',sans-serif;letter-spacing:0;border:0;border-radius:6px;font-weight:600;font-size:.72rem}
+.btn{border-radius:10px;border-width:1px}
+.btn.g{border-color:var(--rule)}
+nav.tabs{background:#fff;border-top:1px solid var(--rule)}
+nav.tabs a.on{color:var(--acc)}
+nav.tabs a.add span.b{border-radius:12px}
+table{border-collapse:separate;border-spacing:0}
 </style>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 <header class="top">
-  <b>Склад IVANOR</b>
+  <b>Шинный отель</b>
   <span class="sp"></span>
   <a href="client.php">Клиенты</a>
   <a href="export.php">Выгрузка</a>

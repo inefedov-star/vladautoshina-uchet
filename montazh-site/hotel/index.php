@@ -261,6 +261,11 @@ table.tbl.wrapmode .cf>.fio,table.tbl.wrapmode .cf>.tx{white-space:normal;overfl
 .shead .svis{margin-left:auto;font-family:ui-monospace,monospace;font-size:.72rem;
   color:var(--sig)}
 .sgroup .tblwrap{border-top:0;border-radius:0 0 3px 3px}
+/* внутри пульта: светлая шапка таблицы, как в магазине */
+.tw,.tblwrap{border-radius:14px}
+table.tbl th{background:#fff;color:var(--ink3);border-bottom:1px solid var(--rule)}
+table.tbl th a{color:var(--ink3)}table.tbl th a.on{color:var(--ink)}
+table.tbl tbody tr{background:#fff}
 </style>
 
 <script>
