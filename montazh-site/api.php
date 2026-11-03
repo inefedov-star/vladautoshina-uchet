@@ -731,15 +731,17 @@ try {
     needRole($role, ['owner', 'master', 'cashier']);
     $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); $kind = (string)($_GET['kind'] ?? ''); $only = ($_GET['instock'] ?? '1') === '1';
     $lim = min(300, max(20, (int)($_GET['limit'] ?? 120)));
-    $wh = ($_GET['wh'] ?? 'shop') === 'custody' ? 'custody' : 'shop';
-    $sm = stockMap($cfg, $wh); $owner = $role === 'owner';
+    // wh=all — общий каталог: наш склад и ответхранение вместе, ОХ показывается отдельной цифрой
+    $wh = in_array($_GET['wh'] ?? 'shop', ['custody', 'all'], true) ? $_GET['wh'] : 'shop';
+    $sm = stockMap($cfg, $wh === 'custody' ? 'custody' : 'shop'); $smc = $wh === 'all' ? stockMap($cfg, 'custody') : []; $owner = $role === 'owner';
     $toks = array_values(array_filter(preg_split('/[\s\/]+/u', str_replace(['*', '×', 'х'], ' ', $q))));
     $rows = []; $tot = ['n' => 0, 'qty' => 0, 'cost' => 0, 'retail' => 0];
     // выбранные кнопки быстрого выбора: {"d":"16","s":"stud",...}
     $F = []; foreach ((array)json_decode((string)($_GET['f'] ?? ''), true) as $k => $v) if ($v !== null && $v !== '') $F[(string)$k] = (string)$v;
     $fAll = []; $fAvail = []; $pmap = photoMap($cfg);
     foreach (db($cfg)->query("SELECT id, name, kind, attrs, barcode, article, price, unit FROM products WHERE archived = 0 AND kind != 'svc' ORDER BY name")->fetchAll() as $p) {
-      $s = $sm[(int)$p['id']] ?? ['q' => 0, 'c' => 0]; if ($only && $s['q'] <= 0) continue;
+      $s = $sm[(int)$p['id']] ?? ['q' => 0, 'c' => 0]; $qc = $wh === 'all' ? (float)($smc[(int)$p['id']]['q'] ?? 0) : 0; $cc = $wh === 'all' ? (float)($smc[(int)$p['id']]['c'] ?? 0) : 0;
+      if ($only && $s['q'] <= 0 && $qc <= 0) continue;
       if ($kind !== '' && $p['kind'] !== $kind && !($kind === 'other' && in_array($p['kind'], ['acc', 'tube', 'tool', 'tireo'], true))) continue;
       if ($kind === 'other') { $g = $p['kind'] === 'acc' ? ((json_decode($p['attrs'], true) ?: [])['group'] ?? 'acc') : $p['kind']; if ($g === 'consumable') $g = 'acc'; $fv = ['g' => [$g]]; }
       else $fv = $kind !== '' ? facetVals($kind, json_decode($p['attrs'], true) ?: []) : [];
@@ -751,7 +753,8 @@ try {
       foreach ($fv as $k => $vals) foreach ($vals as $v) { $fAll[$k][(string)$v] = true; if ($tm && (!$miss || $miss === [$k])) $fAvail[$k][(string)$v] = ($fAvail[$k][(string)$v] ?? 0) + 1; }
       if ($miss || !$tm) continue;
       $tot['n']++; $tot['qty'] += max(0, $s['q']); $tot['retail'] += max(0, $s['q']) * (float)$p['price']; if ($owner) $tot['cost'] += max(0, $s['c']);
-      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? ($pmap[photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id'])]['url'] ?? null) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null];
+      if ($qc > 0) { $tot['qc'] = ($tot['qc'] ?? 0) + $qc; $tot['retailc'] = ($tot['retailc'] ?? 0) + $qc * (float)$p['price']; }
+      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? ($pmap[photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id'])]['url'] ?? null) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'qc' => $qc, 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'costc' => $owner && $qc > 0 ? round($cc / $qc, 2) : null];
     }
     if (!$owner) unset($tot['cost']);
     $facets = []; foreach ($fAll as $k => $vals) { $facets[$k] = []; foreach (array_keys($vals) as $v) $facets[$k][] = [(string)$v, $fAvail[$k][(string)$v] ?? 0]; }
@@ -774,11 +777,12 @@ try {
     $q = trim((string)($_GET['q'] ?? '')); if (mb_strlen($q) < 2) out(['rows' => []]);
     $Q = mb_strtoupper($q); $toks = array_values(array_filter(preg_split('/[\s\/]+/u', str_replace(['*', '×', 'х'], ' ', $Q))));
     $wh = ($_GET['wh'] ?? 'shop') === 'custody' ? 'custody' : 'shop';
-    $sm = stockMap($cfg, $wh); $exact = []; $rows = [];
+    $sm = stockMap($cfg, $wh); $smc = $wh === 'custody' ? $sm : stockMap($cfg, 'custody'); $exact = []; $rows = [];
     $last = lastCosts($cfg);
     foreach (db($cfg)->query("SELECT id, name, kind, barcode, article, price, unit FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll() as $p) {
       $row = ['id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'price' => (float)$p['price'], 'unit' => $p['unit'], 'qty' => ($sm[(int)$p['id']]['q'] ?? 0), 'last' => $last[(int)$p['id']] ?? null];
       $sq = $sm[(int)$p['id']] ?? null; $row['avg'] = $sq && $sq['q'] > 0 ? round($sq['c'] / $sq['q'], 2) : ($wh === 'shop' ? $row['last'] : null);
+      $cq = $smc[(int)$p['id']] ?? null; $row['qc'] = $cq['q'] ?? 0; $row['avgc'] = $cq && $cq['q'] > 0 ? round($cq['c'] / $cq['q'], 2) : null;
       if ($p['barcode'] !== '' && ($p['barcode'] === $q || ltrim($p['barcode'], '0') === ltrim($q, '0'))) { $exact[] = $row; continue; }
       if ($p['article'] !== '' && mb_strtoupper($p['article']) === $Q) { $exact[] = $row; continue; }
       $hay = mb_strtoupper(str_replace('/', ' ', $p['name'])) . ' ' . $p['barcode'];
@@ -817,12 +821,12 @@ try {
   case 'doc':
     needRole($role, ['owner']);
     $id = (int)($_GET['id'] ?? 0); $st = db($cfg)->prepare('SELECT * FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404);
-    $l = db($cfg)->prepare('SELECT m.id, m.product_id, m.qty, m.cost, m.price, m.list, p.name, p.unit, p.price cur_price, p.barcode FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ? ORDER BY m.id'); $l->execute([$id]);
+    $l = db($cfg)->prepare('SELECT m.id, m.product_id, m.wh, m.qty, m.cost, m.price, m.list, p.name, p.unit, p.price cur_price, p.barcode FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ? ORDER BY m.id'); $l->execute([$id]);
     $d['label'] = docLabel($d['type']); $d['fee'] = (float)$d['fee'];
     // у продажи — какие возвраты по ней уже есть
     $rets = []; $retq = [];
     if ($d['type'] === 'sale') { $r = db($cfg)->prepare("SELECT id, day, status FROM docs WHERE type = 'ret' AND base_id = ? ORDER BY id"); $r->execute([$id]); $rets = $r->fetchAll(); $retq = returnedMap($cfg, $id); }
-    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
+    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'wh' => $r['wh'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
 
   case 'doc_save':
     // черновик прихода: шапка и строки целиком; проведённый документ так не меняется
@@ -846,7 +850,9 @@ try {
       $cost = $type === 'in' ? (float)$num($l['cost'] ?? 0) : 0;
       // в продаже list — цена по прайсу на момент продажи (для расчёта скидки)
       $list = $type === 'sale' ? ($num($l['list'] ?? null) ?? (float)$cp) : null;
-      $ins->execute([$id, $pid, $wh, $sign * $q, $cost, $num($l['price'] ?? null), $list]); }
+      // в продаже у каждой строки свой склад: наш или ответхранение поставщика
+      $lwh = $type === 'sale' && ($l['wh'] ?? '') === 'custody' ? 'custody' : $wh;
+      $ins->execute([$id, $pid, $lwh, $sign * $q, $cost, $num($l['price'] ?? null), $list]); }
     $p->commit(); logit($cfg, $role, 'doc_save', (string)$id);
     out(['id' => $id]);
 
@@ -855,17 +861,21 @@ try {
     post(); needRole($role, ['owner']);
     $id = (int)(body()['id'] ?? 0); $p = db($cfg);
     $st = $p->prepare('SELECT * FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404); if ($d['status'] !== 'draft') fail('Документ уже проведён или отменён', 409);
-    $l = $p->prepare('SELECT product_id, qty, cost, price FROM moves WHERE doc_id = ?'); $l->execute([$id]); $lines = $l->fetchAll(); if (!$lines) fail('В документе нет строк');
+    $l = $p->prepare('SELECT product_id, wh, qty, cost, price FROM moves WHERE doc_id = ?'); $l->execute([$id]); $lines = $l->fetchAll(); if (!$lines) fail('В документе нет строк');
     if ($d['type'] === 'in' && $d['wh'] === 'shop') foreach ($lines as $x) if ((float)$x['cost'] <= 0) fail('Не у всех строк указана цена закупки');
     $force = !empty(body()['force']); $setCost = [];
 
     if (in_array($d['type'], ['sale', 'iss'], true)) {
       // списываем по средней себестоимости на момент проведения; проверяем, хватает ли товара
-      $sm = stockMap($cfg, $d['wh']); $last = lastCosts($cfg); $need = []; $short = [];
-      foreach ($lines as $x) $need[(int)$x['product_id']] = ($need[(int)$x['product_id']] ?? 0) - (float)$x['qty'];
+      // у каждой строки свой склад (в продаже — наш или ОХ, в выдаче — только ОХ)
+      $SM = ['shop' => stockMap($cfg, 'shop'), 'custody' => stockMap($cfg, 'custody')]; $last = lastCosts($cfg); $need = []; $short = [];
+      foreach ($lines as $x) { $k = (int)$x['product_id'] . '|' . ($x['wh'] === 'custody' ? 'custody' : 'shop'); $need[$k] = ($need[$k] ?? 0) - (float)$x['qty']; }
       $nm = $p->prepare('SELECT name FROM products WHERE id = ?');
-      foreach ($need as $pid => $q) { $have = $sm[$pid]['q'] ?? 0; if ($have + 1e-9 < $q) { $nm->execute([$pid]); $short[] = $nm->fetchColumn() . ' (есть ' . $have . ', нужно ' . $q . ')'; }
-        $setCost[$pid] = $have > 0 ? round($sm[$pid]['c'] / $have, 2) : ($d['type'] === 'sale' ? ($last[$pid] ?? 0) : 0); }
+      foreach ($need as $k => $q) { [$pid, $w] = explode('|', $k); $pid = (int)$pid; $have = $SM[$w][$pid]['q'] ?? 0;
+        if ($have + 1e-9 < $q) { $nm->execute([$pid]); $short[] = $nm->fetchColumn() . ($w === 'custody' ? ' — на ОХ' : '') . ' (есть ' . $have . ', нужно ' . $q . ')'; }
+        $setCost[$k] = $have > 0 ? round($SM[$w][$pid]['c'] / $have, 2) : ($d['type'] === 'sale' && $w === 'shop' ? ($last[$pid] ?? 0) : 0); }
+      // с ответхранения выдаём только то, что на него пришло — без «всё равно провести»
+      if ($short && $d['type'] === 'iss') fail('На ответхранении нет столько товара: ' . implode('; ', $short) . '. Выдать можно только то, что пришло на ОХ.', 409);
       if ($short && !$force) out(['needForce' => true, 'short' => $short]);
     }
     if ($d['type'] === 'ret') {
@@ -880,10 +890,10 @@ try {
         foreach ($lines as $x) $want[(int)$x['product_id']] = ($want[(int)$x['product_id']] ?? 0) + (float)$x['qty'];
         foreach ($want as $pid => $q) if ($q > ($sold[$pid] ?? 0) - ($done[$pid] ?? 0) + 1e-9) fail('Возвращают больше, чем было продано в продаже № ' . $d['base_id'] . ' (с учётом прошлых возвратов)');
       }
-      foreach ($lines as $x) { $pid = (int)$x['product_id']; $sq = $sm[$pid] ?? null; $setCost[$pid] = $bc[$pid] ?? ($sq && $sq['q'] > 0 ? round($sq['c'] / $sq['q'], 2) : ($last[$pid] ?? 0)); }
+      foreach ($lines as $x) { $pid = (int)$x['product_id']; $sq = $sm[$pid] ?? null; $setCost[$pid . '|' . $x['wh']] = $bc[$pid] ?? ($sq && $sq['q'] > 0 ? round($sq['c'] / $sq['q'], 2) : ($last[$pid] ?? 0)); }
     }
     $p->beginTransaction();
-    if ($setCost) { $uc = $p->prepare('UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ?'); foreach ($setCost as $pid => $c) $uc->execute([$c, $id, $pid]); }
+    if ($setCost) { $uc = $p->prepare('UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ? AND wh = ?'); foreach ($setCost as $k => $c) { [$pid, $w] = explode('|', $k); $uc->execute([$c, $id, (int)$pid, $w]); } }
     if (in_array($d['type'], ['sale', 'ret'], true) && $d['phone'] !== '') touchClient($cfg, $d['phone'], trim((string)$d['partner']), '');
     if ($d['type'] === 'in' && $d['wh'] === 'shop') { $up = $p->prepare('UPDATE products SET price = ?, updated = ? WHERE id = ? AND price != ?'); foreach ($lines as $x) if ($x['price'] !== null && (float)$x['price'] > 0) $up->execute([(float)$x['price'], time(), $x['product_id'], (float)$x['price']]); }
     $p->prepare("UPDATE docs SET status = 'posted', posted_at = ? WHERE id = ?")->execute([time(), $id]);
@@ -901,8 +911,8 @@ try {
     if ($d['type'] === 'sale') { $r = db($cfg)->prepare("SELECT id FROM docs WHERE type = 'ret' AND status = 'posted' AND base_id = ?"); $r->execute([$id]); $ids = $r->fetchAll(PDO::FETCH_COLUMN);
       if ($ids) fail('По этой продаже проведён возврат № ' . implode(', ', $ids) . ' — сначала отмените его', 409); }
     // проверка: не уйдёт ли остаток в минус
-    $sm = stockMap($cfg, $d['wh']); $l = db($cfg)->prepare('SELECT m.product_id, m.qty, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ?'); $l->execute([$id]); $neg = [];
-    foreach ($l->fetchAll() as $x) { $after = ($sm[(int)$x['product_id']]['q'] ?? 0) - (float)$x['qty']; if ($after < 0) $neg[] = $x['name'] . ' (станет ' . $after . ')'; }
+    $SM = ['shop' => stockMap($cfg, 'shop'), 'custody' => stockMap($cfg, 'custody')]; $l = db($cfg)->prepare('SELECT m.product_id, m.wh, m.qty, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ?'); $l->execute([$id]); $neg = [];
+    foreach ($l->fetchAll() as $x) { $w = $x['wh'] === 'custody' ? 'custody' : 'shop'; $after = ($SM[$w][(int)$x['product_id']]['q'] ?? 0) - (float)$x['qty']; if ($after < 0) $neg[] = $x['name'] . ($w === 'custody' ? ' (ОХ)' : '') . ' (станет ' . $after . ')'; }
     if ($neg && empty($b['force'])) out(['needForce' => true, 'negative' => $neg]);
     db($cfg)->prepare("UPDATE docs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?")->execute([time(), $role, $reason, $id]);
     logit($cfg, $role, 'doc_cancel', $id . ': ' . $reason);
