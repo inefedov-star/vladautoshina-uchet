@@ -18,11 +18,19 @@ if ($__hd === '') {
        . '<p style="color:#666">Пульт сейчас лежит в ' . htmlspecialchars(dirname(__DIR__)) . '</p></body>';
     exit;
 }
+// Цены, сроки, геометрия склада и реквизиты — из настроек старого адреса (sklad.shinhotel33.ru/config.php):
+// правите там — меняется и в пульте. Пароль оттуда пульт не использует.
+if (is_readable($__hd . '/config.php')) {
+    require_once $__hd . '/config.php';          // задаёт и DB_FILE, PHOTO_DIR — та же папка
+    if (!defined('SHARE_BASE')) define('SHARE_BASE', 'https://sklad.shinhotel33.ru');
+    return;
+}
+// запасной вариант, если файл настроек старого адреса не прочитался
 define('DB_FILE', $__hd . '/sklad.db');
 define('PHOTO_DIR', $__hd . '/uploads');
 define('APP_PASS', bin2hex(random_bytes(16)));   // пароль не используется: вход через пульт
 // ссылка на фотоотчёт для клиента — по-прежнему короткая, на старом адресе
-const SHARE_BASE = 'https://sklad.shinhotel33.ru';
+define('SHARE_BASE', 'https://sklad.shinhotel33.ru');
 
 // Цены за сезон, ₽
 const PRICE_ASSEMBLED = 3500;   // колёса в сборе
