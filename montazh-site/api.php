@@ -4,6 +4,7 @@
    Проверка хостинга: откройте api.php?a=selftest в браузере. */
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
+date_default_timezone_set('Europe/Moscow');
 header('X-Robots-Tag: noindex, nofollow');
 header('Cache-Control: no-store');
 
@@ -150,7 +151,7 @@ function stockMap(array $cfg, string $wh = 'shop'): array {
   foreach ($st->fetchAll() as $r) $out[(int)$r['pid']] = ['q' => (float)$r['q'], 'c' => (float)$r['c']];
   return $out;
 }
-function docLabel(string $t): string { return ['open' => 'Ввод остатков', 'in' => 'Приход', 'iss' => 'Выдача с ответхранения', 'sale' => 'Продажа', 'ret' => 'Возврат', 'off' => 'Списание', 'inv' => 'Инвентаризация', 'rin' => 'Возврат поставщику'][$t] ?? $t; }
+function docLabel(string $t): string { return ['open' => 'Ввод остатков', 'in' => 'Приход', 'iss' => 'Выдача с ответхранения', 'sale' => 'Продажа', 'ret' => 'Возврат', 'off' => 'Списание', 'inv' => 'Корректировка остатков', 'rin' => 'Возврат поставщику'][$t] ?? $t; }
 // последняя закупочная цена по товарам (для подсказки в приходе и как запасная себестоимость)
 function lastCosts(array $cfg): array {
   $last = [];
@@ -743,7 +744,7 @@ try {
     // у продажи — какие возвраты по ней уже есть
     $rets = []; $retq = [];
     if ($d['type'] === 'sale') { $r = db($cfg)->prepare("SELECT id, day, status FROM docs WHERE type = 'ret' AND base_id = ? ORDER BY id"); $r->execute([$id]); $rets = $r->fetchAll(); $retq = returnedMap($cfg, $id); }
-    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
+    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
 
   case 'doc_save':
     // черновик прихода: шапка и строки целиком; проведённый документ так не меняется
@@ -991,6 +992,58 @@ try {
     foreach (array_slice((array)($b['pairs'] ?? []), 0, 500) as $x) { $pid = (int)($x['product_id'] ?? 0); if (!$pid) continue;
       foreach ([(string)($x['code'] ?? ''), (string)($x['scode'] ?? '')] as $c) if (trim($c) !== '') { $ins->execute([$pk, codeNorm($c), $pid, time()]); $n++; } }
     out(['ok' => true, 'saved' => $n]);
+
+  case 'vitrina':
+    // для витрины: живое наличие нашего склада и розничные цены. Без себестоимости, поставщиков и закупок
+    $sm = stockMap($cfg, 'shop'); $tires = []; $other = [];
+    foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs, price, country FROM products WHERE archived = 0 AND kind != 'svc' AND price > 0")->fetchAll() as $p) {
+      $q = (int)floor($sm[(int)$p['id']]['q'] ?? 0); if ($q <= 0) continue;
+      $a = json_decode($p['attrs'], true) ?: []; $id = $p['ext_id'] !== null && $p['ext_id'] !== '' ? (string)$p['ext_id'] : 'p' . $p['id'];
+      $n = trim(preg_replace('/\s+/u', ' ', $p['name'])); $pr = (int)round((float)$p['price']);
+      if ($p['kind'] === 'tire' && !empty($a['w'])) {
+        $tires[] = ['id' => $id, 'w' => (int)$a['w'], 'p' => (int)$a['p'], 'd' => (int)$a['d'], 'c' => !empty($a['c']), 'b' => (string)($a['brand'] ?? ''), 'm' => (string)($a['model'] ?? ''), 'a' => $a['alias'] ?? null,
+          's' => $a['season'] ?? 'all', 'st' => !empty($a['stud']), 'xl' => !empty($a['xl']), 'i' => $a['index'] ?? null, 'pr' => $pr, 'q' => $q, 'suv' => !empty($a['suv']), 'cy' => $p['country'] !== '' ? $p['country'] : null];
+        continue; }
+      $o = ['id' => $id, 'n' => $n, 'pr' => $pr, 'q' => $q];
+      if ($p['kind'] === 'disk') { $o += ['t' => 'disk', 'k' => $a['type'] ?? 'cast', 'pcds' => $a['pcds'] ?? [], 'd' => isset($a['d']) ? (int)$a['d'] : null, 'w' => $a['w'] ?? null, 'pcd' => $a['pcd'] ?? null, 'et' => $a['et'] ?? null, 'dia' => $a['dia'] ?? null, 'm' => ($a['model'] ?? '') !== '' ? $a['model'] : $n]; }
+      elseif ($p['kind'] === 'akb') { $o += ['t' => 'akb', 'ah' => $a['ah'] ?? null, 'pol' => $a['pol'] ?? null, 'std' => $a['std'] ?? 'euro', 'en' => $a['en'] ?? null, 'm' => preg_replace('/^Аккумулятор\s+/u', '', $n)]; }
+      elseif ($p['kind'] === 'fast') { $o += ['t' => 'fast', 'th' => $a['thread'] ?? null, 'seat' => $a['seat'] ?? null, 'k' => $a['type'] ?? 'other']; if (!empty($a['ring'])) { $o['ro'] = $a['ring']['out'] ?? null; $o['ri'] = $a['ring']['in'] ?? null; } }
+      elseif (in_array($p['kind'], ['tireo', 'tube', 'tool'], true)) $o['t'] = $p['kind'];
+      else { $g = $a['group'] ?? 'acc'; $o += ['t' => 'acc', 'g' => $g === 'consumable' ? 'acc' : $g]; }
+      $other[] = $o;
+    }
+    $last = (int)db($cfg)->query("SELECT MAX(COALESCE(posted_at, created)) FROM docs WHERE status = 'posted'")->fetchColumn();
+    header('Cache-Control: public, max-age=60'); header('Access-Control-Allow-Origin: *');
+    out(['live' => true, 'stamp' => date('d.m.Y H:i'), 'changed' => $last ? date('d.m.Y H:i', $last) : null, 'tires' => $tires, 'other' => $other]);
+
+  case 'stock_compare':
+  case 'stock_sync':
+    // сверка остатков нашего склада с выгрузкой каталога CloudShop; stock_sync — проводит корректировку разницы
+    post(); needRole($role, ['owner']);
+    $b = body(); $file = [];
+    foreach ((array)($b['lines'] ?? []) as $l) { $e = trim((string)($l['ext_id'] ?? '')); if ($e !== '') $file[$e] = ['q' => (float)($l['qty'] ?? 0), 'c' => max(0, (float)($l['cost'] ?? 0))]; }
+    if (count($file) < 10) fail('В файле слишком мало строк — это не полная выгрузка каталога');
+    $sm = stockMap($cfg, 'shop'); $diffs = []; $tot = ['ours_q' => 0, 'file_q' => 0, 'ours_c' => 0, 'file_c' => 0, 'n' => 0, 'plus' => 0, 'minus' => 0];
+    foreach (db($cfg)->query("SELECT id, ext_id, name, kind FROM products WHERE kind != 'svc' AND ext_id IS NOT NULL AND ext_id != ''")->fetchAll() as $p) {
+      $id = (int)$p['id']; $o = $sm[$id] ?? ['q' => 0, 'c' => 0]; $f = $file[$p['ext_id']] ?? ['q' => 0, 'c' => 0];
+      $tot['ours_q'] += max(0, $o['q']); $tot['file_q'] += max(0, $f['q']); $tot['ours_c'] += max(0, $o['c']); $tot['file_c'] += max(0, $f['q']) * $f['c'];
+      $d = round($f['q'] - $o['q'], 3); if (abs($d) < 0.001) continue;
+      $avg = $o['q'] > 0 ? $o['c'] / $o['q'] : 0;
+      $diffs[] = ['id' => $id, 'name' => $p['name'], 'ours' => $o['q'], 'file' => $f['q'], 'd' => $d, 'cost' => round($d > 0 ? ($f['c'] ?: $avg) : ($avg ?: $f['c']), 2)];
+      $tot['n']++; if ($d > 0) $tot['plus'] += $d; else $tot['minus'] += -$d;
+    }
+    $known = array_flip(db($cfg)->query("SELECT ext_id FROM products WHERE ext_id IS NOT NULL AND ext_id != ''")->fetchAll(PDO::FETCH_COLUMN));
+    $tot['missing'] = 0; foreach ($file as $e => $f) if ($f['q'] > 0 && !isset($known[$e])) $tot['missing']++;
+    foreach (['ours_c', 'file_c'] as $k) $tot[$k] = round($tot[$k], 2);
+    usort($diffs, fn($x, $y) => abs($y['d'] * $y['cost']) <=> abs($x['d'] * $x['cost']));
+    if ($a === 'stock_compare') out(['total' => $tot, 'diffs' => array_slice($diffs, 0, 400)]);
+    if (!$diffs) out(['ok' => true, 'id' => null]);
+    $day = isDay($b['day'] ?? null) ? $b['day'] : date('Y-m-d'); $p = db($cfg); $p->beginTransaction();
+    $p->prepare("INSERT INTO docs (type, num, day, partner, note, wh, status, author, created, posted_at) VALUES ('inv', '', ?, '', ?, 'shop', 'posted', ?, ?, ?)")->execute([$day, 'Сверка остатков с выгрузкой CloudShop: ' . count($diffs) . ' поз.', $role, time(), time()]);
+    $id = (int)$p->lastInsertId(); $ins = $p->prepare("INSERT INTO moves (doc_id, product_id, wh, qty, cost, price) VALUES (?,?, 'shop', ?,?, NULL)");
+    foreach ($diffs as $x) $ins->execute([$id, $x['id'], $x['d'], $x['cost']]);
+    $p->commit(); logit($cfg, $role, 'stock_sync', (string)$id);
+    out(['ok' => true, 'id' => $id, 'n' => count($diffs)]);
 
   case 'price_set':
     // цена продажи в карточке

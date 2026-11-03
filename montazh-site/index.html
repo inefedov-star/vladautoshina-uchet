@@ -1083,7 +1083,7 @@ async function openImport(){let st;try{st=await api('cat_state');}catch(e){toast
     <p class="pay" style="margin:0">CloudShop → Товары → «Экспорт» в Excel. Нужен файл каталога, в котором есть столбцы «ID», «Наименование», «Цена продажи», «Себестоимость», «Общий остаток».</p>
     <label class="btn" style="cursor:pointer;width:max-content">Выбрать файл .xlsx<input type="file" id="imFile" accept=".xlsx,.xls" hidden></label>
     <div id="imOut">${st.products?`<p class="note">В базе уже ${st.products} карточек. Повторная загрузка обновит названия, группы и цены и добавит новые товары.</p>`:''}
-      ${st.open?`<p class="note">Стартовые остатки введены ${fmtDay(st.open.day)}. Остатки при повторной загрузке не меняются.</p>`:''}</div>
+      ${st.open?`<p class="note">Стартовые остатки введены ${fmtDay(st.open.day)}. Остатки при повторной загрузке не меняются — но их можно сверить с файлом и поправить разницу.</p>`:''}</div>
   </div>`;
   $('#close').onclick=closeSheet;const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
   $('#imFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const out=$('#imOut');out.innerHTML='<p class="note">Читаем файл…</p>';
@@ -1100,7 +1100,22 @@ async function openImport(){let st;try{st=await api('cat_state');}catch(e){toast
         <p class="note">${Object.entries(byKind).map(([k,v])=>`${KIND_ONE[k]||k}: ${v}`).join(' · ')}${noSize||noAh?`. Не разобрались по полям: дисков ${noSize}, АКБ ${noAh} — останутся с названием как есть.`:''}</p>
         ${st.open?'':`<label class="row" style="align-items:center;gap:10px"><input type="checkbox" id="imOpen" checked style="width:22px;height:22px"> <span>Ввести стартовые остатки и себестоимость из этого файла на дату</span> <input class="inp" type="date" id="imDay" value="${iso(new Date())}" style="max-width:190px"></label>
           <p class="note">Сверьте цифры выше с CloudShop: штуки и сумма по себестоимости должны совпасть. Стартовые остатки вводятся один раз — дальше они меняются только документами.</p>`}
-        <button class="btn sig" type="button" id="imGo">Загрузить в учёт</button><p class="pay" id="imProg"></p>`;
+        <div class="row"><button class="btn sig" type="button" id="imGo">Загрузить в учёт</button>${st.open?'<button class="btn" type="button" id="imCmp">Сверить остатки с файлом</button>':''}</div><p class="pay" id="imProg"></p><div id="imCmpOut"></div>`;
+      const cmpBtn=document.getElementById('imCmp');if(cmpBtn)cmpBtn.onclick=async()=>{const box=$('#imCmpOut');box.innerHTML='<p class="note">Сравниваю…</p>';
+        const lines=items.filter(i=>i.kind!=='svc').map(i=>({ext_id:i.ext_id,qty:i._qty,cost:i._cost}));
+        let j;try{j=await api('stock_compare',{lines});}catch(e){box.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
+        const t=j.total;
+        box.innerHTML=`<h2 class="sec" style="margin-top:18px">Сверка с CloudShop</h2>
+          <div class="tiles" style="margin:0 0 10px"><div class="tile"><span class="mono">У нас, шт.</span><b class="tnum">${fmtQty(Math.round(t.ours_q))}</b><small class="pay">${rub(t.ours_c)}</small></div>
+          <div class="tile"><span class="mono">В файле, шт.</span><b class="tnum">${fmtQty(Math.round(t.file_q))}</b><small class="pay">${rub(t.file_c)}</small></div>
+          <div class="tile ${t.n?'acc':''}"><span class="mono">Расходится позиций</span><b class="tnum">${t.n}</b><small class="pay">${t.plus?'в файле больше на '+fmtQty(t.plus)+' шт. ':''}${t.minus?'у нас больше на '+fmtQty(t.minus)+' шт.':''}</small></div></div>
+          ${t.missing?`<p class="hint" style="margin-bottom:10px">В файле ${t.missing} товаров с остатком, которых ещё нет в нашем каталоге. Сначала нажмите «Загрузить в учёт», потом сверяйте снова.</p>`:''}
+          ${t.n?`<div class="tw"><table class="sttab"><thead><tr><th>Товар</th><th>У нас</th><th>В CloudShop</th><th>Разница</th></tr></thead><tbody>${j.diffs.slice(0,60).map(d=>`<tr><td class="nm">${esc(d.name)}</td><td>${fmtQty(d.ours)}</td><td>${fmtQty(d.file)}</td><td style="font-weight:700;color:${d.d<0?'var(--signal-deep)':'var(--moss)'}">${d.d>0?'+':''}${fmtQty(d.d)}</td></tr>`).join('')}</tbody></table></div>
+            ${j.diffs.length>60?`<p class="note">Показаны 60 самых крупных по сумме из ${t.n}.</p>`:''}
+            <p class="note">Если в CloudShop всё верно (вы вели там те же приходы и продажи), нажмите кнопку — система проведёт документ «Корректировка остатков» на эту разницу. Его потом можно отменить, как любой документ.</p>
+            <div class="row"><label style="display:flex;align-items:center;gap:8px"><span class="pay">Дата</span><input class="inp" type="date" id="syDay" value="${iso(new Date())}" style="width:auto"></label><button class="btn sig" type="button" id="sySync">Поправить наши остатки по файлу</button></div>`
+          :'<p class="hint">Остатки совпадают с файлом до штуки.</p>'}`;
+        const sy=document.getElementById('sySync');if(sy)sy.onclick=async()=>{sy.disabled=true;try{const r=await api('stock_sync',{lines,day:$('#syDay').value});toast(`<b>Остатки поправлены</b>Документ № ${r.id}, позиций: ${r.n}`);closeSheet();loadStock();}catch(e){sy.disabled=false;toast('<b>Не получилось</b>'+esc(e.message));}};};
       $('#imGo').onclick=async()=>{const b=$('#imGo');b.disabled=true;const prog=$('#imProg');const open=!st.open&&$('#imOpen')&&$('#imOpen').checked;
         try{const clean=items.map(({_qty,_cost,...x})=>x);
           for(let i=0;i<clean.length;i+=500){prog.textContent=`Карточки: ${Math.min(i+500,clean.length)} из ${clean.length}…`;await api('cat_import',{rows:clean.slice(i,i+500)});}
@@ -1119,10 +1134,10 @@ document.querySelectorAll('#stSubs .chip').forEach(c=>c.onclick=()=>stSub(c.data
 document.querySelectorAll('#stWh .chip').forEach(c=>c.onclick=()=>{S.st.wh=c.dataset.w;document.querySelectorAll('#stWh .chip').forEach(x=>x.setAttribute('aria-pressed',x===c));loadStock();});
 
 /* ---------- виды документов ---------- */
-const DT={in:{t:'Приход',n:'Новый приход'},sale:{t:'Продажа',n:'Новая продажа'},ret:{t:'Возврат от покупателя',n:'Новый возврат'},iss:{t:'Выдача с ответхранения',n:'Новая выдача'},open:{t:'Ввод остатков',n:''}};
+const DT={in:{t:'Приход',n:'Новый приход'},sale:{t:'Продажа',n:'Новая продажа'},ret:{t:'Возврат от покупателя',n:'Новый возврат'},iss:{t:'Выдача с ответхранения',n:'Новая выдача'},open:{t:'Ввод остатков',n:''},inv:{t:'Корректировка остатков',n:''}};
 const DPAY={cash:'Наличные',card:'Карта',sbp:'Перевод',bank:'Безнал'};
 const DOC_ST={draft:['черновик','ds'],posted:['проведён','cp'],cancelled:['отменён','ds']};
-const stLbl=(t,st)=>t==='sale'||t==='iss'?{draft:'черновик',posted:'проведена',cancelled:'отменена'}[st]:DOC_ST[st][0];
+const stLbl=(t,st)=>t==='sale'||t==='iss'||t==='inv'?{draft:'черновик',posted:'проведена',cancelled:'отменена'}[st]:DOC_ST[st][0];
 const isMoney=t=>t==='sale'||t==='ret'||t==='iss';
 
 /* ---------- список документов и итоги месяца ---------- */
@@ -1188,7 +1203,7 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
     <label><span class="mono lbl">№ документа поставщика</span><input class="inp" id="dNum" value="${esc(D.num||'')}" ${dis}></label>`;
   head+=`<label style="grid-column:1/-1"><span class="mono lbl">${T==='ret'?'Причина возврата':'Комментарий'}</span><input class="inp" id="dNote" value="${esc(D.note||'')}" ${dis}></label>`;
   const ph={in:'Штрихкод (сканер) или название: 205 55 16 ikon',sale:'Сканируйте товар или ищите: 205 55 16',ret:'Сканируйте возвращаемый товар или ищите по названию',iss:'Товар с ответхранения: штрихкод или название'}[T];
-  const cols=T==='in'?['Кол-во',cust?'Оценка, ₽':'Закупка, ₽','Сумма',...(cust?[]:['Цена продажи'])]:T==='sale'?['Кол-во','Цена, ₽','Сумма']:T==='ret'?['Кол-во','Цена возврата, ₽','Сумма']:['Кол-во'];
+  const cols=T==='in'?['Кол-во',cust?'Оценка, ₽':'Закупка, ₽','Сумма',...(cust?[]:['Цена продажи'])]:T==='sale'?['Кол-во','Цена, ₽','Сумма']:T==='ret'?['Кол-во','Цена возврата, ₽','Сумма']:T==='inv'||T==='open'?['Разница','Себестоимость, ₽']:['Кол-во'];
   const retInfo=D.base_id?`<p class="note" style="margin:0 0 10px">По продаже № ${D.base_id}. Себестоимость вернётся та же, что была в продаже.</p>`:'';
   const saleRets=T==='sale'&&D.returns.length?`<p class="note" style="margin:0 0 10px">Возвраты по этой продаже: ${D.returns.map(r=>`<button type="button" class="out" data-open="${r.id}" style="min-height:30px;padding:0 4px;text-decoration:underline">№ ${r.id}${r.status==='cancelled'?' (отменён)':r.status==='draft'?' (черновик)':''}</button>`).join(', ')}</p>`:'';
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${D.id?DT[T].t+' № '+D.id:DT[T].n} <span class="badge ${st[1]}" style="vertical-align:6px">${stLbl(T,D.status)}</span></h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
@@ -1201,7 +1216,7 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
     <tbody id="dLines">${D.lines.map((l,i)=>docLine(l,i,ro)).join('')||`<tr><td colspan="6" class="pay" style="text-align:center;padding:18px">Добавьте товары — отсканируйте штрихкод или найдите по названию</td></tr>`}</tbody></table></div>
   <div class="dtot" id="dTot">${totLine(t)}</div>
   <p class="err" id="dErr" hidden></p>
-  <div class="row" style="margin:14px 0 40px">${ro?`${T==='sale'&&D.status==='posted'&&D.lines.some(l=>l.qty-(l.returned||0)>0)?'<button class="btn sig" type="button" id="dRet">Оформить возврат</button>':''}${D.status==='posted'?'<button class="btn danger" type="button" id="dCancel">Отменить проведение</button>':''}<button class="btn ghost" type="button" id="dCopy">Создать копию</button>`
+  <div class="row" style="margin:14px 0 40px">${ro?`${T==='sale'&&D.status==='posted'&&D.lines.some(l=>l.qty-(l.returned||0)>0)?'<button class="btn sig" type="button" id="dRet">Оформить возврат</button>':''}${D.status==='posted'?'<button class="btn danger" type="button" id="dCancel">Отменить проведение</button>':''}${T==='inv'||T==='open'?'':'<button class="btn ghost" type="button" id="dCopy">Создать копию</button>'}`
     :`<button class="btn sig" type="button" id="dPost">Провести</button><button class="btn ghost" type="button" id="dSave">Сохранить черновик</button>${D.id?'<button class="btn danger" type="button" id="dDel">Удалить черновик</button>':''}`}</div>
   <div id="dCancelBox"></div>`;
   bindDoc();}
@@ -1220,6 +1235,7 @@ function docLine(l,i,ro){const T=D.type,cust=T==='in'&&D.wh==='custody',q=+l.qty
   if(T==='in')return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.cost):inp('cost',l.cost,l.last?Math.round(l.last):'')}</td><td class="lsum tnum">${rub(q*(+l.cost||0))}</td>
     ${cust?'':`<td>${ro?rub(l.price||0):inp('price',l.price,'',l.price!=l.cur_price?'chg':'')}<small class="pay mk" style="display:block">${mkText(l,ro)}</small></td>`}${rm}</tr>`;
   if(T==='iss')return `<tr data-i="${i}">${nm}${qtyC}${rm}</tr>`;
+  if(T==='inv'||T==='open')return `<tr data-i="${i}">${nm}<td class="tnum" style="font-weight:700;color:${q<0?'var(--signal-deep)':'var(--moss)'}">${q>0&&T==='inv'?'+':''}${fmtQty(q)}</td><td>${rub(l.cost)}</td></tr>`;
   const prof=T==='sale'?(()=>{const c=ro?+l.cost||0:+(l.avg??l.last)||0;return c?`<small class="pay lprof" style="display:block">прибыль ${rub(q*((+l.price||0)-c))}</small>`:'';})():'';
   return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.price||0):inp('price',l.price)}${T==='sale'?`<small class="pay mk" style="display:block">${saleText(l,ro)}</small>`:''}</td><td class="tnum"><span class="lsum">${rub(q*(+l.price||0))}</span>${prof}</td>${rm}</tr>`;}
 function addLine(p){const T=D.type,ex=D.lines.findIndex(l=>l.product_id===p.id);

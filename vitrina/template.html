@@ -243,9 +243,9 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
 </section>
 
 <script>
-const STAMP='__STAMP__';
-const TIRES=__TIRES__;
-const OTHER=__OTHER__;
+let STAMP='__STAMP__';
+let TIRES=__TIRES__;
+let OTHER=__OTHER__;
 /* фото моделей — из учёта на этом же сайте (vladautoshina.ru/montazh); если недоступно — остаются схемы */
 let PH={};
 fetch('/montazh/api.php?a=photos_public',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{const b='/montazh/';PH={};Object.entries(j.photos||{}).forEach(([k,v])=>PH[k]=b+v);if(Object.keys(PH).length&&typeof renderOut==='function')renderOut();}).catch(()=>{});
@@ -262,8 +262,8 @@ const stockHtml=(q,set=4)=>`<span class="stock ${q<set?'low':''}">${stockTxt(q)}
 $('#stamp').textContent='Наличие на '+STAMP;
 
 const by=t=>OTHER.filter(o=>o.t===t);
-const DISKS=by('disk'),AKB=by('akb'),FAST=by('fast');
-const MORE=OTHER.filter(o=>['acc','tube','tool','tireo'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
+let DISKS=by('disk'),AKB=by('akb'),FAST=by('fast');
+let MORE=OTHER.filter(o=>['acc','tube','tool','tireo'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
 
 /* ---------- общее состояние ---------- */
 const S={tab:'tires',sort:'price',q:'',
@@ -452,5 +452,15 @@ $('#fs').onclick=async()=>{try{if(document.fullscreenElement)await document.exit
 const fromHash=()=>{const h=location.hash.slice(1);if(TABS.some(t=>t[0]===h))S.tab=h;};
 addEventListener('hashchange',()=>{fromHash();renderAll();});
 fromHash();renderAll();
+/* живое наличие из учёта (vladautoshina.ru/montazh): цены и остатки нашего склада, без себестоимости.
+   Нет связи — остаётся встроенная выгрузка каталога. Обновляется раз в 10 минут, пока витрина открыта. */
+function loadLive(){fetch('/montazh/api.php?a=vitrina',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{
+  if(!j||!j.live||(!(j.tires||[]).length&&!(j.other||[]).length))return;
+  if(!$('#sheet').hidden)return;
+  TIRES=j.tires;OTHER=j.other;DISKS=by('disk');AKB=by('akb');FAST=by('fast');
+  MORE=OTHER.filter(o=>['acc','tube','tool','tireo'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
+  const c={tires:TIRES.length,disks:DISKS.length,akb:AKB.length,fast:FAST.length,more:MORE.length};TABS.forEach(t=>{if(t[0] in c)t[2]=c[t[0]];});
+  STAMP=j.stamp;$('#stamp').textContent='Наличие на '+STAMP;renderAll();}).catch(()=>{});}
+loadLive();setInterval(loadLive,10*60*1000);
 })();
 </script>
