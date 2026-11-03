@@ -503,6 +503,7 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
   .dayhd h1{order:-1;flex:1 1 100%!important}
 }
 .toast{opacity:0;transition:transform .35s var(--ease),opacity .25s}.toast.on{opacity:1}
+.dqp{margin:4px 0 14px}.dqp #dqKinds{margin-bottom:8px}.dqp #dqKinds .chip{min-height:34px}
 </style>
 </head>
 <body>
@@ -613,7 +614,7 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
         <div class="spacer"></div>
       </div>
       <div id="dlPartner"></div>
-      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Приход</button><button class="btn ghost" type="button" data-newdoc="ret">+ Возврат</button><button class="btn ghost" type="button" data-newdoc="iss">+ Выдача с ответхранения</button><label class="btn ghost" id="dlImp" style="cursor:pointer">Загрузить документ (PDF / XML) — или перетащите файл сюда<input type="file" accept=".pdf,.xml,application/pdf,text/xml" id="dlImpF" hidden></label></div>
+      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Закупка</button><button class="btn" type="button" data-newdoc="iss">+ Выдача с ОХ</button><button class="btn ghost small-ret" type="button" data-newdoc="ret" hidden>+ Возврат</button><label class="btn ghost" id="dlImp" style="cursor:pointer">Загрузить документ (PDF / XML) — или перетащите файл сюда<input type="file" accept=".pdf,.xml,application/pdf,text/xml" id="dlImpF" hidden></label></div>
       <div class="tiles" id="dlTiles" style="margin-top:0"></div>
       <div class="row" id="dlTypes" style="margin-bottom:12px"><button type="button" class="chip" data-t="sale">Продажи</button><button type="button" class="chip" data-t="ret">Возвраты</button><button type="button" class="chip" data-t="in">Приход</button><button type="button" class="chip" data-t="iss">Выдача</button><button type="button" class="chip" data-t="open">Ввод остатков</button></div>
       <div id="dlOut" style="margin-bottom:40px"></div>
@@ -1040,15 +1041,16 @@ const FACETS={
   akb:[['std','Тип',v=>({euro:'Легковые, евро',asia:'Азия',moto:'Мото',truck:'Грузовые'})[v]||v,['euro','asia','truck','moto']],['pol','Полярность',v=>({rev:'Обратная − +',dir:'Прямая + −'})[v]||v,['rev','dir']],['cap','Ёмкость, А·ч',v=>({s:'до 55',m:'56–65',l:'66–80',xl:'81–110',xxl:'больше 110'})[v]||v,['s','m','l','xl','xxl']]],
   fast:[['k','Что нужно',v=>({nut:'Гайки',bolt:'Болты',lock:'Секретки',ring:'Кольца',stud:'Шпильки',other:'Прочее'})[v]||v,['nut','bolt','lock','ring','stud','other']],['th','Резьба',v=>'М'+v]],
   other:[['g','Раздел',v=>({acc:'Аксессуары',caps:'Колпаки',akbacc:'Для АКБ',chem:'Автохимия',tube:'Камеры',tool:'Инструмент',tireo:'Грузовые и спецшины'})[v]||v,['acc','caps','akbacc','chem','tube','tool','tireo']]]};
-function renderFacets(){const el=$('#stFacets'),def=FACETS[S.st.kind],F=S.st.f||{},fc=S.st.facets||{};
+function facetBox(el,kind,F,fc,onChange){const def=FACETS[kind];
   if(!def){el.innerHTML='';return;}
   const cmp=(a,b)=>{const x=parseFloat(String(a).replace(',','.')),y=parseFloat(String(b).replace(',','.'));return isNaN(x)||isNaN(y)?String(a).localeCompare(String(b),'ru',{numeric:true}):x-y||String(a).localeCompare(String(b));};
   el.innerHTML=`<div class="fc">${def.map(([k,lbl,fmt,order])=>{const list=fc[k]||[];if(!list.length)return '';const m=new Map(list);
       const vals=order?order.filter(v=>m.has(v)):[...m.keys()].sort(cmp);
       return `<div class="fcrow"><span class="mono fcl">${lbl}</span><div class="fcv">${vals.map(v=>`<button type="button" class="fchip" data-fk="${k}" data-fv="${esc(v)}" aria-pressed="${F[k]===v}" ${m.get(v)?'':'data-dim="1"'}>${esc(fmt?fmt(v):v)}</button>`).join('')}</div></div>`;}).join('')}
-    ${Object.keys(F).length?'<button type="button" class="out" id="fcReset" style="min-height:34px">Сбросить выбор ×</button>':''}</div>`;
-  el.querySelectorAll('.fchip').forEach(b=>b.onclick=()=>{const k=b.dataset.fk,v=b.dataset.fv;S.st.f=S.st.f||{};if(S.st.f[k]===v)delete S.st.f[k];else S.st.f[k]=v;loadStock();});
-  const r=document.getElementById('fcReset');if(r)r.onclick=()=>{S.st.f={};loadStock();};}
+    ${Object.keys(F).length?'<button type="button" class="out fcReset" style="min-height:34px">Сбросить выбор ×</button>':''}</div>`;
+  el.querySelectorAll('.fchip').forEach(b=>b.onclick=()=>{const k=b.dataset.fk,v=b.dataset.fv,f={...F};if(f[k]===v)delete f[k];else f[k]=v;onChange(f);});
+  const r=el.querySelector('.fcReset');if(r)r.onclick=()=>onChange({});}
+function renderFacets(){facetBox($('#stFacets'),S.st.kind,S.st.f||{},S.st.facets||{},f=>{S.st.f=f;loadStock();});}
 $('#stOnly').onclick=()=>{S.st.only=!S.st.only;loadStock();};
 function attrLines(k,a){if(!a)return[];const L=[];
   if(k==='tire'){L.push(['Размер',`${a.w}/${a.p} R${a.d}${a.c?'C':''}`],['Бренд, модель',[a.brand,a.model].filter(Boolean).join(' ')+(a.alias?` (${a.alias})`:'')],['Сезон',{winter:'Зима',summer:'Лето',all:'Всесезон'}[a.season]+(a.season==='winter'?(a.stud?', шипы':', липучка'):'')],['Индексы',(a.index||'—')+(a.xl?' XL':'')]);}
@@ -1155,7 +1157,7 @@ async function loadDocs(){const[y,m]=S.dl.month.split('-').map(Number);$('#dlTit
     <div class="tile"><span class="mono">Приход (закупка)</span><b class="tnum">${rub(inn)}</b></div>
     ${issq?`<div class="tile"><span class="mono">Выдано с ответхранения</span><b class="tnum">${fmtQty(issq)} шт.</b></div>`:''}`;
   const fixed=S.area==='s'&&S.dl.type!=='';$('#dlTiles').hidden=fixed;$('#dlTypes').hidden=fixed;
-  document.querySelectorAll('#dlBtns [data-newdoc]').forEach(b=>b.hidden=fixed&&b.dataset.newdoc!==S.dl.type);
+  document.querySelectorAll('#dlBtns [data-newdoc]').forEach(b=>b.hidden=b.dataset.newdoc==='ret'?S.dl.type!=='ret':fixed&&b.dataset.newdoc!==S.dl.type);
   $('#dlImp').hidden=fixed&&!['in','iss'].includes(S.dl.type);
   S.dl.docs=S.dl.type?all.filter(d=>d.type===S.dl.type):all;
   if(S.dl.partner)S.dl.docs=S.dl.docs.filter(d=>(d.partner||'').trim().toUpperCase()===S.dl.partner.toUpperCase());
@@ -1213,7 +1215,7 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
   <div class="dhead">${head}</div>${retInfo}${saleRets}
   ${cust?'<p class="note" style="margin:0 0 10px">Товар поставщика на ответхранении: в стоимость нашего склада не входит, цена — оценка поставщика (для справки).</p>':''}
   ${T==='iss'?'<p class="note" style="margin:0 0 10px">Товар просто убирается с ответхранения — денег и прибыли в документе нет.</p>':''}
-  ${ro?'':`<div class="dadd"><input class="inp" id="dSearch" placeholder="${ph}" autocomplete="off">${T==='in'?'<button class="btn ghost" type="button" id="dNew">+ Новая карточка</button>':''}</div><div id="dFound"></div>`}
+  ${ro?'':`<div class="dadd"><input class="inp" id="dSearch" placeholder="${ph}" autocomplete="off">${T==='in'?'<button class="btn ghost" type="button" id="dNew">+ Новая карточка</button>':''}</div><div id="dFound"></div>${T==='sale'||T==='iss'?`<div class="dqp"><div class="row" id="dqKinds">${[['tire','Шины'],['disk','Диски'],['akb','АКБ'],['fast','Крепёж'],['other','Прочее']].map(([k,v])=>`<button type="button" class="chip" data-qk="${k}" aria-pressed="${DQ.kind===k}">${v}</button>`).join('')}</div><div id="dqF"></div><div id="dqOut"></div></div>`:''}`}
   <div class="tw"><table class="dtab"><thead><tr><th style="text-align:left">Товар</th>${cols.map(c=>`<th>${c}</th>`).join('')}${ro?'':'<th></th>'}</tr></thead>
     <tbody id="dLines">${D.lines.map((l,i)=>docLine(l,i,ro)).join('')||`<tr><td colspan="6" class="pay" style="text-align:center;padding:18px">Добавьте товары — отсканируйте штрихкод или найдите по названию</td></tr>`}</tbody></table></div>
   <div class="dtot" id="dTot">${totLine(t)}</div>
@@ -1251,6 +1253,18 @@ function readHead(){const v=id=>{const e=document.getElementById(id);return e?e.
   [['day','dDay'],['partner','dPartner'],['num','dNum'],['note','dNote']].forEach(([k,id])=>{const x=v(id);if(x!==null)D[k]=x;});
   const ph=v('dPhone');if(ph!==null)D.phone=phoneKey(ph)||'';}
 let dfT=null;
+/* быстрый выбор товара в продаже и выдаче — те же кнопки, что в каталоге */
+const DQ={kind:'',f:{},seq:0};
+async function dqLoad(){const T=D.type,box=document.getElementById('dqF'),out=document.getElementById('dqOut');if(!box)return;
+  document.querySelectorAll('#dqKinds [data-qk]').forEach(c=>c.setAttribute('aria-pressed',c.dataset.qk===DQ.kind));
+  if(!DQ.kind){box.innerHTML='';out.innerHTML='';return;}
+  const seq=++DQ.seq;let j;try{j=await api('stock',null,{kind:DQ.kind,instock:'1',limit:40,wh:T==='iss'?'custody':'shop',f:JSON.stringify(DQ.f)});}catch(_){return;}
+  if(seq!==DQ.seq||!document.getElementById('dqF'))return;
+  facetBox(box,DQ.kind,DQ.f,j.facets||{},f=>{DQ.f=f;dqLoad();});
+  if(!Object.keys(DQ.f).length){out.innerHTML=`<p class="note" style="margin:6px 0 0">В наличии ${j.total.n} поз. Нажмите размер или другую кнопку, чтобы сузить.</p>`;return;}
+  const list=j.rows;
+  out.innerHTML=list.length?`<div class="found">${list.map((p,i)=>`<button type="button" class="fnd" data-q="${i}"><span>${esc(p.name)}</span><small>${T==='iss'?'на ответхранении':'остаток'} ${fmtQty(p.qty)} · цена ${rub(p.price)}</small></button>`).join('')}</div>${j.more?`<p class="note">Показаны первые ${list.length} из ${j.total.n} — нажмите ещё кнопку.</p>`:''}`:'<p class="note">По этим кнопкам в наличии ничего нет.</p>';
+  out.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const p=list[+b.dataset.q];addLine({id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,price:p.price,qty:p.qty,avg:p.cost,last:p.cost});});}
 function bindDoc(){const T=D.type;
   $('#close').onclick=async()=>{if(D.status==='draft'&&dDirty&&D.lines.length){await saveDoc(false);}closeSheet();if(S.st.sub==='docs')loadDocs();else loadStock();};
   document.querySelectorAll('[data-wh]').forEach(b=>b.onclick=()=>{readHead();D.wh=b.dataset.wh;dDirty=true;renderDoc();});
@@ -1277,6 +1291,7 @@ function bindDoc(){const T=D.type;
     sf.addEventListener('input',()=>{clearTimeout(dfT);dfT=setTimeout(()=>run(false),300);});
     sf.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();clearTimeout(dfT);run(true);}});}
   const nb=document.getElementById('dNew');if(nb)nb.onclick=()=>newCard(($('#dSearch')||{}).value||'');
+  document.querySelectorAll('#dqKinds [data-qk]').forEach(c=>c.onclick=()=>{DQ.kind=DQ.kind===c.dataset.qk?'':c.dataset.qk;DQ.f={};dqLoad();});dqLoad();
   const sv=document.getElementById('dSave');if(sv)sv.onclick=async()=>{if(await saveDoc(true)){toast('<b>Черновик сохранён</b>'+DT[T].t+' № '+D.id);}};
   const ps=document.getElementById('dPost');if(ps)ps.onclick=()=>postDoc(false);
   const dl=document.getElementById('dDel');if(dl)dl.onclick=()=>{$('#dCancelBox').innerHTML=`<div class="confirm">Удалить черновик? <button class="btn danger" type="button" id="dDel2">Да, удалить</button><button class="btn ghost" type="button" id="dDel0">Нет</button></div>`;
@@ -1858,9 +1873,10 @@ function canonName(src){
   if(t&&!RX('‹диск').test(s)){
     const w=t[1],p=t[2],d=t[3],c=t[4]?'C':'';s=s.replace(t[0],' ');
     let studN=null;const sn=s.match(/\(\s*(\d{2,3})\s*шип[^)]*\)/i);if(sn){studN=sn[1];s=s.replace(sn[0],' ');}
+    let studP=false;if(/\(\s*шип[^)]*\)/i.test(s)){studP=true;s=s.replace(/\(\s*шип[^)]*\)/gi,' ');}
     const studRx=RX('‹(шип(ы|ов|ованн[а-яё]*)?\\.?|ш\\.|studded|stud)(?=\\s|$|\\))','gi');
-    const stud=!!studN||studRx.test(s);s=s.replace(studRx,' ');
-    s=s.replace(RX('^\\s*(авто)?шин[аы]›(\\s+легков[а-яё]*)?'),' ').replace(/(^|\s)(TL|TT|M\+S|3PMSF)(?=\s|$)/g,' ');
+    const stud=!!studN||studP||studRx.test(s);s=s.replace(studRx,' ');
+    s=s.replace(RX('‹(авто)?шин[аы]›(\\s+легков[а-яё]*)?','gi'),' ').replace(/^\s*\d{1,3}\s+(?=[A-Za-zА-Яа-яЁё])/,' ').replace(/(^|\s)(TL|TT|M\+S|3PMSF)(?=\s|$)/g,' ');
     const xl=/(^|\s)XL(?=\s|$)/i.test(s);s=s.replace(/(^|\s)XL(?=\s|$)/gi,' ');
     let idx='';let m=s.match(/(?:^|\s)(\d{2,3}(?:\/\d{2,3})?)\s*([HJKLMNPQRSTUVWYZ])(?=\s|$)/);
     if(m){idx=m[1]+m[2];s=s.replace(m[0],' ');}
@@ -1949,19 +1965,43 @@ function parseSupplierDoc(pages){
   const F=upd?{code:'А',n:'1',name:'1а',qty:'3',price:'4',total:'9'}:{n:'1',name:'2',code:'3',qty:'7',price:'8',total:'9'};
   const colOf=i=>{const cx=i.x+(i.w||0)/2;let best=null,bd=1e9;cols.forEach(c=>{const d=Math.abs(c.c-cx);if(d<bd){bd=d;best=c.k;}});
     // текст наименования выровнен влево и бывает шире графы — относим к графе наименования, если начинается внутри неё
-    const nc=cols.find(c=>c.k===F.name),ni=cols.indexOf(nc);if(nc){const left=ni>0?(cols[ni-1].c+nc.c)/2:0,right=ni<cols.length-1?(cols[ni+1].c+nc.c)/2:1e9;if(i.x>=left-4&&i.x<right)return F.name;}
+    const nc=cols.find(c=>c.k===F.name),ni=cols.indexOf(nc);if(nc){const left=ni>0?cols[ni-1].c+6:0,right=ni<cols.length-1?(cols[ni+1].c+nc.c)/2:1e9;if(i.x>=left&&i.x<right&&!/^\d{1,3}$/.test(i.s.trim()))return F.name;}
+    // в графе «№» бывают только числа; текст там — это продолжение названия
+    if(best===F.n&&!/^\d{1,3}$/.test(i.s.trim()))return F.name;
     return best;};
-  const rows=[];let cur=null,stop=false;const start=lines.indexOf(H)+1;
+  // строки таблицы: «якорь» строки — где есть количество; куски названия выше и ниже якоря
+  // (в актах МХ название бывает центрировано по высоте ячейки) относим к ближайшему якорю
+  const money=/^-?\d{1,3}(?:[ \u00a0]\d{3})*(?:[.,]\d{1,2})?$/;
+  const splitItems=its=>{const o=[];its.forEach(i=>{const t=i.s.trim();
+      // «15 624.00 124 992.00» — цена и сумма слиплись в одну надпись
+      let m=t.match(/^(-?\d{1,3}(?:[ \u00a0]\d{3})*[.,]\d{2})[ \u00a0]+(-?\d{1,3}(?:[ \u00a0]\d{3})*[.,]\d{2})$/);
+      if(m){const k=m[1].length/t.length;o.push({...i,s:m[1],w:(i.w||0)*k});o.push({...i,s:m[2],x:i.x+(i.w||0)*(1-m[2].length/t.length),w:(i.w||0)*m[2].length/t.length});return;}
+      // «10 Автошина …» — номер строки слился с названием
+      m=t.match(/^(\d{1,3})[ \u00a0]+([A-Za-zА-Яа-яЁё].*)$/);
+      if(m&&colOf(i)!==F.n){const nc=cols.find(c=>c.k===F.n);if(nc&&i.x<nc.c+40){const k=m[1].length/t.length;o.push({...i,s:m[1],w:(i.w||0)*k,_n:true});o.push({...i,s:m[2],x:i.x+(i.w||0)*(1-m[2].length/t.length),w:(i.w||0)*m[2].length/t.length});return;}}
+      o.push(i);});return o;};
+  const body=[];let stop=false;const start=lines.indexOf(H)+1;
   for(let li=start;li<lines.length&&!stop;li++){const l=lines[li];const txt=l.items.map(i=>i.s).join(' ');
-    if(/Всего к оплате|Всего по акту|^Итого/i.test(txt)){stop=true;break;}
-    if(l.items.filter(i=>isLbl(i.s)).length>=6)continue;// повтор заголовка на следующей странице
+    if(/Всего к оплате|Всего по акту|^\s*Итого/i.test(txt)){stop=true;break;}
+    if(l.items.filter(i=>isLbl(i.s)).length>=6)continue;
     if(/Передан через Диадок|^Страница|^[0-9a-f-]{20,}$/i.test(txt))continue;
-    const by={};l.items.forEach(i=>{if(/Передан через|Страниц|^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(i.s))return;const k=/Код_продавца/.test(i.s)?F.name:colOf(i);(by[k]=by[k]||[]).push(i.s.trim());});
-    const n=(by[F.n]||[]).join(' ').trim();const q=num((by[F.qty]||[]).join(''));
-    if(/^\d{1,3}$/.test(n)&&q!=null){const rt=(by['7']||[]).join(' ').match(/(\d+)\s*%/);
-      cur={n:+n,code:(by[F.code]||[]).join(' ').trim(),name:(by[F.name]||[]).join(' '),qty:q,price:num((by[F.price]||[]).join('')),total:num((by[F.total]||[]).join('')),rate:upd&&rt?+rt[1]:0};rows.push(cur);continue;}
-    if(cur){if(by[F.name])cur.name+=' '+by[F.name].join(' ');if(!cur.code&&by[F.code])cur.code=by[F.code].join(' ').trim();}
-  }
+    const by={};splitItems(l.items).forEach(i=>{if(/Передан через|Страниц|^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(i.s))return;const k=i._n?F.n:/Код_продавца/.test(i.s)?F.name:colOf(i);(by[k]=by[k]||[]).push(i.s.trim());});
+    body.push({p:l.p,y:l.y,by});}
+  const rows=[];
+  body.forEach(b=>{const q=num((b.by[F.qty]||[]).join(''));const n=(b.by[F.n]||[]).join(' ').trim();
+    if(q!=null&&(/^\d{1,3}$/.test(n)||(b.by[F.code]||[]).length)){const rt=(b.by['7']||[]).join(' ').match(/(\d+)\s*%/);
+      b.row={n:/^\d{1,3}$/.test(n)?+n:rows.length+1,code:(b.by[F.code]||[]).join(' ').trim(),parts:[],qty:q,price:num((b.by[F.price]||[]).join('')),total:num((b.by[F.total]||[]).join('')),rate:upd&&rt?+rt[1]:0};
+      if(b.by[F.name])b.row.parts.push({y:b.y,t:b.by[F.name].join(' ')});rows.push(b.row);}});
+  if(!rows.length)return{type,docNum,docDay,partner,lines:[],error:'Не нашёл строк с количеством'};
+  body.forEach(b=>{if(b.row||!b.by[F.name])return;
+    // ближайшая по высоте строка-якорь на той же странице (если на странице нет — предыдущая)
+    // УПД: название начинается в строке с количеством и продолжается ниже — кусок относится к якорю выше (в т.ч. на прошлой странице);
+    // акты МХ: название центрировано по высоте — к ближайшему якорю
+    let best=null,bd=1e9;const bi=body.indexOf(b);
+    if(upd){for(let k=bi-1;k>=0;k--)if(body[k].row){best=body[k];break;}}
+    else body.forEach(a=>{if(!a.row)return;const d=a.p===b.p?Math.abs(a.y-b.y):(a.p<b.p?500+(b.p-a.p)*1000:1e8);if(d<bd){bd=d;best=a;}});
+    if(best)best.row.parts.push({y:b.y+(best.p===b.p?0:(b.p-best.p)*-10000),t:b.by[F.name].join(' ')});});
+  rows.forEach(r=>{r.name=r.parts.sort((a,b)=>b.y-a.y).map(x=>x.t).join(' ');delete r.parts;});
   rows.forEach(r=>{let s=r.name.replace(/\s+/g,' ');const sc=s.match(/Код_продавца:\s*(\d+)/);r.scode=sc?sc[1]:'';
     s=s.replace(/Код_продавца:\s*\d+/g,'').replace(/ИД:\s*\S+/g,'').replace(/\[[^\]]*\]/g,'').replace(/\s+/g,' ').trim();r.name=s;
     r.code=(r.code||'').replace(/\s+/g,'');
@@ -1970,6 +2010,7 @@ function parseSupplierDoc(pages){
     const byRate=r.price!=null?Math.round(r.price*(1+(r.rate||0)/100)*100)/100:null;let c=r.total&&r.qty?Math.round(r.total/r.qty*100)/100:null;
     if(c==null||(byRate&&Math.abs(c-byRate)/byRate>0.03))c=byRate;r.cost=c;});
   return{type,docNum,docDay,partner,lines:rows};}
+
 let IM=null;
 const IM_T={in:'Приход на наш склад',custody:'Приход на ответхранение',iss:'Выдача с ответхранения'};
 const HOW={saved:['запомнено','cp'],article:['по артикулу','cp'],barcode:['по штрихкоду','cp'],name:['по названию — совпало всё','cp'],picked:['выбрано вручную','cp'],created:['новая карточка','cp'],none:['не найдено','ds']};
@@ -1983,7 +2024,7 @@ async function openDocImport(file){
   IM={...r,type:r.type||'in',file:file.name,day:r.docDay||iso(new Date())};
   IM.lines.forEach(l=>{l.canon=canonName(l.name);const c=classify(l.canon,'',catHint(l.canon),1);l.kind=c.kind;l.attrs=c.attrs;});
   try{const j=await api('doc_match',{partner:IM.partner,num:IM.docNum,lines:IM.lines.map(l=>({code:l.code,scode:l.scode,name:l.name,kind:l.kind,attrs:l.attrs}))});
-    IM.dup=j.dup;IM.lines.forEach((l,i)=>{const m=j.lines[i]||{};l.alts=m.alts||[];l.pick=m.match||null;});}
+    IM.dup=j.dup;IM.lines.forEach((l,i)=>{const m=j.lines[i]||{};l.alts=m.alts||[];l.pick=m.match||null;l.wrong=m.wrong||'';});}
   catch(e){toast('<b>Ошибка</b>'+esc(e.message));return;}
   renderImport();}
 function renderImport(){const T=IM.type,cust=T!=='in';
@@ -1996,10 +2037,10 @@ function renderImport(){const T=IM.type,cust=T!=='in';
   <div class="tw"><table class="dtab"><thead><tr><th style="text-align:left">В документе</th><th>Кол-во</th><th>${T==='in'?'Закупка с НДС, шт.':T==='custody'?'Оценка, шт.':'Цена'}</th><th style="text-align:left">Наша карточка</th></tr></thead><tbody>
   ${IM.lines.map((l,i)=>{const p=l.pick,h=HOW[p?p.how:'none'];return `<tr data-i="${i}"><td class="nm">${esc(l.name)}<small class="pay" style="display:block">${l.code?'код '+esc(l.code):''}${l.scode?' · код продавца '+esc(l.scode):''}</small>${l.canon&&l.canon!==l.name?`<small style="display:block;color:var(--ink-2)">по-нашему: ${esc(l.canon)}</small>`:''}</td>
     <td class="tnum">${fmtQty(l.qty)}</td><td class="tnum">${l.cost!=null?rub(l.cost):'—'}</td>
-    <td class="nm">${p?`${esc(p.name)}<small class="pay" style="display:block">${p.article?'арт. '+esc(p.article)+' · ':''}${T==='iss'?'на ответхранении '+fmtQty(p.custody):'остаток '+fmtQty(p.qty)} · цена ${rub(p.price)}</small>`:'<span class="pay">карточка не выбрана — строка не войдёт в документ</span>'}
+    <td class="nm">${p?`${esc(p.name)}<small class="pay" style="display:block">${p.article?'арт. '+esc(p.article)+' · ':''}${T==='iss'?'на ответхранении '+fmtQty(p.custody):'остаток '+fmtQty(p.qty)} · цена ${rub(p.price)}</small>`:'<span class="pay">карточка не выбрана — строка не войдёт в документ</span>'}${l.wrong?`<small style="display:block;color:var(--signal-deep)">Код раньше вёл на «${esc(l.wrong)}» — это другой товар, связь удалена</small>`:''}
       <div class="row" style="margin-top:4px;align-items:center"><span class="badge ${h[1]}" style="margin-left:0">${h[0]}</span><button type="button" class="out" data-chg="${i}" style="min-height:30px">${p?'Другая карточка':(l.alts.length?'Выбрать ('+l.alts.length+' похожих)':'Выбрать')}</button>${T!=='iss'?`<button type="button" class="out" data-new="${i}" style="min-height:30px">Новая карточка</button>`:''}${p?`<button type="button" class="out" data-clr="${i}" style="min-height:30px">Не брать</button>`:''}</div>
       <div id="imx${i}"></div></td></tr>`;}).join('')}</tbody></table></div>
-  <div class="dtot"><span>Строк: <b>${IM.lines.length}</b></span><span>Сопоставлено: <b>${ok}</b></span><span>Штук: <b class="tnum">${fmtQty(IM.lines.filter(l=>l.pick).reduce((a,l)=>a+(l.qty||0),0))}</b></span>${T!=='iss'?`<span>Сумма: <b class="tnum">${rub(sum)}</b></span>`:''}</div>
+  <div class="dtot"><span>Строк: <b>${IM.lines.length}</b></span><span>Сопоставлено: <b>${ok}</b></span><span>Штук по документу: <b class="tnum">${fmtQty(IM.lines.reduce((a,l)=>a+(+l.qty||0),0))}</b>${ok<IM.lines.length?` (в черновик войдёт ${fmtQty(IM.lines.filter(l=>l.pick).reduce((a,l)=>a+(+l.qty||0),0))})`:''}</span>${T!=='iss'?`<span>Сумма: <b class="tnum">${rub(sum)}</b></span>`:''}</div>
   <p class="err" id="imErr" hidden></p>
   <div class="row" style="margin:14px 0 40px"><button class="btn sig" type="button" id="imGo">Создать черновик</button>${T!=='iss'&&IM.lines.some(l=>!l.pick)?`<button class="btn" type="button" id="imNewAll">Новые карточки для ненайденных (${IM.lines.filter(l=>!l.pick).length})</button>`:''}<button class="btn ghost" type="button" id="imX">Отмена</button></div>`;
   $('#close').onclick=closeSheet;$('#imX').onclick=closeSheet;

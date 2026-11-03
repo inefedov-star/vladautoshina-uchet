@@ -962,6 +962,13 @@ try {
       foreach ([$code, $scode] as $c) if ($c !== '' && isset($sup[codeNorm($c)]) && isset($byId[$sup[codeNorm($c)]])) { $res['match'] = $card($sup[codeNorm($c)], 'saved'); break; }
       if (!$res['match'] && $code !== '' && !empty($byArt[codeNorm($code)])) { $ids = $byArt[codeNorm($code)]; $res['match'] = $card($ids[0], 'article'); foreach (array_slice($ids, 1, 4) as $i) $res['alts'][] = $card($i, 'article'); }
       if (!$res['match'] && $code !== '' && !empty($byBc[ltrim($code, '0')])) $res['match'] = $card($byBc[ltrim($code, '0')][0], 'barcode');
+      // проверка найденного по коду: у шины должны совпасть размер и бренд, у диска — диаметр. Не совпало — код считаем ошибочным
+      if ($res['match']) { $lk = (string)($l['kind'] ?? ''); $la = (array)($l['attrs'] ?? []); $mp = $byId[$res['match']['id']]; $ma = json_decode($mp['attrs'], true) ?: []; $bad = false;
+        $nb0 = fn($x) => preg_replace('/[^0-9A-ZА-ЯЁ]+/u', '', str_replace(['TYRES', 'TIRES'], '', mb_strtoupper((string)$x)));
+        if ($lk === 'tire' && !empty($la['w'])) $bad = $mp['kind'] !== 'tire' || (int)($ma['w'] ?? 0) !== (int)$la['w'] || (int)($ma['p'] ?? 0) !== (int)$la['p'] || (int)($ma['d'] ?? 0) !== (int)$la['d'] || ($nb0($ma['brand'] ?? '') !== '' && $nb0($la['brand'] ?? '') !== '' && $nb0($ma['brand'] ?? '') !== $nb0($la['brand'] ?? ''));
+        elseif ($lk === 'disk' && !empty($la['d'])) $bad = $mp['kind'] !== 'disk' || (int)($ma['d'] ?? 0) !== (int)$la['d'];
+        if ($bad) { if ($res['match']['how'] === 'saved' && $pk !== '') foreach ([$code, $scode] as $c) if ($c !== '') db($cfg)->prepare('DELETE FROM supcodes WHERE pk = ? AND code = ?')->execute([$pk, codeNorm($c)]);
+          $res['wrong'] = $res['match']['name']; $res['match'] = null; $res['alts'] = []; } }
       if (!$res['match']) {
         // по названию — строго: шина = тот же размер, бренд, модель и шипы; диск = те же диаметр, разболтовка, вылет и модель.
         // Совпало не всё — ничего не выбираем сами, только показываем варианты того же размера.
@@ -1016,7 +1023,9 @@ try {
     $b = body(); $pk = partnerKey((string)($b['partner'] ?? '')); if ($pk === '') out(['ok' => true]);
     $ins = db($cfg)->prepare('INSERT OR REPLACE INTO supcodes (pk, code, product_id, updated) VALUES (?,?,?,?)'); $n = 0;
     foreach (array_slice((array)($b['pairs'] ?? []), 0, 500) as $x) { $pid = (int)($x['product_id'] ?? 0); if (!$pid) continue;
-      foreach ([(string)($x['code'] ?? ''), (string)($x['scode'] ?? '')] as $c) if (trim($c) !== '') { $ins->execute([$pk, codeNorm($c), $pid, time()]); $n++; } }
+      foreach ([(string)($x['code'] ?? ''), (string)($x['scode'] ?? '')] as $c) if (trim($c) !== '') { $ins->execute([$pk, codeNorm($c), $pid, time()]); $n++; }
+      // код номенклатуры поставщика (CAE / артикул производителя) — в карточку, если артикула ещё нет
+      $code0 = trim((string)($x['code'] ?? '')); if ($code0 !== '' && preg_match('/^[0-9A-Za-z\-\.\/]{4,40}$/', $code0)) db($cfg)->prepare("UPDATE products SET article = ?, updated = ? WHERE id = ? AND (article IS NULL OR article = '')")->execute([$code0, time(), $pid]); }
     out(['ok' => true, 'saved' => $n]);
 
   case 'vitrina':
