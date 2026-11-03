@@ -1133,10 +1133,11 @@ try {
     out(['ok' => true, 'saved' => $n]);
 
   case 'vitrina':
-    // для витрины: живое наличие нашего склада и розничные цены. Без себестоимости, поставщиков и закупок
-    $sm = stockMap($cfg, 'shop'); $tires = []; $other = [];
+    // для витрины: живое наличие (наш склад + ОХ) и розничные цены. Без себестоимости, поставщиков и закупок
+    // наличие = наш склад + ответхранение: товар с ОХ тоже продаём, клиенту разница не важна
+    $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $tires = []; $other = [];
     foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs, price, country FROM products WHERE archived = 0 AND kind != 'svc' AND price > 0")->fetchAll() as $p) {
-      $q = (int)floor($sm[(int)$p['id']]['q'] ?? 0); if ($q <= 0) continue;
+      $q = (int)floor(max(0, $sm[(int)$p['id']]['q'] ?? 0) + max(0, $smc[(int)$p['id']]['q'] ?? 0)); if ($q <= 0) continue;
       $a = json_decode($p['attrs'], true) ?: []; $id = $p['ext_id'] !== null && $p['ext_id'] !== '' ? (string)$p['ext_id'] : 'p' . $p['id'];
       $n = trim(preg_replace('/\s+/u', ' ', $p['name'])); $pr = (int)round((float)$p['price']);
       if ($p['kind'] === 'tire' && !empty($a['w'])) {
