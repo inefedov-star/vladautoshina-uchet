@@ -821,12 +821,12 @@ try {
   case 'doc':
     needRole($role, ['owner']);
     $id = (int)($_GET['id'] ?? 0); $st = db($cfg)->prepare('SELECT * FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404);
-    $l = db($cfg)->prepare('SELECT m.id, m.product_id, m.wh, m.qty, m.cost, m.price, m.list, p.name, p.unit, p.price cur_price, p.barcode FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ? ORDER BY m.id'); $l->execute([$id]);
+    $l = db($cfg)->prepare('SELECT m.id, m.product_id, m.wh, m.qty, m.cost, m.price, m.list, p.kind, p.name, p.unit, p.price cur_price, p.barcode FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id = ? ORDER BY m.id'); $l->execute([$id]);
     $d['label'] = docLabel($d['type']); $d['fee'] = (float)$d['fee'];
     // у продажи — какие возвраты по ней уже есть
     $rets = []; $retq = [];
     if ($d['type'] === 'sale') { $r = db($cfg)->prepare("SELECT id, day, status FROM docs WHERE type = 'ret' AND base_id = ? ORDER BY id"); $r->execute([$id]); $rets = $r->fetchAll(); $retq = returnedMap($cfg, $id); }
-    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'wh' => $r['wh'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
+    out(['doc' => $d, 'returns' => $rets, 'lines' => array_map(fn($r) => ['product_id' => (int)$r['product_id'], 'wh' => $r['wh'], 'kind' => $r['kind'], 'name' => $r['name'], 'unit' => $r['unit'], 'barcode' => $r['barcode'], 'qty' => $d['type'] === 'inv' ? (float)$r['qty'] : abs((float)$r['qty']), 'cost' => (float)$r['cost'], 'price' => $r['price'] !== null ? (float)$r['price'] : (float)$r['cur_price'], 'list' => $r['list'] !== null ? (float)$r['list'] : null, 'cur_price' => (float)$r['cur_price'], 'returned' => $retq[(int)$r['product_id']] ?? 0], $l->fetchAll())]);
 
   case 'doc_save':
     // черновик прихода: шапка и строки целиком; проведённый документ так не меняется
@@ -1059,7 +1059,7 @@ try {
     foreach ($prods as $p) { $byId[(int)$p['id']] = $p; if ($p['article'] !== '') $byArt[codeNorm($p['article'])][] = (int)$p['id']; if ($p['barcode'] !== '') $byBc[ltrim($p['barcode'], '0')][] = (int)$p['id']; }
     $sup = []; if ($pk !== '') { $st = db($cfg)->prepare('SELECT code, product_id FROM supcodes WHERE pk = ?'); $st->execute([$pk]); foreach ($st->fetchAll() as $r) $sup[$r['code']] = (int)$r['product_id']; }
     $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $last = lastCosts($cfg);
-    $card = fn($id, $how) => ['id' => $id, 'name' => $byId[$id]['name'], 'article' => $byId[$id]['article'], 'price' => (float)$byId[$id]['price'], 'unit' => $byId[$id]['unit'], 'qty' => $sm[$id]['q'] ?? 0, 'custody' => $cu[$id]['q'] ?? 0, 'last' => $last[$id] ?? null, 'how' => $how];
+    $card = fn($id, $how) => ['id' => $id, 'kind' => $byId[$id]['kind'], 'name' => $byId[$id]['name'], 'article' => $byId[$id]['article'], 'price' => (float)$byId[$id]['price'], 'unit' => $byId[$id]['unit'], 'qty' => $sm[$id]['q'] ?? 0, 'custody' => $cu[$id]['q'] ?? 0, 'last' => $last[$id] ?? null, 'how' => $how];
     $out = [];
     foreach ($lines as $l) {
       $code = trim((string)($l['code'] ?? '')); $scode = trim((string)($l['scode'] ?? '')); $name = (string)($l['name'] ?? ''); $res = ['match' => null, 'alts' => []];

@@ -532,6 +532,8 @@ body.t-dark .ohb{background:#1F3554;color:#A9CBFF}body.t-dark .ourb{background:#
 .whsel button[data-wh2="custody"][aria-pressed="true"]{background:#1D4FA8;border-color:#1D4FA8;color:#fff}
 .whsel{display:inline-flex;gap:4px;margin-top:6px}.whsel button{min-height:30px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--paper);font-weight:600;font-size:.8rem;color:var(--ink-2)}
 .whsel button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.pmk{display:flex;gap:6px;align-items:center;justify-content:flex-end}.pmk>input{max-width:110px}
+.mkin{display:inline-flex;align-items:center;gap:3px}.mkin input{width:70px;min-width:0;padding-left:6px;padding-right:6px}.mkin span{font-weight:700;color:var(--ink-3)}
 </style>
 </head>
 <body>
@@ -1261,8 +1263,12 @@ function renderDoc(){const T=D.type,ro=D.status!=='draft',cust=T==='in'&&D.wh===
     :`<button class="btn sig" type="button" id="dPost">Провести</button><button class="btn ghost" type="button" id="dSave">Сохранить черновик</button>${D.id?'<button class="btn danger" type="button" id="dDel">Удалить черновик</button>':''}`}</div>
   <div id="dCancelBox"></div>`;
   bindDoc();}
-function mkText(l,ro){const m=l.cost>0&&l.price>0?Math.round((l.price/l.cost-1)*100):null;
-  return (m!=null?(m<0?'<b style="color:var(--signal-deep)">ниже закупки!</b>':'наценка '+m+'%'):'')+(!ro&&l.price!=l.cur_price&&l.cur_price?' · было '+rub(l.cur_price):'');}
+/* наценка при закупке: шины 23%, диски 20%, аккумуляторы 30%; цена — вниз до десятков рублей */
+const MK={tire:23,disk:20,akb:30};
+const autoPrice=(cost,mk)=>cost>0&&mk!==''&&mk!=null?Math.floor(cost*(1+mk/100)/10)*10:'';
+const mkOf=(cost,price)=>cost>0&&price>0?Math.round((price/cost-1)*1000)/10:'';
+function mkText(l,ro){const m=l.cost>0&&l.price>0?(l.price/l.cost-1)*100:null;
+  return (m!=null&&m<0?'<b style="color:var(--signal-deep)">ниже закупки!</b>':ro&&m!=null?'наценка '+String(Math.round(m*10)/10).replace('.',',')+'%':'')+(!ro&&l.price!=l.cur_price&&l.cur_price?(m!=null&&m<0?' · ':'')+'было '+rub(l.cur_price):'');}
 function saleText(l,ro){const list=+(l.list??l.cur_price)||0,pr=+l.price||0,c=ro?+l.cost||0:+(l.avg??l.last)||0;let s='';
   if(list&&pr<list-0.5)s+=`по прайсу ${rub(list)} · скидка ${Math.round((1-pr/list)*100)}%`;
   if(c&&pr<c)s+=(s?' · ':'')+'<b style="color:var(--signal-deep)">ниже себестоимости!</b>';
@@ -1273,11 +1279,12 @@ function stockText(l){const T=D.type;if(T==='in'||T==='ret'||l.stock==null)retur
   const ok=l.stock>=q;
   return `<small class="pay" style="display:block;${ok?'':'color:var(--signal-deep);font-weight:700'}">${T==='iss'?'на ответхранении':'на складе'} ${fmtQty(l.stock)}${ok?'':' — не хватает'}</small>`;}
 function docLine(l,i,ro){const T=D.type,cust=T==='in'&&D.wh==='custody',q=+l.qty||0;
+  if(T==='in'&&!cust&&l.mk==null)l.mk=+l.price>0&&+l.cost>0?mkOf(+l.cost,+l.price):(MK[l.kind]??'');
   const inp=(f,v,ph,cls)=>`<input class="inp tnum din ${cls||''}" type="number" inputmode="decimal" min="0" step="${f==='qty'?1:0.01}" data-f="${f}" value="${v===''||v==null?'':v}" placeholder="${ph||''}">`;
   const nm=`<td class="nm">${T==='sale'&&l.wh==='custody'?'<span class="ohb" style="margin:0 6px 0 0">ОХ</span>':''}${esc(l.name)}${l.barcode?`<small class="pay" style="display:block">${esc(l.barcode)}</small>`:''}${ro?'':stockText(l)}${T==='ret'&&l.maxq!=null?`<small class="pay" style="display:block">можно вернуть до ${fmtQty(l.maxq)}</small>`:''}${ro&&T==='sale'&&l.returned?`<small class="pay" style="display:block">возвращено ${fmtQty(l.returned)}</small>`:''}</td>`;
   const qtyC=`<td>${ro?fmtQty(q):inp('qty',l.qty)}</td>`,rm=ro?'':`<td><button type="button" class="arrow" data-rm="${i}" aria-label="Убрать строку" style="width:40px;height:40px">×</button></td>`;
   if(T==='in')return `<tr data-i="${i}">${nm}${qtyC}<td>${ro?rub(l.cost)+(cust&&D.status==='posted'?`<button type="button" class="out" data-rp="${i}" style="display:block;min-height:28px;padding:0;margin-left:auto;text-decoration:underline;font-size:.82rem">изменить цену</button>`:''):inp('cost',l.cost,l.last?Math.round(l.last):'')}</td><td class="lsum tnum">${rub(q*(+l.cost||0))}</td>
-    ${cust?'':`<td>${ro?rub(l.price||0):inp('price',l.price,'',l.price!=l.cur_price?'chg':'')}<small class="pay mk" style="display:block">${mkText(l,ro)}</small></td>`}${rm}</tr>`;
+    ${cust?'':`<td>${ro?rub(l.price||0):`<div class="pmk">${inp('price',l.price,'',l.price!=l.cur_price?'chg':'')}<label class="mkin"><input class="inp tnum din" type="number" inputmode="decimal" step="0.1" data-f="mk" value="${l.mk===''||l.mk==null?mkOf(+l.cost,+l.price):l.mk}" aria-label="наценка, %"><span>%</span></label></div>`}<small class="pay mk" style="display:block">${mkText(l,ro)}</small></td>`}${rm}</tr>`;
   if(T==='iss')return `<tr data-i="${i}">${nm}${qtyC}${rm}</tr>`;
   if(T==='inv'||T==='open')return `<tr data-i="${i}">${nm}<td class="tnum" style="font-weight:700;color:${q<0?'var(--signal-deep)':'var(--moss)'}">${q>0&&T==='inv'?'+':''}${fmtQty(q)}</td><td>${rub(l.cost)}</td></tr>`;
   const prof=T==='sale'?(()=>{const c=ro?+l.cost||0:+(l.avg??l.last)||0;return c?`<small class="pay lprof" style="display:block">прибыль ${rub(q*((+l.price||0)-c))}</small>`:'';})():'';
@@ -1286,7 +1293,8 @@ function addLine(p){const T=D.type;
   // продажа: со своего склада, а если у нас нет — с ответхранения
   const wh=T==='sale'&&!(p.qty>0)&&p.qc>0?'custody':'shop';const ex=D.lines.findIndex(l=>l.product_id===p.id&&(T!=='sale'||(l.wh||'shop')===wh));
   if(ex>=0){D.lines[ex].qty=(+D.lines[ex].qty||0)+1;}
-  else if(T==='in')D.lines.push({product_id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,qty:1,cost:p.last?Math.round(p.last*100)/100:'',last:p.last,price:p.price,cur_price:p.price});
+  else if(T==='in'){const cost=p.last?Math.round(p.last*100)/100:'',mk=MK[p.kind]??null;
+    D.lines.push({product_id:p.id,kind:p.kind,name:p.name,unit:p.unit,barcode:p.barcode,qty:1,cost,last:p.last,mk:mk!=null?mk:mkOf(cost,p.price),price:mk!=null&&cost?autoPrice(cost,mk):p.price,cur_price:p.price});}
   else D.lines.push({product_id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,qty:1,price:T==='iss'?(p.avg!=null?p.avg:''):p.price,list:p.price,cur_price:p.price,avg:wh==='custody'?p.avgc:p.avg,avgs:p.avg,avgc:p.avgc,last:p.last,stock:p.qty,qc:p.qc||0,wh});
   dDirty=true;const sc=$('#sheet').scrollTop;readHead();renderDoc();$('#sheet').scrollTop=sc;const f=$('#dSearch');if(f)f.focus();
   const l=D.lines[ex>=0?ex:D.lines.length-1],short=(T==='sale'||T==='iss')&&l.stock!=null&&(l.wh==='custody'?l.qc:l.stock)<l.qty;
@@ -1307,7 +1315,7 @@ async function dqLoad(){const T=D.type,box=document.getElementById('dqF'),out=do
   const list=j.rows;
   out.innerHTML=list.length?`<div class="found">${list.map((p,i)=>`<button type="button" class="fnd" data-q="${i}"><span>${esc(p.name)}</span><small>${T==='iss'?'на ответхранении '+fmtQty(p.qty):(p.qty?'остаток '+fmtQty(p.qty):'у нас нет')+(p.qc?' · ОХ '+fmtQty(p.qc):'')} · цена ${rub(p.price)}</small></button>`).join('')}</div>${j.more?`<p class="note">Показаны первые ${list.length} из ${j.total.n} — нажмите ещё кнопку.</p>`:''}`:'<p class="note">По этим кнопкам в наличии ничего нет.</p>';
   out.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const p=list[+b.dataset.q];addLine({id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,price:p.price,qty:p.qty,qc:p.qc||0,avg:p.cost,avgc:p.costc,last:p.cost});});}
-function bindDoc(){const T=D.type;
+function bindDoc(){const T=D.type,cust=T==='in'&&D.wh==='custody';
   $('#close').onclick=async()=>{if(D.status==='draft'&&dDirty&&D.lines.length){await saveDoc(false);}closeSheet();if(S.st.sub==='docs')loadDocs();else loadStock();};
   document.querySelectorAll('[data-wh]').forEach(b=>b.onclick=()=>{readHead();D.wh=b.dataset.wh;dDirty=true;renderDoc();});
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{D.pay=b.dataset.pay;dDirty=true;document.querySelectorAll('[data-pay]').forEach(x=>x.setAttribute('aria-pressed',x===b));});
@@ -1315,7 +1323,11 @@ function bindDoc(){const T=D.type;
   ['dDay','dPartner','dNum','dNote','dPhone'].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener('input',()=>{dDirty=true;});});
   const dp=document.getElementById('dPhone');if(dp&&!dp.disabled)dp.addEventListener('input',async()=>{const k=phoneKey(dp.value);const nm=$('#dPartner');if(!k||nm.value.trim())return;
     try{const j=await api('clients',null,{q:k});const c=(j.clients||{})[k];if(c&&c.name&&!nm.value.trim()){nm.value=c.name;D.partner=c.name;toast('<b>Знакомый клиент</b>'+esc(c.name));}}catch(_){}});
-  document.querySelectorAll('.din').forEach(inp=>inp.addEventListener('input',()=>{const tr=inp.closest('tr'),i=+tr.dataset.i,l=D.lines[i];l[inp.dataset.f]=inp.value===''?'':+inp.value;dDirty=true;
+  document.querySelectorAll('.din').forEach(inp=>inp.addEventListener('input',()=>{const tr=inp.closest('tr'),i=+tr.dataset.i,l=D.lines[i];const f=inp.dataset.f;l[f]=inp.value===''?'':+inp.value;dDirty=true;
+    // закупка: цена ↔ наценка. Меняем закупку или % — считаем цену; вписали цену — считаем %
+    if(T==='in'&&!cust){const pi=tr.querySelector('[data-f="price"]'),mi=tr.querySelector('[data-f="mk"]');
+      if((f==='cost'||f==='mk')&&l.mk!==''&&l.mk!=null&&+l.cost>0){l.price=autoPrice(+l.cost,+l.mk);if(pi){pi.value=l.price;pi.classList.toggle('chg',l.price!=l.cur_price);}}
+      else if(f==='price'&&mi){l.mk=mkOf(+l.cost,+l.price);mi.value=l.mk;}}
     const q=+l.qty||0;const ls=tr.querySelector('.lsum');if(ls)ls.textContent=rub(q*(T==='in'?(+l.cost||0):(+l.price||0)));
     const mk=tr.querySelector('.mk');if(mk)mk.innerHTML=T==='in'?mkText(l,false):saleText(l,false);
     const lp=tr.querySelector('.lprof');if(lp){const c=+(l.avg??l.last)||0;lp.textContent='прибыль '+rub(q*((+l.price||0)-c));}
@@ -2212,7 +2224,7 @@ function renderImport(){const T=IM.type,cust=T!=='in';
         rh();l.pick={id:j.id,name,article:document.getElementById('na'+i).value.trim(),price:+document.getElementById('np'+i).value||0,qty:0,custody:0,how:'created'};l.manual=true;renderImport();}catch(e){toast('<b>Не создалась</b>'+esc(e.message));}};});
   $('#imGo').onclick=async()=>{rh();const L=IM.lines.filter(l=>l.pick);const er=$('#imErr');
     if(!L.length){er.textContent='Ни одна строка не сопоставлена с карточкой.';er.hidden=false;return;}
-    const T=IM.type,lines=L.map(l=>({product_id:l.pick.id,qty:l.qty,cost:T==='iss'?'':l.cost,price:T==='in'?l.pick.price:(T==='custody'?l.cost:null)}));
+    const T=IM.type,lines=L.map(l=>({product_id:l.pick.id,qty:l.qty,cost:T==='iss'?'':l.cost,price:T==='in'?(MK[l.pick.kind]!=null&&+l.cost>0?autoPrice(+l.cost,MK[l.pick.kind]):l.pick.price):(T==='custody'?l.cost:null)}));
     try{const j=await api('doc_save',{type:T==='iss'?'iss':'in',wh:T==='in'?'shop':'custody',day:IM.day,partner:IM.partner,num:IM.docNum,note:'Загружен из файла '+IM.file,lines});
       await api('supmap_save',{partner:IM.partner,pairs:L.map(l=>({code:l.code,scode:l.scode,product_id:l.pick.id}))}).catch(()=>{});
       toast(`<b>Черновик № ${j.id} создан</b>Проверьте и нажмите «Провести»`);openDoc(j.id);loadDocs();}
