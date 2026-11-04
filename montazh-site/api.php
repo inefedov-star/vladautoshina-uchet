@@ -110,6 +110,12 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE TABLE IF NOT EXISTS arch (id INTEGER PRIMARY KEY AUTOINCREMENT, ym TEXT NOT NULL, day TEXT NOT NULL, doc TEXT, num TEXT, type TEXT NOT NULL, party_id TEXT, party TEXT, phone TEXT, pid INTEGER, ext TEXT, name TEXT, qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, pay TEXT, evotor TEXT)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS arch_day ON arch(day)'); $pdo->exec('CREATE INDEX IF NOT EXISTS arch_ym ON arch(ym)'); $pdo->exec('CREATE INDEX IF NOT EXISTS arch_pty ON arch(party_id)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS arch_party (id TEXT PRIMARY KEY, kind TEXT, name TEXT, phones TEXT, note TEXT)');
+  // CAE — код товара у «Пауэр Интернэшнл-шины» (Форточки): по нему узнаём наши карточки в их документах
+  $pcols = array_column($pdo->query('PRAGMA table_info(products)')->fetchAll(), 'name');
+  if (!in_array('cae', $pcols, true)) $pdo->exec("ALTER TABLE products ADD COLUMN cae TEXT NOT NULL DEFAULT ''");
+  // справочник номенклатуры Пауэра (их открытая выгрузка Tires.xml / Rims.xml) — для подбора CAE
+  $pdo->exec('CREATE TABLE IF NOT EXISTS p4t (cae TEXT PRIMARY KEY, kind TEXT NOT NULL, brand TEXT, model TEXT, name TEXT, w REAL, p REAL, d REAL, c INTEGER NOT NULL DEFAULT 0, li TEXT, stud INTEGER NOT NULL DEFAULT 0, pcd TEXT, et REAL, dia REAL, color TEXT)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS p4t_size ON p4t(kind, d, w)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
   return $pdo;
 }
@@ -173,6 +179,8 @@ function groupOf(string $kind, array $a, string $name): array {
   return [$kind ?: 'other', trim(mb_substr($name, 0, 80)), 0, ''];
 }
 // до какой даты включительно итоги берутся из архива CloudShop (дальше — операции пульта)
+function getSetting(array $cfg, string $k): ?string { $st = db($cfg)->prepare('SELECT v FROM settings WHERE k = ?'); $st->execute([$k]); $v = $st->fetchColumn(); return $v === false ? null : (string)$v; }
+function setSetting(array $cfg, string $k, string $v): void { db($cfg)->prepare('INSERT OR REPLACE INTO settings (k, v) VALUES (?, ?)')->execute([$k, $v]); }
 function archUntil(array $cfg): string { $v = db($cfg)->query("SELECT v FROM settings WHERE k = 'arch_until'")->fetchColumn(); return $v ? (string)$v : ''; }
 // карточки пульта для сопоставления: по ID CloudShop, штрихкоду, артикулу, названию
 function prodIndex(array $cfg): array { $I = ['ext' => [], 'bc' => [], 'ar' => [], 'nm' => [], 'p' => []];
@@ -321,6 +329,105 @@ function api4tItems($x, array &$out, int $depth = 0): void {
   foreach ($x as $v) if (is_array($v) || is_object($v)) api4tItems($v, $out, $depth + 1);
 }
 function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-ЯЁ]+/u', ' ', mb_strtoupper($s))); }
+// ===== Пауэр Интернэшнл-шины (Форточки): CAE и их открытая выгрузка номенклатуры =====
+function isPower(string $pk): bool { return mb_strpos($pk, 'ПАУЭР') !== false || mb_strpos($pk, 'POWER INT') !== false || mb_strpos($pk, 'ФОРТОЧКИ') !== false || mb_strpos($pk, '4ТОЧКИ') !== false; }
+// слова для сравнения названий: без дефисов, звёздочек и точек внутри слов (i*Pike = IPIKE, FSR-802 = FSR802)
+function p4tWords(string $s): array {
+  $s = mb_strtoupper(str_replace(['Ё', 'ё'], ['Е', 'е'], $s));
+  $s = preg_replace('/(?<=[0-9A-ZА-Я])[\-\*\.\'’+](?=[0-9A-ZА-Я])/u', '', $s);
+  $w = preg_split('/[^0-9A-ZА-Я]+/u', $s, -1, PREG_SPLIT_NO_EMPTY);
+  $tr = ['KAMA' => 'КАМА', 'BELSHINA' => 'БЕЛШИНА', 'NOKIANTYRES' => 'NOKIAN', 'TYRES' => '', 'TIRES' => '', 'SUV' => '', 'XL' => '', 'TL' => '', 'MS' => '', 'LAUFEN' => 'LAUFENN'];
+  $o = []; foreach ($w as $x) { $x = $tr[$x] ?? $x; if ($x !== '') $o[$x] = true; } return $o;
+}
+// у Пауэра один товар бывает под несколькими кодами: «…old», «…old15» — старые, «…U»/«…S» — уценка/особая партия; основной — без хвоста
+function p4tCodeRank(string $c): int { return (preg_match('/old\d*$/i', $c) ? 0 : 5) + (preg_match('/\d[US]$/i', $c) ? 0 : 2) + (preg_match('/^CTS/i', $c) ? 0 : 1); }
+// цвет диска: Sil = silver = серебро и т.п.
+function p4tColor(string $s): array {
+  $m = ['SIL' => 'SILVER', 'S' => 'SILVER', 'СЕРЕБРО' => 'SILVER', 'СЕРЕБРИСТЫЙ' => 'SILVER', 'СИЛЬВЕР' => 'SILVER', 'BK' => 'BLACK', 'ЧЕРНЫЙ' => 'BLACK', 'ЧЕРНЫЕ' => 'BLACK', 'БЕЛЫЙ' => 'WHITE', 'WH' => 'WHITE'];
+  $o = []; foreach (p4tWords($s) as $w => $_) $o[$m[$w] ?? $w] = true; return $o;
+}
+function p4tNum($v): float { return (float)str_replace(',', '.', preg_replace('/[^0-9,\.]/', '', (string)$v)); }
+function p4tDownload(string $url, string $to): void {
+  @set_time_limit(600);
+  if (function_exists('curl_init')) { $fh = fopen($to, 'wb'); if (!$fh) fail('Не могу записать временный файл в папку data');
+    $c = curl_init($url); curl_setopt_array($c, [CURLOPT_FILE => $fh, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 400, CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_USERAGENT => 'IVANOR montazh (catalog sync)']);
+    $ok = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE); $err = curl_error($c); curl_close($c); fclose($fh);
+    if (!$ok || $code >= 400) { @unlink($to); fail('Не скачался справочник Пауэра (' . ($code ?: $err ?: 'нет связи') . ')', 502); } return; }
+  if (!@copy($url, $to, stream_context_create(['http' => ['timeout' => 400, 'user_agent' => 'IVANOR montazh']]))) fail('Не скачался справочник Пауэра', 502);
+}
+// разбор выгрузки потоком (файл 30–50 МБ — целиком в память не читаем)
+function p4tParse(string $file, string $part, PDO $p): int {
+  if (!class_exists('XMLReader')) fail('На хостинге нет модуля PHP XMLReader', 500);
+  $r = new XMLReader(); if (!$r->open($file, 'UTF-8', LIBXML_NONET | LIBXML_COMPACT)) fail('Файл справочника не читается');
+  $tag = $part === 'rims' ? 'rims' : 'tires'; $kind = $part === 'rims' ? 'disk' : 'tire'; $n = 0;
+  $p->beginTransaction(); $p->prepare('DELETE FROM p4t WHERE kind = ?')->execute([$kind]);
+  $ins = $p->prepare('INSERT OR REPLACE INTO p4t (cae, kind, brand, model, name, w, p, d, c, li, stud, pcd, et, dia, color) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+  while ($r->read() && !($r->nodeType === XMLReader::ELEMENT && $r->name === $tag));
+  for ($go = $r->nodeType === XMLReader::ELEMENT && $r->name === $tag; $go; $go = $r->next($tag)) {
+    $x = @simplexml_load_string($r->readOuterXml()); if (!$x) continue;
+    $cae = trim((string)$x->cae); if ($cae === '') continue; $name = trim((string)$x->name);
+    if ($kind === 'tire') {
+      $d = p4tNum(str_replace('R', '', (string)$x->diameter)); $c = preg_match('/\dC\b|R\d+(,\d+)?C\b/u', $name) ? 1 : 0;
+      $ins->execute([$cae, 'tire', trim((string)$x->brand), trim((string)$x->model), $name, p4tNum($x->width), p4tNum($x->height), $d, $c,
+        trim((string)$x->load_index) . trim((string)$x->speed_index), mb_strtolower(trim((string)$x->is_studded)) === 'шип' ? 1 : 0, null, null, null, null]);
+    } else {
+      $bc = (int)p4tNum($x->bolts_count); $bs = p4tNum($x->bolts_spacing); $pcd = $bc && $bs ? $bc . 'x' . rtrim(rtrim(number_format($bs, 2, '.', ''), '0'), '.') : '';
+      $ins->execute([$cae, 'disk', trim((string)$x->brand), trim((string)$x->model), $name, p4tNum($x->width), null, p4tNum($x->diameter), 0, null, 0, $pcd, (float)str_replace(',', '.', (string)$x->et), p4tNum($x->dia), trim((string)$x->color)]);
+    }
+    $n++;
+  }
+  $r->close(); $p->commit(); return $n;
+}
+// подбор CAE для одной нашей карточки: всё строго — размер, бренд, модель, индексы, шипы (у диска — все размеры и модель)
+function p4tFind(PDO $p, array $prod): array {
+  static $q = [];
+  $a = json_decode((string)$prod['attrs'], true) ?: []; $kind = $prod['kind'];
+  if ($kind === 'tire') {
+    if (empty($a['w']) || empty($a['d'])) return ['st' => 'nosize'];
+    $key = 't' . $a['w'] . '/' . ($a['p'] ?? 0) . '/' . $a['d'];
+    if (!isset($q[$key])) { $st = $p->prepare("SELECT * FROM p4t WHERE kind = 'tire' AND d = ? AND w = ? AND p = ?"); $st->execute([(float)$a['d'], (float)$a['w'], (float)($a['p'] ?? 0)]); $q[$key] = $st->fetchAll(); }
+    $ours = p4tWords(($a['brand'] ?? '') . ' ' . ($a['model'] ?? '') . ' ' . ($a['alias'] ?? '') . ' ' . $prod['name']);
+    $ix = mb_strtoupper(str_replace(' ', '', (string)($a['index'] ?? ''))); $hit = [];
+    foreach ($q[$key] as $c) {
+      if ((int)$c['c'] !== (!empty($a['c']) ? 1 : 0)) continue;
+      if ((int)$c['stud'] !== (!empty($a['stud']) ? 1 : 0)) continue;
+      if ($ix !== '' && mb_strtoupper(str_replace(' ', '', (string)$c['li'])) !== $ix) continue;
+      $bw = p4tWords((string)$c['brand']); $bok = false; foreach ($bw as $w => $_) if (isset($ours[$w])) { $bok = true; break; } if (!$bok) continue;
+      // модель поставщика бывает «Character Ice 8 (Nordman 8)» — годится любое из двух названий
+      $m = (string)$c['model']; $alt = preg_match('/\(([^)]*)\)/u', $m, $mm) ? $mm[1] : ''; $main = trim(preg_replace('/\([^)]*\)/u', ' ', $m)); $best = 0;
+      foreach ([$main, $alt] as $v) { $mw = p4tWords($v); if (!$mw) continue; $all = true; foreach ($mw as $w => $_) if (!isset($ours[$w])) { $all = false; break; } if ($all) $best = max($best, count($mw)); }
+      if (!$best) continue;
+      // у Ikon одна шина под двумя кодами: «Character Ice 8 (Nordman 8)» и «Nordman 8 (Character Ice 8)» — берём тот, где основное название как у нас
+      $om = p4tWords((string)($a['model'] ?? '')); $pm = p4tWords($main); if ($om && $pm && array_keys($om) == array_keys($pm)) $best += 0.3;
+      $hit[] = ['cae' => $c['cae'], 'name' => $c['brand'] . ' ' . $c['name'], 'score' => (int)round($best * 10) + p4tCodeRank($c['cae'])];
+    }
+  } elseif ($kind === 'disk') {
+    if (empty($a['d']) || empty($a['w'])) return ['st' => 'nosize'];
+    $key = 'd' . $a['d'] . '/' . $a['w'];
+    if (!isset($q[$key])) { $st = $p->prepare("SELECT * FROM p4t WHERE kind = 'disk' AND d = ? AND w = ?"); $st->execute([(float)$a['d'], (float)str_replace(',', '.', (string)$a['w'])]); $q[$key] = $st->fetchAll(); }
+    $pcds = array_map(fn($x) => str_replace(['×', '*', 'Х', 'х'], 'x', mb_strtolower((string)$x)), (array)($a['pcds'] ?? [$a['pcd'] ?? '']));
+    $ours = p4tWords(($a['model'] ?? '') . ' ' . $prod['name']); $oc = p4tColor(($a['model'] ?? '') . ' ' . $prod['name']); $hit = [];
+    foreach ($q[$key] as $c) {
+      if (!in_array(mb_strtolower((string)$c['pcd']), $pcds, true)) continue;
+      if (isset($a['et']) && $a['et'] !== '' && abs((float)$c['et'] - (float)str_replace(',', '.', (string)$a['et'])) > 0.01) continue;
+      if (!empty($a['dia']) && abs((float)$c['dia'] - (float)str_replace(',', '.', (string)$a['dia'])) > 0.05) continue;
+      $need = p4tWords($c['brand'] . ' ' . $c['model']); $all = true; foreach ($need as $w => $_) if (!isset($ours[$w])) { $all = false; break; } if (!$all || !$need) continue;
+      $cw = p4tColor((string)$c['color']); $cok = 0; foreach ($cw as $w => $_) if (isset($oc[$w])) $cok++;
+      // явные цвета разные (у нас silver, у них Black) — не он
+      $K = ['SILVER' => 1, 'BLACK' => 1, 'WHITE' => 1, 'GRAY' => 1, 'GREY' => 1, 'GOLD' => 1, 'BRONZE' => 1, 'RED' => 1];
+      $k1 = array_intersect_key($oc, $K); $k2 = array_intersect_key($cw, $K); if ($k1 && $k2 && !array_intersect_key($k1, $k2)) continue;
+      $hit[] = ['cae' => $c['cae'], 'name' => $c['brand'] . ' ' . $c['name'], 'model' => mb_strtoupper($c['brand'] . '|' . $c['model']), 'color' => mb_strtoupper((string)$c['color']), 'cok' => $cw && $cok === count($cw),
+        'score' => count($need) * 10 + ($cw && $cok === count($cw) ? 8 : 0) + p4tCodeRank($c['cae'])];
+    }
+    // у модели несколько цветов — цвет должен совпасть, иначе не угадываем
+    $colors = []; foreach ($hit as $h) $colors[$h['model']][$h['color']] = true;
+    $hit = array_values(array_filter($hit, fn($h) => $h['cok'] || count($colors[$h['model']]) < 2));
+  } else return ['st' => 'kind'];
+  if (!$hit) return ['st' => 'none'];
+  usort($hit, fn($x, $y) => $y['score'] <=> $x['score']);
+  if (count($hit) > 1 && $hit[1]['score'] === $hit[0]['score']) return ['st' => 'amb', 'alts' => array_slice($hit, 0, 4)];
+  return ['st' => 'ok', 'cae' => $hit[0]['cae'], 'name' => $hit[0]['name']];
+}
 // ===== загрузка документов поставщиков: сопоставление строк с карточками =====
 function codeNorm(string $c): string { return ltrim(preg_replace('/[\s\-\.\/]+/u', '', mb_strtoupper(trim($c))), '0'); }
 function partnerKey(string $p): string { return trim(preg_replace('/[^0-9A-ZА-ЯЁ]+/u', ' ', mb_strtoupper(preg_replace('/^(ООО|ОАО|АО|ЗАО|ИП)\s+/ui', '', str_replace(['«', '»', '"'], '', $p))))); }
@@ -850,12 +957,13 @@ try {
     $wh = ($_GET['wh'] ?? 'shop') === 'custody' ? 'custody' : 'shop';
     $sm = stockMap($cfg, $wh); $smc = $wh === 'custody' ? $sm : stockMap($cfg, 'custody'); $exact = []; $rows = [];
     $last = lastCosts($cfg);
-    foreach (db($cfg)->query("SELECT id, name, kind, barcode, article, price, unit FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll() as $p) {
+    foreach (db($cfg)->query("SELECT id, name, kind, barcode, article, cae, price, unit FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll() as $p) {
       $row = ['id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'price' => (float)$p['price'], 'unit' => $p['unit'], 'qty' => ($sm[(int)$p['id']]['q'] ?? 0), 'last' => $last[(int)$p['id']] ?? null];
       $sq = $sm[(int)$p['id']] ?? null; $row['avg'] = $sq && $sq['q'] > 0 ? round($sq['c'] / $sq['q'], 2) : ($wh === 'shop' ? $row['last'] : null);
       $cq = $smc[(int)$p['id']] ?? null; $row['qc'] = $cq['q'] ?? 0; $row['avgc'] = $cq && $cq['q'] > 0 ? round($cq['c'] / $cq['q'], 2) : null;
       if ($p['barcode'] !== '' && ($p['barcode'] === $q || ltrim($p['barcode'], '0') === ltrim($q, '0'))) { $exact[] = $row; continue; }
       if ($p['article'] !== '' && mb_strtoupper($p['article']) === $Q) { $exact[] = $row; continue; }
+      if ((string)$p['cae'] !== '' && mb_strtoupper($p['cae']) === $Q) { $exact[] = $row; continue; }
       $hay = mb_strtoupper(str_replace('/', ' ', $p['name'])) . ' ' . $p['barcode'];
       $ok = true; foreach ($toks as $t) if (mb_strpos($hay, $t) === false) { $ok = false; break; }
       if ($ok) $rows[] = $row;
@@ -1401,9 +1509,9 @@ try {
     // строки документа поставщика → наши карточки: запомненный код, артикул производителя, штрихкод, затем по названию
     post(); needRole($role, ['owner']);
     $b = body(); $pk = partnerKey((string)($b['partner'] ?? '')); $lines = array_slice((array)($b['lines'] ?? []), 0, 300);
-    $prods = db($cfg)->query("SELECT id, name, kind, attrs, article, barcode, price, unit FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll();
-    $byArt = []; $byBc = []; $byId = [];
-    foreach ($prods as $p) { $byId[(int)$p['id']] = $p; if ($p['article'] !== '') $byArt[codeNorm($p['article'])][] = (int)$p['id']; if ($p['barcode'] !== '') $byBc[ltrim($p['barcode'], '0')][] = (int)$p['id']; }
+    $prods = db($cfg)->query("SELECT id, name, kind, attrs, article, barcode, price, unit, cae FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll();
+    $byArt = []; $byBc = []; $byId = []; $byCae = [];
+    foreach ($prods as $p) { $byId[(int)$p['id']] = $p; if ($p['article'] !== '') $byArt[codeNorm($p['article'])][] = (int)$p['id']; if ($p['barcode'] !== '') $byBc[ltrim($p['barcode'], '0')][] = (int)$p['id']; if ((string)$p['cae'] !== '') $byCae[codeNorm($p['cae'])][] = (int)$p['id']; }
     $sup = []; if ($pk !== '') { $st = db($cfg)->prepare('SELECT code, product_id FROM supcodes WHERE pk = ?'); $st->execute([$pk]); foreach ($st->fetchAll() as $r) $sup[$r['code']] = (int)$r['product_id']; }
     $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $last = lastCosts($cfg);
     $card = fn($id, $how) => ['id' => $id, 'kind' => $byId[$id]['kind'], 'name' => $byId[$id]['name'], 'article' => $byId[$id]['article'], 'price' => (float)$byId[$id]['price'], 'unit' => $byId[$id]['unit'], 'qty' => $sm[$id]['q'] ?? 0, 'custody' => $cu[$id]['q'] ?? 0, 'last' => $last[$id] ?? null, 'how' => $how];
@@ -1411,6 +1519,7 @@ try {
     foreach ($lines as $l) {
       $code = trim((string)($l['code'] ?? '')); $scode = trim((string)($l['scode'] ?? '')); $name = (string)($l['name'] ?? ''); $res = ['match' => null, 'alts' => []];
       foreach ([$code, $scode] as $c) if ($c !== '' && isset($sup[codeNorm($c)]) && isset($byId[$sup[codeNorm($c)]])) { $res['match'] = $card($sup[codeNorm($c)], 'saved'); break; }
+      if (!$res['match'] && $code !== '' && !empty($byCae[codeNorm($code)])) { $ids = $byCae[codeNorm($code)]; $res['match'] = $card($ids[0], 'cae'); foreach (array_slice($ids, 1, 4) as $i) $res['alts'][] = $card($i, 'cae'); }
       if (!$res['match'] && $code !== '' && !empty($byArt[codeNorm($code)])) { $ids = $byArt[codeNorm($code)]; $res['match'] = $card($ids[0], 'article'); foreach (array_slice($ids, 1, 4) as $i) $res['alts'][] = $card($i, 'article'); }
       if (!$res['match'] && $code !== '' && !empty($byBc[ltrim($code, '0')])) $res['match'] = $card($byBc[ltrim($code, '0')][0], 'barcode');
       // проверка найденного по коду: у шины должны совпасть размер и бренд, у диска — диаметр. Не совпало — код считаем ошибочным
@@ -1476,7 +1585,9 @@ try {
     foreach (array_slice((array)($b['pairs'] ?? []), 0, 500) as $x) { $pid = (int)($x['product_id'] ?? 0); if (!$pid) continue;
       foreach ([(string)($x['code'] ?? ''), (string)($x['scode'] ?? '')] as $c) if (trim($c) !== '') { $ins->execute([$pk, codeNorm($c), $pid, time()]); $n++; }
       // код номенклатуры поставщика (CAE / артикул производителя) — в карточку, если артикула ещё нет
-      $code0 = trim((string)($x['code'] ?? '')); if ($code0 !== '' && preg_match('/^[0-9A-Za-z\-\.\/]{4,40}$/', $code0)) db($cfg)->prepare("UPDATE products SET article = ?, updated = ? WHERE id = ? AND (article IS NULL OR article = '')")->execute([$code0, time(), $pid]); }
+      $code0 = trim((string)($x['code'] ?? '')); if ($code0 !== '' && preg_match('/^[0-9A-Za-z\-\.\/]{4,40}$/', $code0)) db($cfg)->prepare("UPDATE products SET article = ?, updated = ? WHERE id = ? AND (article IS NULL OR article = '')")->execute([$code0, time(), $pid]); 
+      // документ от Пауэра (в т.ч. «ОХ Пауэр…»): их код — это CAE, кладём в карточку
+      if ($code0 !== '' && isPower($pk) && preg_match('/^\S{3,40}$/u', $code0)) db($cfg)->prepare('UPDATE products SET cae = ?, updated = ? WHERE id = ?')->execute([$code0, time(), $pid]); }
     out(['ok' => true, 'saved' => $n]);
 
   case 'vitrina':
@@ -1531,6 +1642,124 @@ try {
     foreach ($diffs as $x) $ins->execute([$id, $x['id'], $x['d'], $x['cost']]);
     $p->commit(); logit($cfg, $role, 'stock_sync', (string)$id);
     out(['ok' => true, 'id' => $id, 'n' => count($diffs)]);
+
+  // ===== справочник Пауэра: скачать выгрузку (шины / диски) и подобрать CAE нашим карточкам =====
+  case 'p4t_load':
+    post(); needRole($role, ['owner']); @set_time_limit(900); @ini_set('memory_limit', '256M');
+    $part = ($_GET['part'] ?? '') === 'rims' ? 'rims' : 'tires';
+    $base = rtrim((string)($cfg['p4t_base'] ?? 'https://b2b.4tochki.ru/export_data'), '/');
+    $tmp = dirname($cfg['db_path']) . '/p4t-' . $part . '.xml';
+    p4tDownload($base . '/' . ($part === 'rims' ? 'Rims' : 'Tires') . '.xml', $tmp);
+    $n = p4tParse($tmp, $part, db($cfg)); @unlink($tmp);
+    setSetting($cfg, 'p4t_' . $part, date('d.m.Y H:i') . ' · ' . $n);
+    logit($cfg, $role, 'p4t_load', $part . ':' . $n); out(['part' => $part, 'n' => $n]);
+
+  case 'p4t_match':
+    // всем шинам и дискам без CAE — подобрать по справочнику; ручные и уже стоящие коды не трогаем
+    post(); needRole($role, ['owner']); @set_time_limit(600);
+    $p = db($cfg); if (!(int)$p->query('SELECT COUNT(*) FROM p4t')->fetchColumn()) fail('Сначала скачайте справочник Пауэра', 409);
+    $sm = stockMap($cfg, 'shop'); $cu = stockMap($cfg, 'custody');
+    $st = ['ok' => 0, 'amb' => 0, 'none' => 0, 'nosize' => 0, 'had' => 0]; $miss = []; $amb = [];
+    $up = $p->prepare('UPDATE products SET cae = ?, updated = ? WHERE id = ? AND cae = \'\''); $p->beginTransaction();
+    foreach ($p->query("SELECT id, name, kind, attrs, cae FROM products WHERE archived = 0 AND kind IN ('tire','disk')")->fetchAll() as $pr) {
+      if ((string)$pr['cae'] !== '') { $st['had']++; continue; }
+      $r = p4tFind($p, $pr); $st[$r['st']] = ($st[$r['st']] ?? 0) + 1; $q = ($sm[(int)$pr['id']]['q'] ?? 0) + ($cu[(int)$pr['id']]['q'] ?? 0);
+      if ($r['st'] === 'ok') $up->execute([$r['cae'], time(), (int)$pr['id']]);
+      elseif ($q > 0 && $r['st'] === 'amb') $amb[] = ['id' => (int)$pr['id'], 'name' => $pr['name'], 'q' => $q, 'alts' => $r['alts']];
+      elseif ($q > 0) $miss[] = ['id' => (int)$pr['id'], 'name' => $pr['name'], 'q' => $q];
+    }
+    $p->commit(); logit($cfg, $role, 'p4t_match', json_encode($st));
+    usort($miss, fn($x, $y) => $y['q'] <=> $x['q']);
+    out(['stat' => $st, 'amb' => array_slice($amb, 0, 80), 'miss' => array_slice($miss, 0, 150), 'miss_n' => count($miss)]);
+
+  case 'p4t_state':
+    needRole($role, ['owner']);
+    $p = db($cfg);
+    out(['tires' => getSetting($cfg, 'p4t_tires'), 'rims' => getSetting($cfg, 'p4t_rims'),
+      'with' => (int)$p->query("SELECT COUNT(*) FROM products WHERE archived = 0 AND kind IN ('tire','disk') AND cae != ''")->fetchColumn(),
+      'all' => (int)$p->query("SELECT COUNT(*) FROM products WHERE archived = 0 AND kind IN ('tire','disk')")->fetchColumn()]);
+
+  case 'prod_cae':
+    // CAE в карточке вручную (пусто — убрать)
+    post(); needRole($role, ['owner']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $c = mb_substr(trim((string)($b['cae'] ?? '')), 0, 40);
+    db($cfg)->prepare('UPDATE products SET cae = ?, updated = ? WHERE id = ?')->execute([$c, time(), $id]); logit($cfg, $role, 'prod_cae', $id . '=' . $c);
+    out(['ok' => true]);
+
+  // ===== переход с CloudShop: чистый лист, ОХ, наш склад =====
+  case 'start_info':
+    needRole($role, ['owner']);
+    $p = db($cfg); $by = [];
+    foreach ($p->query("SELECT type, status, COUNT(*) n FROM docs GROUP BY type, status")->fetchAll() as $r) $by[] = ['label' => docLabel($r['type']), 'type' => $r['type'], 'status' => $r['status'], 'n' => (int)$r['n']];
+    $sum = function (array $m) { $q = 0; $c = 0; $n = 0; foreach ($m as $x) if ($x['q'] > 0) { $q += $x['q']; $c += $x['c']; $n++; } return ['n' => $n, 'q' => $q, 'c' => round($c, 2)]; };
+    out(['docs' => $by, 'total' => (int)$p->query('SELECT COUNT(*) FROM docs')->fetchColumn(), 'shop' => $sum(stockMap($cfg, 'shop')), 'custody' => $sum(stockMap($cfg, 'custody')),
+      'open' => $p->query("SELECT id, day FROM docs WHERE type = 'open' AND status = 'posted' ORDER BY id LIMIT 1")->fetch() ?: null]);
+
+  case 'start_reset':
+    // убрать все документы (пробные) — перед этим полная копия базы. Карточки, архив CloudShop, заказы и шиномонтаж не трогаем
+    post(); needRole($role, ['owner']);
+    if (mb_strtoupper(trim((string)(body()['confirm'] ?? ''))) !== 'УДАЛИТЬ') fail('Для подтверждения напишите слово УДАЛИТЬ');
+    $raw = sqliteSnapshot($cfg['db_path']); $bf = backupDir($cfg) . '/montazh-pered-ochistkoj-' . date('Y-m-d-His') . '.sqlite.gz';
+    if ($raw === null || @file_put_contents($bf, gzencode($raw, 6)) === false) fail('Не получилось сделать резервную копию — ничего не удалено', 500);
+    $p = db($cfg); $n = (int)$p->query('SELECT COUNT(*) FROM docs')->fetchColumn();
+    $p->beginTransaction(); $p->exec('DELETE FROM moves'); $p->exec('DELETE FROM docs'); $p->exec("DELETE FROM sqlite_sequence WHERE name IN ('docs','moves')");
+    $p->exec("UPDATE zak SET status = 'came' WHERE status = 'done'"); $p->commit();
+    logit($cfg, $role, 'start_reset', $n . ' docs; backup ' . basename($bf));
+    out(['ok' => true, 'deleted' => $n, 'backup' => basename($bf)]);
+
+  case 'start_custody':
+    // черновик прихода на ответхранение из файла CloudShop (для поставщика без кабинета, напр. «ОХ Север Авто»)
+    post(); needRole($role, ['owner']);
+    $b = body(); $partner = mb_substr(trim((string)($b['partner'] ?? '')), 0, 200); if ($partner === '') fail('Не указан поставщик');
+    $p = db($cfg); $note = 'Стартовый остаток ОХ из CloudShop';
+    $ex = $p->prepare("SELECT id FROM docs WHERE type = 'in' AND wh = 'custody' AND partner = ? AND note = ? AND status != 'cancelled' LIMIT 1"); $ex->execute([$partner, $note]);
+    if ($id = $ex->fetchColumn()) out(['id' => (int)$id, 'exists' => true]);
+    $sel = $p->prepare('SELECT id FROM products WHERE ext_id = ?'); $L = []; $miss = 0;
+    foreach (array_slice((array)($b['rows'] ?? []), 0, 2000) as $r) { $q = (float)($r['qty'] ?? 0); if ($q <= 0) continue; $sel->execute([(string)($r['ext'] ?? '')]); $pid = $sel->fetchColumn(); if (!$pid) { $miss++; continue; } $L[] = [(int)$pid, $q, max(0, (float)($r['cost'] ?? 0))]; }
+    if (!$L) fail('Ни одна строка не нашлась в каталоге');
+    $p->beginTransaction();
+    $p->prepare("INSERT INTO docs (type, num, day, partner, note, wh, status, author, created) VALUES ('in', '', ?, ?, ?, 'custody', 'draft', ?, ?)")->execute([isDay($b['day'] ?? null) ? $b['day'] : date('Y-m-d'), $partner, $note, $role, time()]);
+    $id = (int)$p->lastInsertId(); $ins = $p->prepare("INSERT INTO moves (doc_id, product_id, wh, qty, cost, price) VALUES (?,?, 'custody', ?,?, NULL)");
+    foreach ($L as [$pid, $q, $c]) $ins->execute([$id, $pid, $q, $c]);
+    $p->commit(); logit($cfg, $role, 'start_custody', $id . ' ' . $partner);
+    out(['id' => $id, 'lines' => count($L), 'missing' => $miss]);
+
+  case 'start_cmp':
+  case 'start_sync':
+    // наш склад = остаток в CloudShop минус то, что сейчас числится на ответхранении (ОХ вводится раньше, из кабинета Пауэра)
+    post(); needRole($role, ['owner']);
+    $b = body(); $file = [];
+    foreach ((array)($b['rows'] ?? []) as $r) { $e = trim((string)($r['ext'] ?? '')); if ($e !== '') $file[$e] = ['q' => (float)($r['total'] ?? 0), 'c' => max(0, (float)($r['cost'] ?? 0))]; }
+    if (count($file) < 10) fail('В файле слишком мало строк — это не выгрузка остатков');
+    $sm = stockMap($cfg, 'shop'); $cu = stockMap($cfg, 'custody'); $diffs = []; $conf = [];
+    $tot = ['file_q' => 0, 'file_c' => 0, 'cust_q' => 0, 'target_q' => 0, 'ours_q' => 0, 'n' => 0, 'plus' => 0, 'minus' => 0, 'neg' => 0];
+    foreach (db($cfg)->query("SELECT id, ext_id, name FROM products WHERE kind != 'svc'")->fetchAll() as $pr) {
+      $id = (int)$pr['id']; $f = $file[(string)$pr['ext_id']] ?? ['q' => 0, 'c' => 0]; $o = $sm[$id] ?? ['q' => 0, 'c' => 0]; $c = max(0, $cu[$id]['q'] ?? 0);
+      if ($f['q'] < 0) $tot['neg']++;
+      $fq = max(0, $f['q']); $tgt = max(0, $fq - $c);
+      if ($c > $fq + 1e-9) $conf[] = ['id' => $id, 'name' => $pr['name'], 'file' => $f['q'], 'custody' => $c];
+      $tot['file_q'] += $fq; $tot['file_c'] += $fq * $f['c']; $tot['cust_q'] += $c; $tot['target_q'] += $tgt; $tot['ours_q'] += max(0, $o['q']);
+      $d = round($tgt - $o['q'], 3); if (abs($d) < 0.001) continue;
+      $avg = $o['q'] > 0 ? $o['c'] / $o['q'] : 0;
+      $diffs[] = ['id' => $id, 'name' => $pr['name'], 'ours' => $o['q'], 'file' => $f['q'], 'custody' => $c, 'target' => $tgt, 'd' => $d, 'cost' => round($d > 0 ? ($f['c'] ?: $avg) : ($avg ?: $f['c']), 2)];
+      $tot['n']++; if ($d > 0) $tot['plus'] += $d; else $tot['minus'] += -$d;
+    }
+    $known = array_flip(db($cfg)->query("SELECT ext_id FROM products WHERE ext_id IS NOT NULL AND ext_id != ''")->fetchAll(PDO::FETCH_COLUMN));
+    $tot['missing'] = []; foreach ($file as $e => $f) if ($f['q'] > 0 && !isset($known[$e])) $tot['missing'][] = $e;
+    $tot['file_c'] = round($tot['file_c'], 2);
+    usort($diffs, fn($x, $y) => abs($y['d'] * $y['cost']) <=> abs($x['d'] * $x['cost']));
+    if ($a === 'start_cmp') out(['total' => $tot, 'diffs' => array_slice($diffs, 0, 300), 'conflicts' => $conf]);
+    if ($tot['missing']) fail('Сначала добавьте недостающие карточки (' . count($tot['missing']) . ')', 409);
+    if (!$diffs) out(['ok' => true, 'id' => null]);
+    $p = db($cfg); $open = $p->query("SELECT id FROM docs WHERE type = 'open' AND status = 'posted' LIMIT 1")->fetchColumn();
+    $type = $open ? 'inv' : 'open'; $day = isDay($b['day'] ?? null) ? $b['day'] : date('Y-m-d');
+    $p->beginTransaction();
+    $p->prepare("INSERT INTO docs (type, num, day, partner, note, wh, status, author, created, posted_at) VALUES (?, '', ?, '', ?, 'shop', 'posted', ?, ?, ?)")
+      ->execute([$type, $day, ($type === 'open' ? 'Стартовые остатки нашего склада из CloudShop' : 'Сверка нашего склада с CloudShop') . ' (без товара на ОХ): ' . count($diffs) . ' поз.', $role, time(), time()]);
+    $id = (int)$p->lastInsertId(); $ins = $p->prepare("INSERT INTO moves (doc_id, product_id, wh, qty, cost, price) VALUES (?,?, 'shop', ?,?, NULL)");
+    foreach ($diffs as $x) $ins->execute([$id, $x['id'], $x['d'], $x['cost']]);
+    $p->commit(); logit($cfg, $role, 'start_sync', $type . ' ' . $id);
+    out(['ok' => true, 'id' => $id, 'type' => $type, 'n' => count($diffs)]);
 
   case 'price_set':
     // цена продажи в карточке

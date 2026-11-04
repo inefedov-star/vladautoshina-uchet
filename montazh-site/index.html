@@ -596,6 +596,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
 .bnav button{position:relative}.bnav .rq{position:absolute;top:2px;right:calc(50% - 22px);margin:0}
 .bkr{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--rule-soft)}.bkr span:first-child{flex:1;font-weight:600}.bkr:last-child{border-bottom:0}
 .offb{position:fixed;left:50%;top:calc(var(--hdr,64px) + 8px);transform:translateX(-50%);z-index:30;max-width:min(92vw,720px);background:#3A2A00;color:#FFE7B0;padding:10px 16px;border-radius:12px;font-size:.88rem;box-shadow:0 8px 20px rgba(0,0,0,.25)}
+.stp{border:1px solid var(--line,#ddd);border-radius:14px;padding:12px 14px;margin:0 0 10px}.stp h3{display:flex;align-items:center;gap:10px;margin:0 0 6px;font-size:1.02rem}.stp .stn{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--acc,#333);color:#fff;font-size:.85rem;flex:none}.stp.done .stn{background:var(--moss,#2e7d32)}.stp .note{margin:4px 0 8px}
 </style>
 </head>
 <body>
@@ -687,7 +688,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
     <div class="calbar">
       <h1 id="stH1">Склад</h1>
       <div class="spacer"></div>
-      <button class="btn ghost owner-only" type="button" id="stImport">Загрузить каталог из CloudShop</button>
+      <button class="btn ghost owner-only" type="button" id="stImport">Загрузить каталог из CloudShop</button><button class="btn ghost owner-only" type="button" id="stStart">Переход с CloudShop: остатки, ОХ, CAE</button>
     </div>
     <div class="row owner-only" id="stSubs" style="margin-bottom:12px"><button type="button" class="chip" data-s="goods" aria-pressed="true">Товары</button><button type="button" class="chip" data-s="docs" aria-pressed="false">Документы</button></div>
     <div id="stGoods">
@@ -706,7 +707,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
         <div class="spacer"></div>
       </div>
       <div id="dlPartner"></div>
-      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Закупка</button><button class="btn" type="button" data-newdoc="iss">+ Выдача с ОХ</button><label class="btn ghost" id="dlImp" style="cursor:pointer">Загрузить документ (PDF / XML) — или перетащите файл сюда<input type="file" accept=".pdf,.xml,application/pdf,text/xml" id="dlImpF" hidden></label></div>
+      <div class="row" id="dlBtns" style="margin-bottom:12px"><button class="btn sig" type="button" data-newdoc="sale">+ Продажа</button><button class="btn" type="button" data-newdoc="in">+ Закупка</button><button class="btn" type="button" data-newdoc="iss">+ Выдача с ОХ</button><label class="btn ghost" id="dlImp" style="cursor:pointer">Загрузить документ (PDF / XML) — или перетащите файл сюда<input type="file" accept=".pdf,.xml,.json,application/pdf,text/xml,application/json" id="dlImpF" hidden></label></div>
       <div class="tiles" id="dlTiles" style="margin-top:0"></div>
       <div class="row" id="dlTypes" style="margin-bottom:12px"><button type="button" class="chip" data-t="sale">Продажи</button><button type="button" class="chip" data-t="in">Приход</button><button type="button" class="chip" data-t="iss">Выдача</button><button type="button" class="chip" data-t="open">Ввод остатков</button></div>
       <div id="dlOut" style="margin-bottom:40px"></div>
@@ -1198,11 +1199,14 @@ async function openProduct(id){let j;try{j=await api('product',null,{id});}catch
   ${own?`<div class="row" style="margin:-4px 0 12px">${j.qty>0?'<button class="btn sig" type="button" id="pcSell">Продать</button>':''}<label class="btn ghost" style="cursor:pointer">${j.photo?'Заменить фото':'Загрузить фото'}<input type="file" accept="image/*" id="pcPh" hidden></label></div>`:''}
   <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Остаток</span><b class="tnum">${fmtQty(j.qty)} ${esc(p.unit||'')}</b>${j.custody?`<small class="pay">+ ${fmtQty(j.custody)} на ответхранении</small>`:''}</div><div class="tile"><span class="mono">Цена</span><b class="tnum" id="pcPrice">${rub(p.price)}</b>${own?'<button type="button" class="out" id="pcEdit" style="padding:0;min-height:30px">Изменить цену</button>':''}</div>
     ${own?`<div class="tile"><span class="mono">Себестоимость</span><b class="tnum">${j.cost!=null?rub(j.cost):'—'}</b></div><div class="tile acc"><span class="mono">Наценка</span><b class="tnum">${j.cost?Math.round((p.price/j.cost-1)*100)+'%':'—'}</b></div>`:''}</div>
-  <dl class="facts">${[...attrLines(p.kind,p.attrs),['Вид',KIND_ONE[p.kind]||p.kind],['Группа CloudShop',p.grp||'—'],['Штрихкод',p.barcode||'—'],['Артикул',p.article||'—'],...(own&&p.supplier?[['Поставщик',p.supplier]]:[]),...(p.country?[['Страна',p.country]]:[])].map(([k,v])=>`<div><dt class="mono">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+  <dl class="facts">${[...attrLines(p.kind,p.attrs),['Вид',KIND_ONE[p.kind]||p.kind],['Группа CloudShop',p.grp||'—'],['Штрихкод',p.barcode||'—'],['Артикул',p.article||'—'],...(p.kind==='tire'||p.kind==='disk'||p.cae?[['CAE Пауэра',p.cae||'—']]:[]),...(own&&p.supplier?[['Поставщик',p.supplier]]:[]),...(p.country?[['Страна',p.country]]:[])].map(([k,v])=>`<div><dt class="mono">${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
   <h2 class="sec" style="font-size:1.1rem">Движение</h2>
   ${j.moves.length?`<div class="tw"><table><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th>Кол-во</th>${own?'<th>Цена прихода</th>':''}</tr></thead><tbody>${j.moves.map(m=>`<tr><td>${fmtDay(m.day)}</td><td style="text-align:left">${esc(m.label)} № ${m.doc}${m.num&&m.type!=='open'?' (накл. '+esc(m.num)+')':''}${m.partner?' · '+esc(m.partner):''}${m.wh==='custody'?' · ответхранение':''}</td><td class="${m.qty<0?'neg':''}">${m.qty>0?'+':''}${fmtQty(+m.qty)}</td>${own?`<td>${m.qty>0?rub(+m.cost):'—'}</td>`:''}</tr>`).join('')}</tbody></table></div>`:'<p class="note">Движений пока нет.</p>'}`;
   $('#close').onclick=closeSheet;
   const pf=document.getElementById('pcPh');if(pf)pf.onchange=async()=>{if(pf.files[0]&&await uploadPhoto(j.photo_key,pf.files[0])){openProduct(p.id);loadStock();}};
+  if(own&&(p.kind==='tire'||p.kind==='disk'||p.cae)){const dl=document.querySelector('#shIn dl.facts');if(dl)dl.insertAdjacentHTML('afterend',`<div class="row" style="margin:-6px 0 14px"><button type="button" class="out" id="pcCae" style="min-height:30px">${p.cae?'Изменить CAE':'Указать CAE Пауэра'}</button></div>`);
+    const pc=document.getElementById('pcCae');if(pc)pc.onclick=()=>{pc.outerHTML=`<span class="row" style="margin:-6px 0 14px"><input class="inp" id="pcCaeV" value="${esc(p.cae||'')}" placeholder="например TS78036" style="max-width:200px"><button class="btn" type="button" id="pcCaeS" style="min-height:42px">Сохранить</button></span>`;
+      $('#pcCaeS').onclick=async()=>{try{await api('prod_cae',{id:p.id,cae:$('#pcCaeV').value});toast('<b>CAE сохранён</b>'+esc($('#pcCaeV').value||'убран'));openProduct(p.id);}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};};}
   const ps=document.getElementById('pcSell');if(ps)ps.onclick=()=>openDoc(null,{type:'sale',lines:[{product_id:p.id,name:p.name,unit:p.unit,barcode:p.barcode,qty:1,price:p.price,list:p.price,cur_price:p.price,avg:j.cost,last:j.cost,stock:j.qty}]});
   const pe=document.getElementById('pcEdit');if(pe)pe.onclick=()=>{pe.outerHTML=`<span class="row" style="margin-top:6px"><input class="inp tnum" id="pcNew" type="number" inputmode="decimal" min="0" value="${p.price}" style="max-width:130px"><button class="btn" type="button" id="pcSave" style="min-height:42px">Сохранить</button></span>`;
     $('#pcSave').onclick=async()=>{try{await api('price_set',{id:p.id,price:+$('#pcNew').value});toast('<b>Цена изменена</b>'+rub(+$('#pcNew').value));openProduct(p.id);loadStock();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};};
@@ -1263,6 +1267,70 @@ async function openImport(){let st;try{st=await api('cat_state');}catch(e){toast
         catch(err){b.disabled=false;prog.textContent='Ошибка: '+err.message+'. Можно нажать ещё раз — уже загруженное не задвоится.';}};
     }catch(err){out.innerHTML=`<p class="err">${esc(err.message)}</p>`;}};}
 $('#stImport').onclick=openImport;
+/* ---- переход с CloudShop: чистый лист → ОХ Пауэра (кабинет) → ОХ Север Авто → наш склад → CAE ---- */
+let ST0=null;try{ST0=JSON.parse(sessionStorage.getItem('ivanorStartFile')||'null');}catch(_){ST0=null;}
+function stFileSum(f){const R=f.rows,ix=k=>f.meta.cols.indexOf(k);const T=ix('total'),C=ix('custody'),S=ix('custody_supplier'),CO=ix('cost');
+  const pos=R.filter(r=>r[T]>0);const ohBy={};R.forEach(r=>{if(r[C]>0){const k=r[S]||'ОХ';ohBy[k]=(ohBy[k]||0)+r[C];}});
+  return{pos:pos.length,q:pos.reduce((a,r)=>a+r[T],0),c:pos.reduce((a,r)=>a+r[T]*Math.max(0,r[CO]),0),ohBy,neg:R.filter(r=>r[T]<0).length};}
+async function openStart(){let I;try{I=await api('start_info');}catch(e){toast('<b>Ошибка</b>'+esc(e.message));return;}
+  let P=null;try{P=await api('p4t_state');}catch(_){}
+  const f=ST0,fs=f?stFileSum(f):null,col=k=>f?f.meta.cols.indexOf(k):-1;
+  const sever=f?f.rows.filter(r=>r[col('custody')]>0&&!/Пауэр/i.test(r[col('custody_supplier')]||'')):[];
+  const sevName=sever.length?(sever[0][col('custody_supplier')]||'ОХ Север Авто'):'ОХ Север Авто';
+  const step=(n,t,body,done)=>`<section class="stp${done?' done':''}"><h3><span class="stn">${done?'✓':n}</span>${t}</h3>${body}</section>`;
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Переход с CloudShop</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <p class="note" style="margin:0 0 6px">Порядок такой: убрать пробные документы → завести, что лежит на ответхранении → наш склад = остаток CloudShop минус ОХ → коды CAE Пауэра. Каждый шаг можно повторить.</p>
+  <div class="tiles" style="margin:0 0 12px"><div class="tile"><span class="mono">Наш склад сейчас</span><b class="tnum">${fmtQty(Math.round(I.shop.q))} шт.</b><small class="pay">${I.shop.n} поз. · ${rub(I.shop.c)}</small></div>
+    <div class="tile"><span class="mono">На ответхранении</span><b class="tnum">${fmtQty(Math.round(I.custody.q))} шт.</b><small class="pay">${I.custody.n} поз.</small></div>
+    <div class="tile"><span class="mono">Документов в пульте</span><b class="tnum">${I.total}</b></div></div>
+  ${step(1,'Убрать пробные документы',I.total?`<p class="pay">${I.docs.map(d=>`${esc(d.label)}${d.status==='draft'?' (черновик)':d.status==='cancelled'?' (отменён)':''}: ${d.n}`).join(' · ')}</p>
+    <p class="note">Удалятся все документы и движения склада. Карточки товаров, история CloudShop, заказы, шиномонтаж и отель не трогаются. Перед удалением пульт сам сделает полную резервную копию.</p>
+    <div class="row"><input class="inp" id="srC" placeholder="напишите УДАЛИТЬ" style="max-width:200px"><button class="btn" type="button" id="srGo">Удалить все документы</button></div>`:'<p class="pay">Документов нет — начинаем с чистого листа.</p>',!I.total)}
+  ${step(2,'Файл остатков из CloudShop',`<p class="note">Файл <b>cloudshop-ostatki-…json</b> (лежит в «Загрузках»). Его можно выгрузить заново в день перехода.</p>
+    <label class="btn ghost" style="cursor:pointer;width:max-content">${f?'Заменить файл':'Выбрать файл'}<input type="file" id="stF" accept=".json,application/json" hidden></label>
+    ${f?`<p class="pay" style="margin-top:8px">Выгрузка ${esc(String(f.meta.at||'').slice(0,16).replace('T',' '))}: ${fs.pos} поз., ${fmtQty(fs.q)} шт., по себестоимости ${rub(fs.c)}. На ОХ по CloudShop: ${Object.entries(fs.ohBy).map(([k,v])=>esc(k)+' — '+fmtQty(v)+' шт.').join(', ')||'нет'}.${fs.neg?` Отрицательных остатков: ${fs.neg} (считаем нулём).`:''}</p><div id="stMiss"></div>`:''}`,!!f)}
+  ${step(3,'Ответхранение Пауэра — по их кабинету',`<p class="note">Файл <b>power-oh-ostatki-…json</b> — остаток склада ОХ из кабинета «Форточки». Откроется как акт приёма на ОХ: проверьте карточки (что не нашлось — выберите руками), создайте черновик и проведите. Цена в нём — цена Пауэра, по ней считается себестоимость продажи с ОХ.</p>
+    <label class="btn ghost" style="cursor:pointer;width:max-content">Загрузить файл из кабинета<input type="file" id="stP" accept=".json,application/json" hidden></label>`,I.custody.q>0)}
+  ${step(4,esc(sevName)+' — из CloudShop',sever.length?`<p class="note">У этого поставщика кабинета нет — берём из CloudShop: ${sever.length} поз., ${fmtQty(sever.reduce((a,r)=>a+r[col('custody')],0))} шт. Получится черновик прихода на ОХ — проверьте и проведите.</p>
+    <div class="row"><button class="btn" type="button" id="stS">Создать черновик</button></div>`:`<p class="pay">${f?'В файле CloudShop нет товара на ОХ у других поставщиков.':'Сначала выберите файл CloudShop (шаг 2).'}</p>`)}
+  ${step(5,'Наш склад',f?`<p class="note">Наш остаток = остаток в CloudShop минус то, что сейчас в пульте на ответхранении. Сначала проведите ОХ (шаги 3–4), потом нажмите «Сверить».</p><div class="row"><button class="btn" type="button" id="stC">Сверить</button></div><div id="stCo"></div>`:'<p class="pay">Сначала выберите файл CloudShop (шаг 2).</p>',false)}
+  ${step(6,'Коды CAE Пауэра во все карточки',`<p class="note">Пульт скачает открытый справочник Пауэра (шины и диски) и проставит CAE там, где совпало всё: размер, бренд, модель, индексы, шипы. Потом закупки у Пауэра узнаются по коду сразу. Уже стоящие коды не меняются.</p>
+    ${P?`<p class="pay">С CAE: ${P.with} из ${P.all} шин и дисков.${P.tires?' Справочник шин: '+esc(P.tires)+' поз.':''}${P.rims?' · дисков: '+esc(P.rims):''}</p>`:''}
+    <div class="row"><button class="btn" type="button" id="stK">Скачать справочник и подобрать</button></div><p class="pay" id="stKp"></p><div id="stKo"></div>`,P&&P.with>0)}`;
+  $('#close').onclick=closeSheet;const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
+  const g=document.getElementById('srGo');if(g)g.onclick=async()=>{g.disabled=true;try{const r=await api('start_reset',{confirm:$('#srC').value});toast(`<b>Удалено документов: ${r.deleted}</b>Копия базы: ${esc(r.backup)}`);openStart();loadStock();}catch(e){g.disabled=false;toast('<b>Не удалено</b>'+esc(e.message));}};
+  $('#stF').onchange=async e=>{const x=e.target.files[0];if(!x)return;try{const j=JSON.parse(await x.text());if(!j.meta||j.meta.kind!=='stock'||!Array.isArray(j.rows))throw new Error('Это не файл остатков CloudShop (cloudshop-ostatki-…json).');
+    ST0=j;try{sessionStorage.setItem('ivanorStartFile',JSON.stringify(j));}catch(_){}openStart();}catch(err){toast('<b>Файл не подошёл</b>'+esc(err.message));}};
+  $('#stP').onchange=e=>{const x=e.target.files[0];if(x)openDocImport(x);};
+  const sb=document.getElementById('stS');if(sb)sb.onclick=async()=>{sb.disabled=true;try{const r=await api('start_custody',{partner:sevName,rows:sever.map(x=>({ext:x[0],qty:x[col('custody')],cost:x[col('custody_price')]}))});
+    toast(r.exists?`<b>Черновик уже есть</b>№ ${r.id}`:`<b>Черновик № ${r.id}</b>Строк: ${r.lines}${r.missing?', не нашлось карточек: '+r.missing:''}`);openDoc(r.id);}catch(e){sb.disabled=false;toast('<b>Не получилось</b>'+esc(e.message));}};
+  if(f){const rows=f.rows.map(x=>({ext:x[0],total:x[col('total')],cost:x[col('cost')]}));
+    const cb=document.getElementById('stC');if(cb)cb.onclick=async()=>{const box=$('#stCo');box.innerHTML='<p class="note">Сравниваю…</p>';let j;try{j=await api('start_cmp',{rows});}catch(e){box.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
+      const t=j.total,miss=t.missing||[];
+      box.innerHTML=`<div class="tiles" style="margin:10px 0"><div class="tile"><span class="mono">В CloudShop всего</span><b class="tnum">${fmtQty(Math.round(t.file_q))} шт.</b></div><div class="tile"><span class="mono">Из них на ОХ (в пульте)</span><b class="tnum">${fmtQty(Math.round(t.cust_q))} шт.</b></div>
+        <div class="tile acc"><span class="mono">Наш склад станет</span><b class="tnum">${fmtQty(Math.round(t.target_q))} шт.</b><small class="pay">сейчас ${fmtQty(Math.round(t.ours_q))}</small></div></div>
+        ${miss.length?`<div class="hint" style="margin-bottom:10px"><b>В пульте нет ${miss.length} карточек из файла</b><p>Добавлю их с названием и категорией из CloudShop.</p><button class="btn" type="button" id="stAdd">Добавить карточки</button></div>`:''}
+        ${j.conflicts.length?`<div class="hint" style="margin-bottom:10px;border-color:var(--signal)"><b>На ОХ больше, чем всего в CloudShop: ${j.conflicts.length}</b><p>Скорее всего в акте ОХ выбрана не та карточка (в CloudShop бывают дубли). Наш остаток по ним будет 0, ОХ — как в акте.</p>
+          <div class="tw"><table class="sttab"><thead><tr><th>Карточка</th><th>В CloudShop</th><th>На ОХ</th></tr></thead><tbody>${j.conflicts.slice(0,40).map(c=>`<tr><td class="nm"><button type="button" class="out" data-op="${c.id}" style="text-align:left">${esc(c.name)}</button></td><td>${fmtQty(c.file)}</td><td>${fmtQty(c.custody)}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+        ${t.n?`<div class="tw"><table class="sttab"><thead><tr><th>Товар</th><th>Сейчас</th><th>CloudShop</th><th>ОХ</th><th>Станет</th></tr></thead><tbody>${j.diffs.slice(0,50).map(d=>`<tr><td class="nm">${esc(d.name)}</td><td>${fmtQty(d.ours)}</td><td>${fmtQty(d.file)}</td><td>${d.custody?fmtQty(d.custody):''}</td><td style="font-weight:700">${fmtQty(d.target)}</td></tr>`).join('')}</tbody></table></div>
+          ${j.diffs.length>50?`<p class="note">Показаны 50 самых крупных по сумме из ${t.n}.</p>`:''}
+          <div class="row" style="margin-top:8px"><label style="display:flex;align-items:center;gap:8px"><span class="pay">Дата</span><input class="inp" type="date" id="stDay" value="${iso(new Date())}" style="width:auto"></label><button class="btn sig" type="button" id="stGo" ${miss.length?'disabled':''}>Провести: наш склад по CloudShop</button></div>`
+        :'<p class="hint">Наш склад уже совпадает с CloudShop до штуки.</p>'}`;
+      box.querySelectorAll('[data-op]').forEach(b=>b.onclick=()=>openProduct(+b.dataset.op));
+      const ad=document.getElementById('stAdd');if(ad)ad.onclick=async()=>{ad.disabled=true;const set=new Set(miss);const N=f.rows.filter(x=>set.has(x[0])).map(x=>{const nm=String(x[col('name')]).replace(/\s+/g,' ').trim(),c=classify(nm,'',x[col('category')]||'',x[col('total')]);
+          return{ext_id:x[0],name:nm,grp:'',cat:x[col('category')]||'',kind:c.kind,attrs:c.attrs,barcode:'',article:'',unit:'шт',price:+x[col('price')]||0,supplier:'',country:''};});
+        try{for(let i=0;i<N.length;i+=500)await api('cat_import',{rows:N.slice(i,i+500)});toast(`<b>Добавлено карточек: ${N.length}</b>Сверяю снова`);cb.click();}catch(e){ad.disabled=false;toast('<b>Не добавились</b>'+esc(e.message));}};
+      const go=document.getElementById('stGo');if(go)go.onclick=async()=>{go.disabled=true;try{const r=await api('start_sync',{rows,day:$('#stDay').value});toast(r.id?`<b>${r.type==='open'?'Стартовые остатки введены':'Остатки поправлены'}</b>Документ № ${r.id}, позиций: ${r.n}`:'<b>Всё уже совпадало</b>');openStart();loadStock();}catch(e){go.disabled=false;toast('<b>Не получилось</b>'+esc(e.message));}};};}
+  $('#stK').onclick=async()=>{const b=$('#stK'),pr=$('#stKp'),o=$('#stKo');b.disabled=true;
+    try{pr.textContent='Скачиваю справочник шин Пауэра (около 30 МБ)…';const t=await api('p4t_load',{},{part:'tires'});
+      pr.textContent=`Шин в справочнике: ${t.n.toLocaleString('ru-RU')}. Скачиваю диски (около 45 МБ)…`;const d=await api('p4t_load',{},{part:'rims'});
+      pr.textContent=`Дисков: ${d.n.toLocaleString('ru-RU')}. Подбираю коды…`;const m=await api('p4t_match',{});const s=m.stat;
+      pr.textContent=`Готово: проставлено ${s.ok}, уже было ${s.had}, несколько похожих — ${s.amb}, не нашлось — ${s.none}${s.nosize?', без размера — '+s.nosize:''}.`;
+      o.innerHTML=(m.amb.length?`<h3 class="sec" style="font-size:1rem;margin-top:12px">Несколько вариантов (в наличии)</h3><div class="tw"><table class="sttab"><tbody>${m.amb.map(x=>`<tr><td class="nm"><button type="button" class="out" data-op="${x.id}" style="text-align:left">${esc(x.name)}</button><small class="pay" style="display:block">${x.alts.map(a=>esc(a.cae)+' — '+esc(a.name)).join('<br>')}</small></td><td>${fmtQty(x.q)}</td></tr>`).join('')}</tbody></table></div>`:'')
+        +(m.miss.length?`<h3 class="sec" style="font-size:1rem;margin-top:12px">Не нашлись у Пауэра (в наличии): ${m.miss_n}</h3><p class="note">Чаще всего — товар не от Пауэра или название в карточке записано иначе. CAE можно вписать в карточке руками.</p><div class="tw"><table class="sttab"><tbody>${m.miss.slice(0,80).map(x=>`<tr><td class="nm"><button type="button" class="out" data-op="${x.id}" style="text-align:left">${esc(x.name)}</button></td><td>${fmtQty(x.q)}</td></tr>`).join('')}</tbody></table></div>`:'');
+      o.querySelectorAll('[data-op]').forEach(x=>x.onclick=()=>openProduct(+x.dataset.op));b.disabled=false;}
+    catch(e){b.disabled=false;pr.textContent='Ошибка: '+e.message;}};}
+$('#stStart').onclick=openStart;
 /* ---------- склад: подвкладки, склад ответхранения ---------- */
 S.st.wh='all';S.st.sub='goods';S.dl={month:iso(new Date()).slice(0,7),type:'',docs:[]};
 function stSub(v){S.st.sub=v;document.querySelectorAll('#stSubs .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.s===v));
@@ -2454,13 +2522,19 @@ function parseSupplierDoc(pages){
     if(c==null||(byRate&&Math.abs(c-byRate)/byRate>0.03))c=byRate;r.cost=c;});
   return{type,docNum,docDay,partner,lines:rows};}
 
+/* остаток ответхранения из кабинета Пауэра (файл power-oh-ostatki-*.json): строки как в акте МХ-1 — код CAE, название, кол-во, их цена */
+function parsePowerOh(buf){const j=JSON.parse(new TextDecoder().decode(buf));if(!j||!j.meta||j.meta.kind!=='oh_power'||!Array.isArray(j.rows))throw new Error('Это не файл остатков ответхранения из кабинета Пауэра.');
+  return{type:'custody',partner:'ОХ Пауэр Интернэшнл-шины',docNum:'',docDay:String(j.meta.at||'').slice(0,10)||iso(new Date()),
+    lines:j.rows.map(([cae,brand,name,qty,price])=>({code:String(cae),scode:'',name:`${PW_BRAND[brand]||brand} ${name}`.replace(/\s+/g,' ').trim(),qty:+qty||0,cost:+price||0}))};}
+/* бренды Пауэра → как у нас в карточках */
+const PW_BRAND={'Prinx Fortune':'Fortune','Nokian Tyres':'Nokian'};
 let IM=null;
 const IM_T={in:'Приход на наш склад',custody:'Приход на ответхранение',iss:'Выдача с ответхранения'};
-const HOW={saved:['запомнено','cp'],article:['по артикулу','cp'],barcode:['по штрихкоду','cp'],name:['по названию — совпало всё','cp'],picked:['выбрано вручную','cp'],created:['новая карточка','cp'],none:['не найдено','ds']};
+const HOW={saved:['запомнено','cp'],cae:['по CAE Пауэра','cp'],article:['по артикулу','cp'],barcode:['по штрихкоду','cp'],name:['по названию — совпало всё','cp'],picked:['выбрано вручную','cp'],created:['новая карточка','cp'],none:['не найдено','ds']};
 async function openDocImport(file){
   const sc=$('#scrim'),sh=$('#sheet');$('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Документ поставщика</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div><p class="note">Читаю «${esc(file.name)}»…</p>`;
   $('#close').onclick=closeSheet;sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});
-  let r;try{const buf=await file.arrayBuffer();r=/\.xml$/i.test(file.name)||/^\s*<\?xml/.test(new TextDecoder().decode(buf.slice(0,60)))?parseUpdXml(buf):parseSupplierDoc(await pdfPages(buf));}
+  let r;try{const buf=await file.arrayBuffer();r=/\.json$/i.test(file.name)?parsePowerOh(buf):/\.xml$/i.test(file.name)||/^\s*<\?xml/.test(new TextDecoder().decode(buf.slice(0,60)))?parseUpdXml(buf):parseSupplierDoc(await pdfPages(buf));}
   catch(e){$('#shIn').insertAdjacentHTML('beforeend',`<p class="err">${esc(e.message||String(e))}</p>`);return;}
   if(r.type==='bill'){$('#shIn').insertAdjacentHTML('beforeend',`<p class="err">Это счёт на оплату, а не документ о получении товара. Загрузите УПД (или акт МХ-1 / МХ-3 для ответхранения) — их присылают через Диадок.</p>`);return;}
   if(!r.lines.length){$('#shIn').insertAdjacentHTML('beforeend',`<p class="err">${esc(r.error||'Не нашёл строк с товарами.')} Если это скан (картинка), а не документ из Диадока — его так не прочитать.</p>`);return;}
@@ -2526,7 +2600,7 @@ window.ivanorNames={canonName,catHint,classify};   // для проверки н
   document.addEventListener('dragover',e=>{if(!ok(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';});
   document.addEventListener('dragleave',e=>{if(!ok(e))return;depth=Math.max(0,depth-1);if(!depth)show(false);});
   document.addEventListener('drop',e=>{if(!ok(e))return;e.preventDefault();depth=0;show(false);const f=e.dataTransfer.files[0];if(!f)return;
-    if(!/\.(pdf|xml)$/i.test(f.name)){toast('<b>Нужен PDF или XML</b>'+esc(f.name));return;}openDocImport(f);});})();
+    if(!/\.(pdf|xml|json)$/i.test(f.name)){toast('<b>Нужен PDF или XML</b>'+esc(f.name));return;}openDocImport(f);});})();
 $('#dlImpF').onchange=()=>{const f=$('#dlImpF').files[0];$('#dlImpF').value='';if(f)openDocImport(f);};
 
 /* ---------- фото товаров ---------- */
