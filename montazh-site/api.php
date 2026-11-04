@@ -105,6 +105,11 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE TABLE IF NOT EXISTS zak (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, phone TEXT NOT NULL DEFAULT \'\', name TEXT NOT NULL DEFAULT \'\', items TEXT NOT NULL DEFAULT \'\', total REAL NOT NULL DEFAULT 0, prepay REAL NOT NULL DEFAULT 0, supplier TEXT NOT NULL DEFAULT \'\', promo TEXT NOT NULL DEFAULT \'\', note TEXT NOT NULL DEFAULT \'\', status TEXT NOT NULL DEFAULT \'wait\', created INTEGER, updated INTEGER, closed INTEGER)');
   // архив продаж из отчётов CloudShop «Продажи по товарам» за выбранный период — для аналитики и советов
   $pdo->exec('CREATE TABLE IF NOT EXISTS hist (id INTEGER PRIMARY KEY AUTOINCREMENT, pfrom TEXT NOT NULL, pto TEXT NOT NULL, name TEXT NOT NULL, barcode TEXT, article TEXT, qty REAL NOT NULL DEFAULT 0, checks REAL NOT NULL DEFAULT 0, rev REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, product_id INTEGER, kind TEXT, gkey TEXT, created INTEGER)');
+  if (!in_array('ext', array_column($pdo->query('PRAGMA table_info(hist)')->fetchAll(), 'name'), true)) $pdo->exec('ALTER TABLE hist ADD COLUMN ext TEXT');
+  // архив CloudShop: строки документов до даты перехода (на остатки не влияют) и контрагенты
+  $pdo->exec('CREATE TABLE IF NOT EXISTS arch (id INTEGER PRIMARY KEY AUTOINCREMENT, ym TEXT NOT NULL, day TEXT NOT NULL, doc TEXT, num TEXT, type TEXT NOT NULL, party_id TEXT, party TEXT, phone TEXT, pid INTEGER, ext TEXT, name TEXT, qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, pay TEXT, evotor TEXT)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS arch_day ON arch(day)'); $pdo->exec('CREATE INDEX IF NOT EXISTS arch_ym ON arch(ym)'); $pdo->exec('CREATE INDEX IF NOT EXISTS arch_pty ON arch(party_id)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS arch_party (id TEXT PRIMARY KEY, kind TEXT, name TEXT, phones TEXT, note TEXT)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
   return $pdo;
 }
@@ -167,6 +172,13 @@ function groupOf(string $kind, array $a, string $name): array {
   if ($kind === '' && preg_match('/^Аккумулятор/ui', $name)) return ['akb', trim(mb_substr($name, 0, 60)), 0, ''];
   return [$kind ?: 'other', trim(mb_substr($name, 0, 80)), 0, ''];
 }
+// до какой даты включительно итоги берутся из архива CloudShop (дальше — операции пульта)
+function archUntil(array $cfg): string { $v = db($cfg)->query("SELECT v FROM settings WHERE k = 'arch_until'")->fetchColumn(); return $v ? (string)$v : ''; }
+// карточки пульта для сопоставления: по ID CloudShop, штрихкоду, артикулу, названию
+function prodIndex(array $cfg): array { $I = ['ext' => [], 'bc' => [], 'ar' => [], 'nm' => [], 'p' => []];
+  foreach (db($cfg)->query('SELECT id, ext_id, name, kind, attrs, barcode, article FROM products')->fetchAll() as $r) { $I['p'][(int)$r['id']] = $r; if ($r['ext_id']) $I['ext'][$r['ext_id']] = (int)$r['id']; if ($r['barcode'] !== '') $I['bc'][ltrim($r['barcode'], '0')] = (int)$r['id']; if ($r['article'] !== '') $I['ar'][mb_strtoupper($r['article'])] = (int)$r['id']; $I['nm'][mb_strtoupper(trim(preg_replace('/\s+/u', ' ', $r['name'])))] = (int)$r['id']; }
+  return $I; }
+function prodMatch(array $I, string $ext, string $bc, string $ar, string $nm): ?int { return $I['ext'][$ext] ?? ($bc !== '' ? ($I['bc'][ltrim($bc, '0')] ?? null) : null) ?? ($ar !== '' ? ($I['ar'][mb_strtoupper($ar)] ?? null) : null) ?? ($I['nm'][mb_strtoupper(trim(preg_replace('/\s+/u', ' ', $nm)))] ?? null); }
 function kindGroup(string $k): string { return in_array($k, ['tire', 'disk', 'akb', 'fast'], true) ? $k : 'other'; }
 function zakRow(array $r, ?string $role): array {
   $x = ['id' => (int)$r['id'], 'day' => $r['day'], 'phone' => $r['phone'], 'name' => $r['name'], 'items' => $r['items'], 'total' => (float)$r['total'], 'prepay' => (float)$r['prepay'], 'promo' => $r['promo'], 'note' => $r['note'], 'status' => $r['status'], 'supplier' => $r['supplier']];
@@ -574,9 +586,16 @@ try {
       $buys[(int)$r['id']] = ['id' => (int)$r['id'], 'type' => $r['type'], 'day' => $r['day'], 'phone' => $k, 'name' => (string)$r['partner'], 'items' => [], 'sum' => 0.0];
       if (count($buys) >= 200) break;
     }
+    // покупки из архива CloudShop
+    $ab = []; $aw = []; $aa = [];
+    foreach (array_keys($phones) as $k) { $aw[] = 'a.phone = ?'; $aa[] = $k; }
+    if (strlen($dq) >= 4) { $aw[] = "a.phone LIKE ?"; $aa[] = '%' . $dq . '%'; }
+    if ($aw) { $st = db($cfg)->prepare("SELECT a.doc, a.type, a.day, a.phone, a.party, a.name, a.qty, a.price FROM arch a WHERE a.type IN ('sale','ret') AND (" . implode(' OR ', $aw) . ") ORDER BY a.day DESC LIMIT 600"); $st->execute($aa);
+      foreach ($st->fetchAll() as $r) { $k = 'a' . $r['doc']; if (!isset($ab[$k])) $ab[$k] = ['id' => 0, 'type' => $r['type'], 'day' => $r['day'], 'phone' => (string)$r['phone'], 'name' => (string)$r['party'], 'items' => [], 'sum' => 0.0, 'arch' => 1];
+        $q = abs((float)$r['qty']); $ab[$k]['items'][] = $r['name'] . ($q != 1 ? ' ×' . (0 + $q) : ''); $ab[$k]['sum'] += ($r['type'] === 'ret' ? -1 : 1) * $q * (float)$r['price']; } }
     if ($buys) { $ids = array_keys($buys); $mv = db($cfg)->prepare('SELECT m.doc_id, m.qty, m.price, p.name FROM moves m JOIN products p ON p.id = m.product_id WHERE m.doc_id IN (' . implode(',', array_fill(0, count($ids), '?')) . ') ORDER BY m.id'); $mv->execute($ids);
       foreach ($mv->fetchAll() as $m) { $x = &$buys[(int)$m['doc_id']]; $q = abs((float)$m['qty']); $x['items'][] = $m['name'] . ($q != 1 ? ' ×' . (0 + $q) : ''); $x['sum'] += ($x['type'] === 'ret' ? -1 : 1) * $q * (float)$m['price']; unset($x); } }
-    $buys = array_values(array_map(function ($x) { $x['items'] = implode(', ', $x['items']); $x['sum'] = round($x['sum'], 2); return $x; }, $buys));
+    $buys = array_values(array_map(function ($x) { $x['items'] = implode(', ', $x['items']); $x['sum'] = round($x['sum'], 2); return $x; }, array_merge($buys, $ab)));
     // 4) заказы клиентов
     $zk = [];
     foreach (db($cfg)->query('SELECT * FROM zak ORDER BY day DESC, id DESC LIMIT 3000')->fetchAll() as $r) {
@@ -1023,9 +1042,16 @@ try {
     needRole($role, ['owner']);
     $from = (string)($_GET['from'] ?? ''); $to = (string)($_GET['to'] ?? ''); if (!isDay($from) || !isDay($to)) fail('Укажите период');
     $days = (int)round((strtotime($to) - strtotime($from)) / 86400) + 1; $gb = $days > 62 ? 'month' : 'day';
-    $agg = function (string $f, string $t) use ($cfg) {
-      $st = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.pay, d.seller, m.product_id pid, m.wh, m.qty, m.cost, m.price, m.list, p.name, p.kind, p.attrs FROM moves m JOIN docs d ON d.id = m.doc_id JOIN products p ON p.id = m.product_id WHERE d.status = 'posted' AND d.type IN ('sale','ret') AND d.day >= ? AND d.day <= ?");
-      $st->execute([$f, $t]); return $st->fetchAll(); };
+    // до даты перехода — архив CloudShop, после — документы пульта; одна и та же продажа не считается дважды
+    $until = archUntil($cfg);
+    $agg = function (string $f, string $t) use ($cfg, $until) { $out = [];
+      $lf = $until !== '' && $f <= $until ? date('Y-m-d', strtotime($until . ' +1 day')) : $f;
+      if ($lf <= $t) { $st = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.pay, d.seller, m.product_id pid, m.wh, m.qty, m.cost, m.price, m.list, p.name, p.kind, p.attrs FROM moves m JOIN docs d ON d.id = m.doc_id JOIN products p ON p.id = m.product_id WHERE d.status = 'posted' AND d.type IN ('sale','ret') AND d.day >= ? AND d.day <= ?");
+        $st->execute([$lf, $t]); $out = $st->fetchAll(); }
+      if ($until !== '' && $f <= $until) { $st = db($cfg)->prepare("SELECT 'a' || a.doc doc, a.type, a.day, a.pay, 'CloudShop' seller, COALESCE(a.pid, 0) pid, 'shop' wh, a.qty, a.cost, a.price, a.price list, COALESCE(p.name, a.name) name, COALESCE(p.kind, '') kind, COALESCE(p.attrs, '') attrs, a.name aname FROM arch a LEFT JOIN products p ON p.id = a.pid WHERE a.type IN ('sale','ret') AND a.day >= ? AND a.day <= ?");
+        $st->execute([$f, min($t, $until)]);
+        foreach ($st->fetchAll() as $r) { if ($r['kind'] === '') { [$kg] = groupOf('', [], (string)$r['aname']); $r['kind'] = $kg === 'other' ? 'acc' : $kg; if ($kg === 'tire' && ($ts = tireSize((string)$r['aname']))) $r['attrs'] = json_encode($ts); } if (!(int)$r['pid']) $r['pid'] = 'n' . md5((string)$r['aname']); $out[] = $r; } }
+      return $out; };
     $K = ['rev' => 0, 'cost' => 0, 'qty' => 0, 'checks' => 0, 'disc' => 0]; $ser = []; $sel = []; $selc = []; $kinds = []; $dia = []; $brands = []; $prod = []; $pay = []; $whs = ['shop' => ['rev' => 0, 'cost' => 0], 'custody' => ['rev' => 0, 'cost' => 0]]; $docs = [];
     $add = function (array &$b, float $r, float $c, float $q) { $b['rev'] = ($b['rev'] ?? 0) + $r; $b['cost'] = ($b['cost'] ?? 0) + $c; $b['qty'] = ($b['qty'] ?? 0) + $q; };
     foreach ($agg($from, $to) as $m) {
@@ -1035,7 +1061,7 @@ try {
       $kg = kindGroup((string)$m['kind']); $kinds[$kg] = $kinds[$kg] ?? []; $add($kinds[$kg], $r, $c, $q);
       if ($m['kind'] === 'tire' && !empty($a['d'])) { $dk = (int)$a['d']; $dia[$dk] = $dia[$dk] ?? []; $add($dia[$dk], $r, $c, $q);
         $bk = trim((string)($a['brand'] ?? '')) ?: '—'; $brands[$bk] = $brands[$bk] ?? []; $add($brands[$bk], $r, $c, $q); }
-      $pk = (int)$m['pid']; $prod[$pk] = $prod[$pk] ?? ['id' => $pk, 'name' => $m['name'], 'kind' => $m['kind']]; $add($prod[$pk], $r, $c, $q);
+      $pk = (string)$m['pid']; $prod[$pk] = $prod[$pk] ?? ['id' => (int)$m['pid'], 'name' => $m['name'], 'kind' => $m['kind']]; $add($prod[$pk], $r, $c, $q);
       $pm = $m['pay'] ?: '—'; $pay[$pm] = $pay[$pm] ?? []; $add($pay[$pm], $r, $c, $q);
       $w = $m['wh'] === 'custody' ? 'custody' : 'shop'; $whs[$w]['rev'] += $r; $whs[$w]['cost'] += $c;
       $sk = (string)$m['seller'] !== '' ? (string)$m['seller'] : 'В пульте'; $sel[$sk] = $sel[$sk] ?? []; $add($sel[$sk], $r, $c, $q); if ($m['type'] === 'sale') $selc[$sk][$m['doc']] = true;
@@ -1048,12 +1074,62 @@ try {
     // полная шкала периода, даже без продаж
     $axis = []; if ($gb === 'day') { for ($t = strtotime($from); $t <= strtotime($to); $t += 86400) $axis[] = date('Y-m-d', $t); } else { for ($t = strtotime(substr($from, 0, 7) . '-01'); $t <= strtotime($to); $t = strtotime('+1 month', $t)) $axis[] = date('Y-m', $t); }
     $series = array_map(fn($k) => ['k' => $k, 'rev' => $R($ser[$k]['rev'] ?? 0), 'cost' => $R($ser[$k]['cost'] ?? 0), 'qty' => round($ser[$k]['qty'] ?? 0, 2)], $axis);
-    $pr = $fix($prod); foreach ($pr as $i => $x) { $pr[$i]['id'] = (int)$x['k']; $pr[$i]['name'] = $prod[(int)$x['k']]['name']; $pr[$i]['kind'] = $prod[(int)$x['k']]['kind']; }
+    $pr = $fix($prod); foreach ($pr as $i => $x) { $pr[$i]['id'] = $prod[$x['k']]['id']; $pr[$i]['name'] = $prod[$x['k']]['name']; $pr[$i]['kind'] = $prod[$x['k']]['kind']; }
     $byRev = $pr; usort($byRev, fn($a, $b) => $b['rev'] <=> $a['rev']); $byProf = $pr; usort($byProf, fn($a, $b) => ($b['rev'] - $b['cost']) <=> ($a['rev'] - $a['cost']));
     $low = array_values(array_filter($pr, fn($x) => $x['rev'] > 0 && $x['qty'] >= 2 && ($x['rev'] - $x['cost']) / $x['rev'] < 0.12)); usort($low, fn($a, $b) => $b['rev'] <=> $a['rev']);
     $br = $fix($brands); usort($br, fn($a, $b) => $b['rev'] <=> $a['rev']); $dd = $fix($dia); usort($dd, fn($a, $b) => (int)$a['k'] <=> (int)$b['k']);
-    out(['from' => $from, 'to' => $to, 'gb' => $gb, 'kpi' => array_map($R, $K), 'prev' => array_map($R, $P), 'series' => $series, 'kinds' => $fix($kinds), 'dia' => $dd, 'brands' => array_slice($br, 0, 12),
+    out(['until' => $until, 'from' => $from, 'to' => $to, 'gb' => $gb, 'kpi' => array_map($R, $K), 'prev' => array_map($R, $P), 'series' => $series, 'kinds' => $fix($kinds), 'dia' => $dd, 'brands' => array_slice($br, 0, 12),
       'top' => array_slice($byRev, 0, 15), 'topProfit' => array_slice($byProf, 0, 15), 'low' => array_slice($low, 0, 15), 'pay' => $fix($pay), 'wh' => $fix($whs), 'sellers' => array_map(function ($x) use ($selc) { $x['checks'] = count($selc[$x['k']] ?? []); return $x; }, $fix($sel))]);
+
+  case 'arch_info':
+    needRole($role, ['owner']); $p = db($cfg);
+    $r = $p->query("SELECT MIN(day) a, MAX(day) b, COUNT(*) n, COUNT(DISTINCT doc) d FROM arch")->fetch();
+    $h = $p->query("SELECT COUNT(DISTINCT pfrom) FROM hist WHERE ext IS NOT NULL")->fetchColumn();
+    out(['from' => $r['a'], 'to' => $r['b'], 'lines' => (int)$r['n'], 'docs' => (int)$r['d'], 'months' => (int)$h, 'until' => archUntil($cfg), 'parties' => (int)$p->query('SELECT COUNT(*) FROM arch_party')->fetchColumn()]);
+
+  case 'arch_parties':
+    // клиенты и поставщики CloudShop; клиенты с телефоном — в общий справочник (имя не перезаписываем)
+    post(); needRole($role, ['owner']); $b = body(); $p = db($cfg); $p->beginTransaction(); $n = 0; $nc = 0;
+    $ins = $p->prepare('INSERT OR REPLACE INTO arch_party (id, kind, name, phones, note) VALUES (?,?,?,?,?)');
+    $cs = $p->prepare('SELECT name FROM clients WHERE phone = ?'); $ci = $p->prepare('INSERT INTO clients (phone, name, model, updated) VALUES (?,?,?,?)');
+    foreach ((array)($b['clients'] ?? []) as $c) { $ph = []; foreach (explode(',', (string)($c[3] ?? '')) as $x) if ($k = phoneKey($x)) $ph[] = $k;
+      $ins->execute([(string)$c[0], 'client', mb_substr((string)$c[2], 0, 200), implode(',', $ph), mb_substr((string)($c[6] ?? ''), 0, 300)]); $n++;
+      $nm = trim((string)$c[2]); if ($ph && $nm !== '' && !preg_match('/^(Розничный покупатель|Частное лицо|Постоянный клиент)$/u', $nm)) { $cs->execute([$ph[0]]); if ($cs->fetchColumn() === false) { $ci->execute([$ph[0], mb_substr($nm, 0, 100), '', time()]); $nc++; } } }
+    foreach ((array)($b['suppliers'] ?? []) as $c) { $ins->execute([(string)$c[0], 'supplier', mb_substr((string)$c[1], 0, 200), '', '']); $n++; }
+    $p->commit(); out(['ok' => true, 'parties' => $n, 'newClients' => $nc]);
+
+  case 'arch_monthly':
+    // помесячные продажи по товарам с себестоимостью (CloudShop) → архив для советов; месяц загружается заново поверх
+    post(); needRole($role, ['owner']); $b = body(); $p = db($cfg); $I = prodIndex($cfg); $n = 0; $hit = 0;
+    $p->beginTransaction(); $ins = $p->prepare('INSERT INTO hist (pfrom, pto, name, barcode, article, qty, checks, rev, cost, product_id, kind, gkey, created, ext) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    foreach ((array)($b['months'] ?? []) as $ym => $rows) { if (!preg_match('/^\d{4}-\d{2}$/', (string)$ym)) continue; $f = $ym . '-01'; $t = date('Y-m-t', strtotime($f));
+      $p->prepare('DELETE FROM hist WHERE pfrom = ? AND pto = ?')->execute([$f, $t]);
+      foreach ((array)$rows as $r) { $nm = trim((string)$r[1]); $q = (float)$r[4]; if ($nm === '' || $q == 0) continue; $pid = prodMatch($I, (string)$r[0], (string)$r[2], (string)$r[3], $nm); if ($pid) $hit++;
+        [$kg, $gk] = $pid ? groupOf((string)$I['p'][$pid]['kind'], json_decode($I['p'][$pid]['attrs'], true) ?: [], $I['p'][$pid]['name']) : groupOf('', [], $nm);
+        $ins->execute([$f, $t, mb_substr($nm, 0, 300), (string)$r[2], (string)$r[3], $q, (float)$r[5], (float)$r[6], (float)$r[7], $pid, $kg, $gk, time(), (string)$r[0]]); $n++; } }
+    $p->commit(); out(['ok' => true, 'rows' => $n, 'matched' => $hit]);
+
+  case 'arch_docs':
+    // документы CloudShop за месяц → строки архива; себестоимость продажи — средняя за этот месяц из помесячного отчёта
+    post(); needRole($role, ['owner']); $b = body(); $ym = (string)($b['ym'] ?? ''); if (!preg_match('/^\d{4}-\d{2}$/', $ym)) fail('Неверный месяц');
+    $p = db($cfg); $I = prodIndex($cfg); date_default_timezone_set('Europe/Moscow');
+    $uc = []; $st = $p->prepare('SELECT ext, qty, cost FROM hist WHERE pfrom = ?'); $st->execute([$ym . '-01']); foreach ($st->fetchAll() as $r) if ($r['ext'] && (float)$r['qty'] > 0) $uc[$r['ext']] = (float)$r['cost'] / (float)$r['qty'];
+    $ph = []; foreach ($p->query("SELECT id, phones FROM arch_party WHERE phones != ''")->fetchAll() as $r) $ph[$r['id']] = explode(',', $r['phones'])[0];
+    $p->beginTransaction(); $p->prepare('DELETE FROM arch WHERE ym = ?')->execute([$ym]); $n = 0;
+    $ins = $p->prepare('INSERT INTO arch (ym, day, doc, num, type, party_id, party, phone, pid, ext, name, qty, price, cost, pay, evotor) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    foreach ((array)($b['docs'] ?? []) as $d) { if (!empty($d[14]) || empty($d[15])) continue; $day = date('Y-m-d', (int)$d[4]); $party = (string)$d[7]; $oh = mb_strpos($party, 'ОХ ') === 0;
+      $t = ['sales' => 'sale', 'return_sales' => 'ret', 'purchases' => $oh ? 'oh_in' : 'in', 'return_purchases' => $oh ? 'oh_out' : 'rin', 'changes' => 'chg', 'movements' => 'mov'][(string)$d[1]] ?? (string)$d[1];
+      $pay = !empty($d[11]) ? 'bank' : ($d[10] === null ? '' : ((int)$d[10] ? 'cash' : 'card'));
+      foreach ((array)$d[16] as $l) { $q = (float)$l[4]; if ($q == 0) continue; $ext = (string)$l[0]; $pid = prodMatch($I, $ext, (string)$l[3], (string)$l[2], (string)$l[1]);
+        $price = abs($q) > 0 ? abs((float)$l[6]) / abs($q) : (float)$l[5];
+        $cost = in_array($t, ['sale', 'ret'], true) ? ($uc[$ext] ?? 0) : (float)$l[5];
+        $ins->execute([$ym, $day, (string)$d[0], (string)$d[3], $t, (string)$d[5], mb_substr($party, 0, 200), $ph[(string)$d[5]] ?? '', $pid, $ext, mb_substr((string)$l[1], 0, 300), $q, round($price, 2), round($cost, 2), $pay, (string)$d[12]]); $n++; } }
+    $p->commit(); out(['ok' => true, 'lines' => $n]);
+
+  case 'arch_done':
+    // граница: до этой даты итоги из архива, после — из пульта
+    post(); needRole($role, ['owner']); $u = (string)(body()['until'] ?? ''); if (!isDay($u)) fail('Неверная дата');
+    db($cfg)->prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('arch_until', ?)")->execute([$u]); logit($cfg, $role, 'arch_done', $u); out(['ok' => true]);
 
   case 'hist_upload':
     // отчёт CloudShop «Продажи по товарам» за период → архив; тот же период загружается заново поверх
@@ -1097,7 +1173,18 @@ try {
       $st = $p->prepare('SELECT * FROM hist WHERE pfrom = ? AND pto = ?'); $st->execute([$per['pfrom'], $per['pto']]);
       foreach ($st->fetchAll() as $r) { $g = $r['kind'] . '|' . $r['gkey']; $H[$g] = $H[$g] ?? ['kind' => $r['kind'], 'g' => $r['gkey'], 'q' => 0, 'rev' => 0, 'cost' => 0]; $H[$g]['q'] += $r['qty'] * $k0; $H[$g]['rev'] += $r['rev'] * $k0; $H[$g]['cost'] += $r['cost'] * $k0;
         if ($r['product_id']) { $k = (int)$r['product_id']; $HP[$k] = $HP[$k] ?? ['q' => 0, 'rev' => 0, 'cost' => 0]; $HP[$k]['q'] += $r['qty'] * $k0; $HP[$k]['rev'] += $r['rev'] * $k0; $HP[$k]['cost'] += $r['cost'] * $k0; } } };
-    $load($recent, $long ? 0.7 : 1); $load($long, 0.3);
+    // помесячная история CloudShop: спрос = те же месяцы прошлых лет (60%) + три последних месяца (40%), «в месяц»
+    $mlist = $p->query("SELECT DISTINCT pfrom FROM hist WHERE ext IS NOT NULL AND substr(pfrom, 9, 2) = '01' ORDER BY pfrom")->fetchAll(PDO::FETCH_COLUMN); $mode = 'periods';
+    if (count($mlist) >= 12) { $mode = 'seasonal'; $hdays = 30; $long = null; $have = array_flip($mlist); $cy = (int)date('Y'); $cm = (int)date('n');
+      $sea = []; foreach ([1, 2] as $yb) foreach ([0, 1] as $mo) { $t = mktime(0, 0, 0, $cm + $mo, 1, $cy - $yb); $k = date('Y-m-01', $t); if (isset($have[$k])) $sea[] = $k; }
+      $rec = []; for ($i = 1; $i <= 3; $i++) { $k = date('Y-m-01', mktime(0, 0, 0, $cm - $i, 1, $cy)); if (isset($have[$k])) $rec[] = $k; }
+      if (!$rec) $rec = array_slice($mlist, -3);
+      $hper = ['pfrom' => $mlist[0], 'pto' => date('Y-m-t', strtotime(end($mlist))), 'len' => 30, 'season' => $sea, 'recent' => $rec];
+      $loadM = function (array $ks, float $w) use ($p, &$H, &$HP) { if (!$ks) return; $k0 = $w / count($ks); $st = $p->prepare('SELECT * FROM hist WHERE pfrom IN (' . implode(',', array_fill(0, count($ks), '?')) . ')'); $st->execute($ks);
+        foreach ($st->fetchAll() as $r) { $g = $r['kind'] . '|' . $r['gkey']; $H[$g] = $H[$g] ?? ['kind' => $r['kind'], 'g' => $r['gkey'], 'q' => 0, 'rev' => 0, 'cost' => 0]; $H[$g]['q'] += $r['qty'] * $k0; $H[$g]['rev'] += $r['rev'] * $k0; $H[$g]['cost'] += $r['cost'] * $k0;
+          if ($r['product_id']) { $k = (int)$r['product_id']; $HP[$k] = $HP[$k] ?? ['q' => 0, 'rev' => 0, 'cost' => 0]; $HP[$k]['q'] += $r['qty'] * $k0; $HP[$k]['rev'] += $r['rev'] * $k0; $HP[$k]['cost'] += $r['cost'] * $k0; } } };
+      $loadM($sea ?: $rec, $sea ? 0.6 : 1); if ($sea) $loadM($rec, 0.4);
+    } else { $load($recent, $long ? 0.7 : 1); $load($long, 0.3); }
     // пульт: продажи за последние 90 дней
     $first = $p->query("SELECT MIN(day) FROM docs WHERE type = 'sale' AND status = 'posted'")->fetchColumn(); $ldays = $first ? min(90, max(1, (int)round(($now - strtotime($first)) / 86400) + 1)) : 0;
     $L = []; $LP = []; $lastSale = [];
@@ -1106,7 +1193,8 @@ try {
         $L[$g] = $L[$g] ?? ['kind' => $kg, 'g' => $gk, 'q' => 0, 'rev' => 0, 'cost' => 0]; $L[$g]['q'] += $q; $L[$g]['rev'] += $q * $r['price']; $L[$g]['cost'] += $q * $r['cost'];
         $k = (int)$r['pid']; $LP[$k] = ($LP[$k] ?? 0) + $q; if ($r['type'] === 'sale') $lastSale[$k] = max($lastSale[$k] ?? '', $r['day']); } }
     // за всё время в пульте — последняя продажа
-    foreach ($p->query("SELECT m.product_id pid, MAX(d.day) day FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type = 'sale' GROUP BY m.product_id")->fetchAll() as $r) $lastSale[(int)$r['pid']] = $r['day'];
+    foreach ($p->query("SELECT pid, MAX(day) day FROM arch WHERE type = 'sale' AND pid IS NOT NULL GROUP BY pid")->fetchAll() as $r) $lastSale[(int)$r['pid']] = $r['day'];
+    foreach ($p->query("SELECT m.product_id pid, MAX(d.day) day FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type = 'sale' GROUP BY m.product_id")->fetchAll() as $r) $lastSale[(int)$r['pid']] = max($lastSale[(int)$r['pid']] ?? '', $r['day']);
     // остатки по группам и товарам (наш + ОХ)
     $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $S = []; $prods = []; $lastIn = [];
     foreach ($p->query("SELECT m.product_id pid, MAX(d.day) day FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type IN ('in','open') AND m.qty > 0 GROUP BY m.product_id")->fetchAll() as $r) $lastIn[(int)$r['pid']] = $r['day'];
@@ -1155,7 +1243,7 @@ try {
     $bb = []; if ($hper) { $st = $p->prepare("SELECT h.qty, h.rev, h.cost, p.attrs FROM hist h JOIN products p ON p.id = h.product_id WHERE h.pfrom = ? AND h.pto = ? AND p.kind = 'tire'"); $st->execute([$hper['pfrom'], $hper['pto']]);
       foreach ($st->fetchAll() as $r) { $a = json_decode($r['attrs'], true) ?: []; $k = trim((string)($a['brand'] ?? '')) ?: '—'; $bb[$k] = $bb[$k] ?? ['k' => $k, 'q' => 0, 'rev' => 0, 'cost' => 0]; $bb[$k]['q'] += $r['qty']; $bb[$k]['rev'] += $r['rev']; $bb[$k]['cost'] += $r['cost']; } }
     usort($bb, fn($a, $b) => $b['rev'] <=> $a['rev']); $trend['brands'] = array_map(fn($x) => ['k' => $x['k'], 'q' => round($x['q']), 'rev' => round($x['rev']), 'margin' => $x['rev'] ? round(($x['rev'] - $x['cost']) / $x['rev'] * 100, 1) : 0], array_slice($bb, 0, 10));
-    out(['period' => $hper, 'long' => $long, 'hdays' => $hdays, 'ldays' => $ldays, 'winterNow' => $winterNow, 'dovezti' => array_slice($dov, 0, 40), 'dead' => array_slice($dead, 0, 40), 'deadMoney' => array_sum(array_column($dead, 'money')), 'deadN' => count($dead), 'low' => array_slice($low, 0, 25), 'hits' => array_slice($hits, 0, 25), 'trend' => $trend]);
+    out(['mode' => $mode, 'period' => $hper, 'long' => $long, 'hdays' => $hdays, 'ldays' => $ldays, 'winterNow' => $winterNow, 'dovezti' => array_slice($dov, 0, 40), 'dead' => array_slice($dead, 0, 40), 'deadMoney' => array_sum(array_column($dead, 'money')), 'deadN' => count($dead), 'low' => array_slice($low, 0, 25), 'hits' => array_slice($hits, 0, 25), 'trend' => $trend]);
 
   case 'doc_reprice':
     // новая оценка поставщика в проведённом акте ОХ: не молча — изменение дописывается в комментарий документа

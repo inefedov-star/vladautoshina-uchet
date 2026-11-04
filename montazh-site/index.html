@@ -640,7 +640,7 @@ body.t-dark .lc,body.t-dark .chw .bc{fill:#4A505B;background:#4A505B}body.t-dark
   <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
   <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="month">Все документы</button></div>
-  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button></div>
+  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button><button type="button" data-p="arch">Архив CloudShop</button></div>
 </aside>
 <main class="wrap">
   <section id="v-day">
@@ -1779,7 +1779,7 @@ async function searchClients(){const q=$('#cq').value.trim(),out=$('#cliOut');
     const plates=[...new Set(all.map(x=>x.plate).filter(Boolean))].join(', ');const sum=g.v.reduce((a,v)=>a+(S.role==='owner'?(v.paid??v.list):v.list),0);
     const ssum=g.s.reduce((a,x)=>a+x.sum,0),nbuy=g.s.filter(x=>x.type==='sale').length;
     const hist=[...g.v.map(v=>({day:v.day,html:`<div><span class="tnum">${fmtDay(v.day)}</span><span><span class="pay">шиномонтаж · </span>${esc((v.d?'R'+v.d+' · ':'')+v.works)}${v.mode==='coupon'?' · купон':v.mode==='disc'?' · скидка':''}</span><span class="tnum">${rub(S.role==='owner'&&v.paid!=null?v.paid:v.list)}</span></div>`})),
-      ...g.s.map(x=>({day:x.day,html:`<div><span class="tnum">${fmtDay(x.day)}</span><span><span class="pay">${x.type==='ret'?'возврат в магазин':'магазин'} · </span>${esc(x.items)}</span><span class="tnum">${rub(x.sum)}</span></div>`})),
+      ...g.s.map(x=>({day:x.day,html:`<div><span class="tnum">${fmtDay(x.day)}</span><span><span class="pay">${x.type==='ret'?'возврат в магазин':'магазин'}${x.arch?' (CloudShop)':''} · </span>${esc(x.items)}</span><span class="tnum">${rub(x.sum)}</span></div>`})),
       ...g.t.map(x=>({day:x.day||'',html:`<div data-st="${x.id}" style="cursor:pointer"><span class="tnum">${x.day?fmtDay(x.day):''}</span><span><span class="pay">хранение · ${x.status==='stored'?'лежит у нас':'выдано '+(x.issued?fmtDay(x.issued):'')} · </span>${esc(storLine(x))}</span><span class="tnum">${x.paid?rub(x.paid):''}</span></div>`})),
       ...g.z.map(x=>({day:x.day,html:`<div${S.role==='owner'?` data-zk="${x.id}" style="cursor:pointer"`:''}><span class="tnum">${fmtDay(x.day)}</span><span><span class="pay">заказ · ${ZST[x.status]} · </span>${esc(x.items)}${x.promo?' · '+ZPR[x.promo]:''}</span><span class="tnum">${rub(x.total)}</span></div>`}))].sort((a,b)=>a.day<b.day?1:a.day>b.day?-1:0);
     const next=g.b.filter(b=>b.status==='planned'&&b.day>=today).sort((a,b)=>(a.day+a.tm)<(b.day+b.tm)?-1:1)[0];
@@ -1817,12 +1817,38 @@ function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;c
     else if(k.startsWith('z:')){ZS.st=k.slice(2);loadZak();}else if(k==='zn')openZak(null);renderBnav();});}
 function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['p:iss','Выдачи с ОХ','list']]],
     ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:month','Все документы','docs']]],
-    ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up']]]];
+    ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up'],['p:arch','Архив CloudShop','chart']]]];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
   $('#close').onclick=closeSheet;
   $('#shIn').querySelectorAll('[data-mo]').forEach(b=>b.onclick=()=>{const k=b.dataset.mo;if(k.startsWith('n:'))openDoc(null,{type:k.slice(2)});else{closeSheet();page(k.slice(2));renderBnav();}});
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 /* ---------- каталог для кассы Эвотор (файл Excel) ---------- */
+/* архив CloudShop: история продаж, закупок, ОХ и клиентов до перехода на пульт */
+async function openArch(){let I;try{I=await api('arch_info');}catch(e){toast('<b>Не получилось</b>'+esc(e.message));return;}
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Архив CloudShop</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Период</span><b class="tnum" style="font-size:1.1rem">${I.from?fmtDay(I.from)+' — '+fmtDay(I.to):'не загружен'}</b></div>
+    <div class="tile"><span class="mono">Документов · строк</span><b class="tnum" style="font-size:1.1rem">${I.docs.toLocaleString('ru-RU')} · ${I.lines.toLocaleString('ru-RU')}</b></div>
+    <div class="tile"><span class="mono">Месяцев с себестоимостью</span><b class="tnum" style="font-size:1.1rem">${I.months}</b></div>
+    <div class="tile acc"><span class="mono">Итоги по архиву до</span><b class="tnum" style="font-size:1.1rem">${I.until?fmtDay(I.until):'—'}</b></div></div>
+  <p class="note">Файл <b>cloudshop-istoriya-….json.gz</b> — вся история CloudShop: продажи по товарам помесячно с себестоимостью, все документы (продажи, закупки, ОХ, возвраты), клиенты и поставщики.
+  На остатки архив не влияет. До даты выгрузки «Итоги» и «Что довезти» считаются по архиву, после — по операциям пульта. Загрузить заново можно в любой момент (например, перед отключением CloudShop) — месяцы перезапишутся.</p>
+  <label class="btn sig" style="cursor:pointer">Загрузить файл истории<input type="file" id="arF" accept=".gz,.json" hidden></label>
+  <div id="arP" style="margin:14px 0 40px"></div>`;
+  $('#close').onclick=closeSheet;
+  $('#arF').onchange=async()=>{const f=$('#arF').files[0];if(!f)return;const P=$('#arP');const say=(t,pc)=>P.innerHTML=`<div class="hint">${t}</div>${pc!=null?`<div class="hbt" style="margin-top:8px;height:12px"><i style="width:${pc}%"></i></div>`:''}`;
+    try{say('Распаковываю файл…');let txt;
+      if(/\.gz$/i.test(f.name)){if(!window.DecompressionStream)throw new Error('Этот браузер не умеет распаковывать .gz — откройте пульт в Chrome или Safari 16.4+');txt=await new Response(f.stream().pipeThrough(new DecompressionStream('gzip'))).text();}else txt=await f.text();
+      const D=JSON.parse(txt);if(!D.monthly||!D.docs)throw new Error('Это не файл истории CloudShop');
+      say('Клиенты и поставщики…',2);const pr=await api('arch_parties',{clients:D.clients||[],suppliers:D.suppliers||[]});
+      const MY=Object.keys(D.monthly).sort(),years=[...new Set(MY.map(k=>k.slice(0,4)))];let i=0,mrows=0,mhit=0;
+      for(const y of years){const months={};MY.filter(k=>k.startsWith(y)).forEach(k=>months[k]=D.monthly[k]);const j=await api('arch_monthly',{months});mrows+=j.rows;mhit+=j.matched;i++;say(`Продажи по товарам помесячно: ${y}`,2+i/years.length*28);}
+      const DY=Object.keys(D.docs).sort();let lines=0;
+      for(let k=0;k<DY.length;k++){const j=await api('arch_docs',{ym:DY[k],docs:D.docs[DY[k]]});lines+=j.lines;say(`Документы: ${DY[k]} · ${lines.toLocaleString('ru-RU')} строк`,30+(k+1)/DY.length*68);}
+      const until=((D.meta&&D.meta.exported)?new Date(D.meta.exported):new Date());const u=iso(until);await api('arch_done',{until:u});
+      say(`<b>Готово.</b> ${MY.length} мес. продаж с себестоимостью (${mrows.toLocaleString('ru-RU')} строк, узнали карточек ${Math.round(mhit/Math.max(1,mrows)*100)}%), ${lines.toLocaleString('ru-RU')} строк документов, клиентов с телефоном добавлено: ${pr.newClients}. Итоги до ${fmtDay(u)} — по архиву.`,100);
+      toast('<b>Архив CloudShop загружен</b>Итоги, советы и история клиентов обновлены');}
+    catch(e){P.innerHTML=`<p class="err">${esc(e.message||String(e))}</p>`;}};
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 async function openEvotor(){
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Каталог для Эвотора</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
   <p class="note" style="margin-top:0">Файл Excel с товарами для кассы: наименование, штрихкод, артикул, розничная цена, единица, НДС («Без НДС» — АУСН), тип (шины — маркированный товар). Себестоимости в файле нет. Загружается в Эвотор приложением обмена через Excel; когда выберем приложение, подгоню колонки под его шаблон.</p>
@@ -1904,6 +1930,7 @@ async function loadAn(){const [f,t]=anRange();$('#anTitle').textContent=anTitle(
     <div class="tile"><span class="mono">Продано штук · скидки</span><b class="tnum">${fmtQty(K.qty)}</b><small class="pay">скидки ${rub(K.disc)}</small></div>`;
   const lab=ch.gb==='month'?(k=>MONTHS[+k.slice(5)-1].slice(0,3)):(k=>String(+k.slice(8))),full=ch.gb==='month'?(k=>MONTHS[+k.slice(5)-1]+' '+k.slice(0,4)):(k=>fmtDay(k));
   $('#anChTitle').textContent=ch.gb==='month'?'Выручка и прибыль по месяцам':'Выручка и прибыль по дням';
+  {const u=j.until,[f0]=anRange();let n=document.getElementById('anArch');if(!n){n=document.createElement('p');n.id='anArch';n.className='note';n.style.margin='-4px 0 10px';$('#anK').after(n);}n.textContent=u&&f0<=u?`До ${fmtDay(u)} включительно — данные CloudShop (архив), дальше — продажи в пульте.`:'';}
   stackChart($('#anChart'),ch.series,{lab,full,hl:AN.mode==='day'?AN.d:null,gbName:ch.gb==='month'?'месяцам':'дням',labels:ch.gb==='month'?($('#anChart').clientWidth<560?6:12):($('#anChart').clientWidth<560?8:16),onPick:s=>{if(ch.gb==='month'){AN.mode='month';AN.d=s.k+'-01';}else{AN.mode='day';AN.d=s.k;}loadAn();}});
   const kinds=['tire','disk','akb','fast','other'].map(k=>j.kinds.find(x=>x.k===k)).filter(Boolean);
   $('#anKinds').innerHTML=hbars(kinds,r=>KIND_NAME[r.k]||r.k);
@@ -1921,7 +1948,7 @@ async function loadAdv(){const box=$('#advArch'),out=$('#advOut');
   let L;try{L=await api('hist_list');}catch(e){box.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
   box.innerHTML=`<div class="anch"><h2>Архив продаж</h2></div>
     <p class="note" style="margin-top:0">Отчёт CloudShop <b>«Продажи по товарам»</b> за любой период (Excel). Чем больше периодов — тем точнее советы; для сезона полезны отчёты «осень прошлого года», «весна» и т. п. Себестоимость остаётся только в пульте.</p>
-    ${L.periods.length?`<div class="tw"><table class="antab"><thead><tr><th style="text-align:left">Период</th><th>Строк</th><th>Штук</th><th>Выручка</th><th>Прибыль</th><th></th></tr></thead><tbody>${L.periods.map((p,i)=>`<tr><td style="text-align:left">${fmtDay(p.pfrom)} — ${fmtDay(p.pto)}</td><td>${p.n}</td><td>${fmtQty(Math.round(p.q))}</td><td>${rub(p.rev)}</td><td>${rub(p.prof)}</td><td><button type="button" class="out" data-hd="${i}" style="min-height:30px">убрать</button></td></tr>`).join('')}</tbody></table></div>`:''}
+    ${L.periods.length>8?`<p><b>Загружено ${L.periods.length} периодов</b>: ${fmtDay(L.periods[L.periods.length-1].pfrom)} — ${fmtDay(L.periods[0].pto)} (история CloudShop помесячно — Сервис → «Архив CloudShop»). Выручка ${rub(L.periods.reduce((a,p)=>a+ +p.rev,0))}, прибыль ${rub(L.periods.reduce((a,p)=>a+ +p.prof,0))}.</p>`:L.periods.length?`<div class="tw"><table class="antab"><thead><tr><th style="text-align:left">Период</th><th>Строк</th><th>Штук</th><th>Выручка</th><th>Прибыль</th><th></th></tr></thead><tbody>${L.periods.map((p,i)=>`<tr><td style="text-align:left">${fmtDay(p.pfrom)} — ${fmtDay(p.pto)}</td><td>${p.n}</td><td>${fmtQty(Math.round(p.q))}</td><td>${rub(p.rev)}</td><td>${rub(p.prof)}</td><td><button type="button" class="out" data-hd="${i}" style="min-height:30px">убрать</button></td></tr>`).join('')}</tbody></table></div>`:''}
     <div class="row" style="align-items:flex-end;margin-top:10px;gap:10px"><label><span class="mono lbl">С</span><input class="inp" type="date" id="hFrom"></label><label><span class="mono lbl">По</span><input class="inp" type="date" id="hTo"></label>
       <label class="btn" style="cursor:pointer">Загрузить отчёт Excel<input type="file" id="hFile" accept=".xlsx,.xls" hidden></label><span class="pay" id="hMsg"></span></div>`;
   box.querySelectorAll('[data-hd]').forEach(b=>b.onclick=async()=>{const p=L.periods[+b.dataset.hd];try{await api('hist_del',{pfrom:p.pfrom,pto:p.pto});loadAdv();}catch(e){toast('<b>Не убралось</b>'+esc(e.message));}});
@@ -1936,9 +1963,10 @@ async function loadAdv(){const box=$('#advArch'),out=$('#advOut');
     catch(e){msg.innerHTML=`<b style="color:var(--signal-deep)">${esc(e.message)}</b>`;}};
   out.innerHTML='<p class="note">Считаю советы…</p>';let A;try{A=await api('an_advice');}catch(e){out.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
   if(!A.period&&!A.ldays){out.innerHTML='<div class="empty"><b>Пока не на чем считать</b>Загрузите выше отчёт CloudShop «Продажи по товарам» — например, за прошлый год — и здесь появятся советы.</div>';return;}
-  const base=[A.period?`архив за ${fmtDay(A.period.pfrom)}—${fmtDay(A.period.pto)}`+(A.long?` (70%) и за ${fmtDay(A.long.pfrom)}—${fmtDay(A.long.pto)} (30%)`:''):'',A.ldays?`продажи в пульте за ${A.ldays} дн.`:''].filter(Boolean).join(', ');
+  const mlab=k=>MONTHS[+k.slice(5,7)-1]+' '+k.slice(0,4);
+  const base=[A.mode==='seasonal'?`спрос в эти же месяцы прошлых лет (${(A.period.season||[]).map(mlab).join(', ')||'нет'}) и за последние месяцы (${(A.period.recent||[]).map(mlab).join(', ')})`:A.period?`архив за ${fmtDay(A.period.pfrom)}—${fmtDay(A.period.pto)}`+(A.long?` (70%) и за ${fmtDay(A.long.pfrom)}—${fmtDay(A.long.pto)} (30%)`:''):'',A.ldays?`продажи в пульте за ${A.ldays} дн.`:''].filter(Boolean).join(', ');
   const T=A.trend,cm=new Date().getMonth()+1,covers=L.periods.some(p=>{const a=fromIso(p.pfrom),b=fromIso(p.pto);if((b-a)/864e5>=360)return false;for(let d=new Date(a);d<=b;d.setMonth(d.getMonth()+1))if(d.getMonth()+1===cm)return true;return (b.getMonth()+1)===cm;});
-  const seasonTip=covers?'':`<div class="hint" style="margin-bottom:12px">В архиве нет отчёта за ${MONTHS[cm-1]} прошлых лет — сезонный спрос сейчас посчитан по среднему. Выгрузите из CloudShop «Продажи по товарам» за <b>${A.winterNow?'октябрь–декабрь':'март–май'} прошлого года</b> и загрузите сюда — советы станут точнее.</div>`;
+  const seasonTip=covers||A.mode==='seasonal'?'':`<div class="hint" style="margin-bottom:12px">В архиве нет отчёта за ${MONTHS[cm-1]} прошлых лет — сезонный спрос сейчас посчитан по среднему. Выгрузите из CloudShop «Продажи по товарам» за <b>${A.winterNow?'октябрь–декабрь':'март–май'} прошлого года</b> и загрузите сюда — советы станут точнее.</div>`;
   out.innerHTML=`<p class="note">Считаю по: ${base}; темп — штук в месяц. Сейчас ${A.winterNow?'зимний':'летний'} сезон: сезонные позиции наверху.</p>${seasonTip}
   <div class="ancard"><div class="anch"><h2>Довезти</h2><span class="pay">заканчивается быстрее, чем продаётся</span></div>
     ${A.dovezti.length?`<div class="tw"><table class="antab"><thead><tr><th style="text-align:left">Что</th><th>Темп</th><th>Остаток</th><th>Хватит</th><th>Совет</th><th>Прибыль в мес.</th></tr></thead><tbody>${A.dovezti.map(x=>`<tr class="${x.season?'':'muted'}"><td class="nm"><span class="kb">${({tire:'шины',disk:'диски',akb:'АКБ',fast:'крепёж'})[x.kind]||'прочее'}</span>${esc(x.g)}${x.season?'':' <span class="pay">· не сезон</span>'}</td><td>${String(x.rate).replace('.',',')}</td><td>${fmtQty(x.stock)}${x.qc?` <span class="ohb">ОХ ${fmtQty(x.qc)}</span>`:''}</td><td>${x.stock?String(x.weeks).replace('.',',')+' нед.':'<b class="neg">нет</b>'}</td><td><b>+${x.need} шт</b></td><td>${rub(x.profit)}</td></tr>`).join('')}</tbody></table></div>`:'<p class="note">Ходовые позиции в наличии — срочно довозить нечего.</p>'}</div>
@@ -2252,7 +2280,7 @@ function setHdr(){const h=document.querySelector('header.top');if(h)document.doc
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
 const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',month:'Все документы'};
-function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}
+function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
