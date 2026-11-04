@@ -1737,7 +1737,7 @@ try {
       $id = (int)$pr['id']; $f = $file[(string)$pr['ext_id']] ?? ['q' => 0, 'c' => 0]; $o = $sm[$id] ?? ['q' => 0, 'c' => 0]; $c = max(0, $cu[$id]['q'] ?? 0);
       if ($f['q'] < 0) $tot['neg']++;
       $fq = max(0, $f['q']); $tgt = max(0, $fq - $c);
-      if ($c > $fq + 1e-9) $conf[] = ['id' => $id, 'name' => $pr['name'], 'file' => $f['q'], 'custody' => $c];
+      if ($c > $fq + 1e-9 && (string)$pr['ext_id'] !== '') $conf[] = ['id' => $id, 'name' => $pr['name'], 'file' => $f['q'], 'custody' => $c];
       $tot['file_q'] += $fq; $tot['file_c'] += $fq * $f['c']; $tot['cust_q'] += $c; $tot['target_q'] += $tgt; $tot['ours_q'] += max(0, $o['q']);
       $d = round($tgt - $o['q'], 3); if (abs($d) < 0.001) continue;
       $avg = $o['q'] > 0 ? $o['c'] / $o['q'] : 0;
@@ -1748,7 +1748,18 @@ try {
     $tot['missing'] = []; foreach ($file as $e => $f) if ($f['q'] > 0 && !isset($known[$e])) $tot['missing'][] = $e;
     $tot['file_c'] = round($tot['file_c'], 2);
     usort($diffs, fn($x, $y) => abs($y['d'] * $y['cost']) <=> abs($x['d'] * $x['cost']));
-    if ($a === 'start_cmp') out(['total' => $tot, 'diffs' => array_slice($diffs, 0, 300), 'conflicts' => $conf]);
+    // карточки без ID CloudShop с остатком (созданы в пульте) — чаще всего дубли: предлагаем, с какой объединить
+    $orph = []; $nk = fn($s) => preg_replace('/[^0-9A-ZА-Я]+/u', '', mb_strtoupper(str_replace(['Laufen ', 'IIkon'], ['Laufenn ', 'Ikon'], preg_replace('/\(\d+ шип\.?\)|шип\.?/u', '', (string)$s))));
+    $withExt = db($cfg)->query("SELECT id, name, ext_id FROM products WHERE archived = 0 AND ext_id IS NOT NULL AND ext_id != '' AND kind != 'svc'")->fetchAll();
+    foreach (db($cfg)->query("SELECT id, name FROM products WHERE archived = 0 AND (ext_id IS NULL OR ext_id = '') AND kind != 'svc'")->fetchAll() as $pr) {
+      $id = (int)$pr['id']; $q = ($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0); if (abs($q) < 1e-9) continue;
+      $k = $nk($pr['name']); $sz = strtok($pr['name'], ' '); $ix = preg_match('/\b(\d{2,3}(?:\/\d{2,3})?[A-Z])\b/u', $pr['name'], $m) ? $m[1] : ''; $sug = [];
+      foreach ($withExt as $e) { if (strpos($e['name'], $sz . ' ') !== 0) continue; $ek = $nk($e['name']);
+        $sc = $ek === $k ? 100 : 0; if (!$sc) { if ($ix === '' || !preg_match('/\b' . preg_quote($ix, '/') . '\b/u', $e['name'])) continue; similar_text($k, $ek, $pc); $sc = (int)$pc; if ($sc < 70) continue; }
+        $sug[] = ['id' => (int)$e['id'], 'name' => $e['name'], 'score' => $sc, 'file' => $file[(string)$e['ext_id']]['q'] ?? 0]; }
+      usort($sug, fn($x, $y) => $y['score'] <=> $x['score']);
+      $orph[] = ['id' => $id, 'name' => $pr['name'], 'shop' => $sm[$id]['q'] ?? 0, 'custody' => $cu[$id]['q'] ?? 0, 'sug' => array_slice($sug, 0, 4)]; }
+    if ($a === 'start_cmp') out(['total' => $tot, 'diffs' => array_slice($diffs, 0, 300), 'conflicts' => $conf, 'orphans' => $orph]);
     if ($tot['missing']) fail('Сначала добавьте недостающие карточки (' . count($tot['missing']) . ')', 409);
     if (!$diffs) out(['ok' => true, 'id' => null]);
     $p = db($cfg); $open = $p->query("SELECT id FROM docs WHERE type = 'open' AND status = 'posted' LIMIT 1")->fetchColumn();
@@ -1760,6 +1771,32 @@ try {
     foreach ($diffs as $x) $ins->execute([$id, $x['id'], $x['d'], $x['cost']]);
     $p->commit(); logit($cfg, $role, 'start_sync', $type . ' ' . $id);
     out(['ok' => true, 'id' => $id, 'type' => $type, 'n' => count($diffs)]);
+
+  case 'prod_move':
+  case 'prod_merge':
+    // перенос остатка с карточки на карточку (дубли из CloudShop, не та карточка в акте) — проведённым документом «Корректировка».
+    // prod_merge: переносит всё (наш склад и ОХ), коды поставщиков и CAE, а старую карточку убирает из каталога
+    post(); needRole($role, ['owner']);
+    $b = body(); $from = (int)($b['from'] ?? 0); $to = (int)($b['to'] ?? 0); if (!$from || !$to || $from === $to) fail('Выберите другую карточку');
+    $p = db($cfg); $g = $p->prepare('SELECT * FROM products WHERE id = ?'); $g->execute([$from]); $A = $g->fetch(); $g->execute([$to]); $B = $g->fetch(); if (!$A || !$B) fail('Карточка не найдена', 404);
+    $sm = ['shop' => stockMap($cfg, 'shop'), 'custody' => stockMap($cfg, 'custody')]; $L = [];
+    foreach (['shop', 'custody'] as $w) { $have = $sm[$w][$from] ?? ['q' => 0, 'c' => 0];
+      $q = $a === 'prod_merge' ? $have['q'] : (($b['wh'] ?? 'custody') === $w ? (float)($b['qty'] ?? 0) : 0);
+      if (abs($q) < 1e-9) continue; if ($a === 'prod_move' && $q > $have['q'] + 1e-9) fail('На карточке столько нет: ' . $have['q']);
+      $L[] = [$w, $q, $have['q'] > 0 ? round($have['c'] / $have['q'], 2) : 0]; }
+    if (!$L && $a === 'prod_move') fail('Нечего переносить');
+    $p->beginTransaction(); $id = null;
+    if ($L) { $p->prepare("INSERT INTO docs (type, num, day, partner, note, wh, status, author, created, posted_at) VALUES ('inv', '', ?, '', ?, ?, 'posted', ?, ?, ?)")
+        ->execute([date('Y-m-d'), ($a === 'prod_merge' ? 'Объединение карточек: ' : 'Перенос остатка: ') . '«' . $A['name'] . '» → «' . $B['name'] . '»', $L[0][0], $role, time(), time()]);
+      $id = (int)$p->lastInsertId(); $ins = $p->prepare('INSERT INTO moves (doc_id, product_id, wh, qty, cost, price) VALUES (?,?,?,?,?, NULL)');
+      foreach ($L as [$w, $q, $c]) { $ins->execute([$id, $from, $w, -$q, $c]); $ins->execute([$id, $to, $w, $q, $c]); } }
+    if ($a === 'prod_merge') {
+      $p->prepare('UPDATE OR REPLACE supcodes SET product_id = ? WHERE product_id = ?')->execute([$to, $from]);
+      if ((string)$B['cae'] === '' && (string)$A['cae'] !== '') $p->prepare('UPDATE products SET cae = ? WHERE id = ?')->execute([$A['cae'], $to]);
+      if ((string)$B['article'] === '' && (string)$A['article'] !== '') $p->prepare('UPDATE products SET article = ? WHERE id = ?')->execute([$A['article'], $to]);
+      $p->prepare('UPDATE products SET archived = 1, updated = ? WHERE id = ?')->execute([time(), $from]); }
+    $p->commit(); logit($cfg, $role, $a, $from . '>' . $to . ' doc ' . $id);
+    out(['ok' => true, 'id' => $id]);
 
   case 'price_set':
     // цена продажи в карточке
