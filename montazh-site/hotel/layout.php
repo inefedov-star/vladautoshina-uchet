@@ -47,6 +47,9 @@ nav.tabs a.on{color:var(--sig);font-weight:600}
 nav.tabs a.add{color:var(--paper)}
 nav.tabs a.add span.b{position:absolute;inset:6px 8px;background:var(--sig);border-radius:4px;z-index:-1}
 nav.tabs a.add{position:relative;z-index:0;color:#fff}
+/* на широком экране — компактная панель по центру, а не полоса во всю ширину */
+@media(min-width:900px){nav.tabs{left:50%;right:auto;bottom:14px;transform:translateX(-50%);display:flex;gap:2px;padding:4px;border:1px solid var(--rule);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.12)}
+  nav.tabs a{flex-direction:row;gap:7px;padding:9px 16px;font-size:.84rem;border-radius:10px}nav.tabs a svg{width:18px;height:18px}nav.tabs a.add span.b{inset:0;border-radius:10px}}
 
 .wrap{max-width:920px;margin:0 auto;padding:14px}
 .wrap.wide{max-width:1500px}

@@ -17,3 +17,4 @@ body{background:var(--paper)}
 input,select,textarea{border-radius:10px!important}
 .knopki button,.ssylka button,.ubrat{border-radius:9px}
 .pod img,.mini{border-radius:6px}
+a.tihaya[href*="vyhod"]{display:none!important}
