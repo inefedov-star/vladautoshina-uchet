@@ -117,6 +117,14 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE TABLE IF NOT EXISTS p4t (cae TEXT PRIMARY KEY, kind TEXT NOT NULL, brand TEXT, model TEXT, name TEXT, w REAL, p REAL, d REAL, c INTEGER NOT NULL DEFAULT 0, li TEXT, stud INTEGER NOT NULL DEFAULT 0, pcd TEXT, et REAL, dia REAL, color TEXT)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS p4t_size ON p4t(kind, d, w)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS clients (phone TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT \'\', model TEXT NOT NULL DEFAULT \'\', updated INTEGER)');
+  // CRM: профиль клиента, его машины и касания (звонки, сообщения)
+  $ccols = array_column($pdo->query('PRAGMA table_info(clients)')->fetchAll(), 'name');
+  foreach (['phone2' => "TEXT NOT NULL DEFAULT ''", 'bday' => "TEXT NOT NULL DEFAULT ''", 'note' => "TEXT NOT NULL DEFAULT ''", 'src' => "TEXT NOT NULL DEFAULT ''", 'tags' => "TEXT NOT NULL DEFAULT ''", 'consent' => 'INTEGER NOT NULL DEFAULT 0', 'created' => 'INTEGER'] as $c => $t)
+    if (!in_array($c, $ccols, true)) $pdo->exec("ALTER TABLE clients ADD COLUMN $c $t");
+  $pdo->exec('CREATE TABLE IF NOT EXISTS client_cars (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, car TEXT NOT NULL DEFAULT \'\', plate TEXT NOT NULL DEFAULT \'\', year TEXT NOT NULL DEFAULT \'\', size TEXT NOT NULL DEFAULT \'\', note TEXT NOT NULL DEFAULT \'\', created INTEGER)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS client_cars_ph ON client_cars(phone)');
+  $pdo->exec('CREATE TABLE IF NOT EXISTS crm_touch (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL DEFAULT \'\', why TEXT NOT NULL DEFAULT \'\', note TEXT NOT NULL DEFAULT \'\', author TEXT, created INTEGER)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS crm_touch_ph ON crm_touch(phone)');
   return $pdo;
 }
 function logit(array $cfg, ?string $role, string $action, string $ref = ''): void {
@@ -196,8 +204,9 @@ function zakRow(array $r, ?string $role): array {
 function digits($s): string { return preg_replace('/\D/', '', (string)$s); }
 // телефон — основа клиента: храним как 7XXXXXXXXXX
 function phoneKey($s): string { $d = digits($s); if (strlen($d) === 11 && $d[0] === '8') $d = '7' . substr($d, 1); if (strlen($d) === 10) $d = '7' . $d; return (strlen($d) === 11 && $d[0] === '7') ? $d : ''; }
-function touchClient(array $cfg, string $key, string $name, string $model): void {
+function touchClient(array $cfg, string $key, string $name, string $model, string $plate = ''): void {
   if ($key === '') return;
+  carRemember($cfg, $key, $model, $plate);
   $st = db($cfg)->prepare('SELECT name, model FROM clients WHERE phone = ?'); $st->execute([$key]); $c = $st->fetch();
   if (!$c) { db($cfg)->prepare('INSERT INTO clients (phone, name, model, updated) VALUES (?,?,?,?)')->execute([$key, $name, $model, time()]); return; }
   // действует последняя правка: новое имя или марка заменяют старые; пустое поле ничего не стирает
@@ -329,6 +338,134 @@ function api4tItems($x, array &$out, int $depth = 0): void {
   foreach ($x as $v) if (is_array($v) || is_object($v)) api4tItems($v, $out, $depth + 1);
 }
 function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-ЯЁ]+/u', ' ', mb_strtoupper($s))); }
+// ===== CRM: клиент = телефон. Профиль, машины, касания + сводка по всем разделам =====
+// госномер для сравнения: латиница-двойники → кириллица, без пробелов
+function plateKey($s): string { $s = mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); return strtr($s, ['A' => 'А', 'B' => 'В', 'E' => 'Е', 'K' => 'К', 'M' => 'М', 'H' => 'Н', 'O' => 'О', 'P' => 'Р', 'C' => 'С', 'T' => 'Т', 'Y' => 'У', 'X' => 'Х']); }
+function carKey($s): string { return mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); }
+// машина из визита/записи — в список машин клиента (если такой ещё нет)
+function carRemember(array $cfg, string $phone, string $model, string $plate): void {
+  $model = trim($model); $plate = mb_strtoupper(trim($plate)); if ($phone === '' || ($model === '' && $plate === '')) return;
+  $p = db($cfg); $st = $p->prepare('SELECT id, car, plate FROM client_cars WHERE phone = ?'); $st->execute([$phone]); $cars = $st->fetchAll();
+  $pk = plateKey($plate); $mk = carKey($model);
+  foreach ($cars as $c) {
+    if ($pk !== '' && plateKey($c['plate']) === $pk) { if ($mk !== '' && trim($c['car']) === '') $p->prepare('UPDATE client_cars SET car = ? WHERE id = ?')->execute([$model, $c['id']]); return; }
+    if ($mk !== '' && carKey($c['car']) === $mk && ($pk === '' || trim($c['plate']) === '')) { if ($pk !== '') $p->prepare('UPDATE client_cars SET plate = ? WHERE id = ?')->execute([$plate, $c['id']]); return; }
+    if ($mk === '' && $pk !== '' && trim($c['plate']) === '' && count($cars) === 1) { $p->prepare('UPDATE client_cars SET plate = ? WHERE id = ?')->execute([$plate, $c['id']]); return; }
+  }
+  $p->prepare('INSERT INTO client_cars (phone, car, plate, year, size, note, created) VALUES (?,?,?,?,?,?,?)')->execute([$phone, mb_substr($model, 0, 100), mb_substr($plate, 0, 20), '', '', '', time()]);
+}
+// сезон переобувки: осень (сент–дек) и весна (март–июнь)
+function seasonOf(string $day): string { $m = (int)substr($day, 5, 2); $y = substr($day, 0, 4); return $m >= 9 ? $y . 'о' : ($m >= 3 && $m <= 6 ? $y . 'в' : ''); }
+function crmAll(array $cfg): array {
+  $p = db($cfg); $R = []; $today = date('Y-m-d');
+  $row = function (string $k) use (&$R) { if (!isset($R[$k])) $R[$k] = ['phone' => $k, 'name' => '', 'phone2' => '', 'cars' => [], 'bday' => '', 'note' => '', 'src' => '', 'tags' => '', 'consent' => 0, 'first' => '', 'last' => '',
+      'm_n' => 0, 'm_sum' => 0.0, 'm_last' => '', 'seasons' => [], 's_n' => 0, 's_sum' => 0.0, 's_prof' => 0.0, 's_last' => '', 'tire_last' => '', 'tire_size' => '', 'h_now' => 0, 'h_n' => 0, 'h_sum' => 0.0, 'h_due' => '', 'h_what' => '',
+      'z_open' => 0, 'z_n' => 0, 'touch' => '', 'touch_kind' => '', 'known' => 0, 'h_for' => [], 'm_first' => '', 's_first' => '', 's_last_arch' => '']; };
+  $seen = function (string $k, string $day) use (&$R) { if ($day === '') return; if ($R[$k]['first'] === '' || $day < $R[$k]['first']) $R[$k]['first'] = $day; if ($day > $R[$k]['last']) $R[$k]['last'] = $day; };
+  foreach ($p->query('SELECT * FROM clients')->fetchAll() as $c) { $k = (string)$c['phone']; if ($k === '') continue; $row($k);
+    foreach (['name', 'phone2', 'bday', 'note', 'src', 'tags'] as $f) $R[$k][$f] = (string)($c[$f] ?? ''); $R[$k]['consent'] = (int)($c['consent'] ?? 0); $R[$k]['known'] = 1;
+    if ((string)$c['model'] !== '') $R[$k]['cars'][carKey($c['model'])] = ['car' => $c['model'], 'plate' => '']; }
+  $byPlate = [];
+  foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) { $k = (string)$c['phone']; $row($k);
+    $ck = carKey($c['car']); unset($R[$k]['cars'][$ck]); $R[$k]['cars'][$ck . '|' . plateKey($c['plate'])] = ['car' => $c['car'], 'plate' => $c['plate']]; if (plateKey($c['plate']) !== '') $byPlate[plateKey($c['plate'])] = $k; }
+  // шиномонтаж: визит без телефона узнаём по госномеру
+  $ords = $p->query('SELECT day, body FROM orders')->fetchAll(); $ob = [];
+  foreach ($ords as $o) { $b = json_decode($o['body'], true) ?: []; $k = phoneKey($b['phone'] ?? ''); if ($k !== '' && plateKey($b['plate'] ?? '') !== '') $byPlate[plateKey($b['plate'])] = $byPlate[plateKey($b['plate'])] ?? $k; $ob[] = [$o['day'], $b, $k]; }
+  foreach ($ob as [$day, $b, $k]) { if ($k === '') $k = $byPlate[plateKey($b['plate'] ?? '')] ?? ''; if ($k === '') continue; $row($k);
+    $x = &$R[$k]; $x['m_n']++; $x['m_sum'] += (float)($b['paid'] ?? $b['list'] ?? 0); if ($day > $x['m_last']) $x['m_last'] = $day;
+    if (($s = seasonOf($day)) !== '') $x['seasons'][$s] = true; if ($x['name'] === '' && trim((string)($b['name'] ?? '')) !== '') $x['name'] = trim($b['name']);
+    if (trim((string)($b['model'] ?? '')) !== '' || trim((string)($b['plate'] ?? '')) !== '') { $ck = carKey($b['model'] ?? ''); $pk = plateKey($b['plate'] ?? ''); $has = false;
+      foreach ($x['cars'] as $c) if (($pk !== '' && plateKey($c['plate']) === $pk) || ($ck !== '' && carKey($c['car']) === $ck)) { $has = true; break; }
+      if (!$has) $x['cars'][$ck . '|' . $pk] = ['car' => trim((string)($b['model'] ?? '')), 'plate' => mb_strtoupper(trim((string)($b['plate'] ?? '')))]; }
+    if ($x['m_first'] === '' || $day < $x['m_first']) $x['m_first'] = $day; unset($x); $seen($k, $day); }
+  // магазин: проведённые продажи пульта
+  foreach ($p->query("SELECT d.day, d.type, d.phone, d.partner, SUM(ABS(m.qty) * IFNULL(m.price,0)) s, SUM(ABS(m.qty) * IFNULL(m.cost,0)) c, MAX(CASE WHEN p.kind = 'tire' THEN 1 ELSE 0 END) t, MAX(CASE WHEN p.kind = 'tire' THEN p.attrs ELSE '' END) a
+      FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products p ON p.id = m.product_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.phone != '' GROUP BY d.id")->fetchAll() as $d) {
+    $k = (string)$d['phone']; $row($k); $sg = $d['type'] === 'ret' ? -1 : 1; $x = &$R[$k];
+    if ($sg > 0) $x['s_n']++; $x['s_sum'] += $sg * (float)$d['s']; $x['s_prof'] += $sg * ((float)$d['s'] - (float)$d['c']); if ($d['day'] > $x['s_last']) $x['s_last'] = $d['day']; if ($x['s_first'] === '' || $d['day'] < $x['s_first']) $x['s_first'] = $d['day'];
+    if (($sn = seasonOf($d['day'])) !== '' && (int)$d['t']) $x['seasons'][$sn] = true;
+    if ($sg > 0 && (int)$d['t'] && $d['day'] > $x['tire_last']) { $x['tire_last'] = $d['day']; $a = json_decode((string)$d['a'], true) ?: []; if (!empty($a['w'])) $x['tire_size'] = $a['w'] . '/' . ($a['p'] ?? '') . ' R' . ($a['d'] ?? ''); }
+    if ($x['name'] === '' && trim((string)$d['partner']) !== '') $x['name'] = trim($d['partner']); unset($x); $seen($k, $d['day']); }
+  // магазин: история CloudShop
+  foreach ($p->query("SELECT doc, day, type, phone, party, SUM(ABS(qty) * price) s, SUM(ABS(qty) * cost) c, MAX(CASE WHEN name GLOB '[0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]*' THEN 1 ELSE 0 END) t, MAX(CASE WHEN name GLOB '[0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]*' THEN name ELSE '' END) tn
+      FROM arch WHERE type IN ('sale','ret') AND phone IS NOT NULL AND phone != '' GROUP BY doc")->fetchAll() as $d) {
+    $k = phoneKey($d['phone']); if ($k === '') continue; $row($k); $sg = $d['type'] === 'ret' ? -1 : 1; $x = &$R[$k];
+    if ($sg > 0) $x['s_n']++; $x['s_sum'] += $sg * (float)$d['s']; $x['s_prof'] += $sg * ((float)$d['s'] - (float)$d['c']); if ($d['day'] > $x['s_last']) $x['s_last'] = $d['day']; if ($d['day'] > $x['s_last_arch']) $x['s_last_arch'] = $d['day'];
+    if ($sg > 0 && (int)$d['t'] && $d['day'] > $x['tire_last']) { $x['tire_last'] = $d['day']; if (preg_match('/^(\d{3})\/(\d{2})\/(\d{2})/', (string)$d['tn'], $mm)) $x['tire_size'] = "$mm[1]/$mm[2] R$mm[3]"; }
+    if ($x['name'] === '' && trim((string)$d['party']) !== '') $x['name'] = trim($d['party']); unset($x); $seen($k, $d['day']); }
+  // заказы
+  foreach ($p->query('SELECT phone, name, status, day FROM zak')->fetchAll() as $z) { $k = (string)$z['phone']; if ($k === '') continue; $row($k);
+    $R[$k]['z_n']++; if (in_array($z['status'], ['wait', 'came'], true)) $R[$k]['z_open']++; if ($R[$k]['name'] === '' && $z['name'] !== '') $R[$k]['name'] = $z['name']; $seen($k, $z['day']); }
+  // хранение (шинный отель)
+  if ($hp = hotelPdo($cfg)) { try { foreach ($hp->query("SELECT client, phone_digits, status, paid, accepted_at, issued_at, due_at, descr, size, season FROM items WHERE (deleted_at IS NULL OR deleted_at = '')")->fetchAll() as $h) {
+    $k = phoneKey($h['phone_digits']); if ($k === '') continue; $row($k); $x = &$R[$k]; $x['h_n']++; $x['h_sum'] += (float)$h['paid'];
+    if ($h['status'] === 'stored') { $x['h_now']++; $x['h_what'] = trim((string)($h['descr'] ?: $h['size'])); if ($x['h_due'] === '' || (string)$h['due_at'] < $x['h_due']) $x['h_due'] = (string)$h['due_at'];
+      // что лежит: летние шины понадобятся весной, зимние — осенью
+      $hs = mb_strtolower((string)$h['season']); if (mb_strpos($hs, 'лет') !== false) $x['h_for']['в'] = true; elseif (mb_strpos($hs, 'зим') !== false) $x['h_for']['о'] = true; }
+    foreach ([substr((string)$h['accepted_at'], 0, 10), substr((string)$h['issued_at'], 0, 10)] as $hd) if ($hd !== '' && ($sn = seasonOf($hd)) !== '') $x['seasons'][$sn] = true;
+    if ($x['name'] === '' && trim((string)$h['client']) !== '') $x['name'] = trim($h['client']); unset($x); $seen($k, substr((string)$h['accepted_at'], 0, 10)); } } catch (Throwable $e) {} }
+  foreach ($p->query('SELECT phone, MAX(day) d, kind FROM crm_touch GROUP BY phone')->fetchAll() as $t) if (isset($R[$t['phone']])) { $R[$t['phone']]['touch'] = $t['d']; $R[$t['phone']]['touch_kind'] = $t['kind']; }
+  // итоги и метки
+  $prof = [];
+  foreach ($R as $k => &$x) {
+    $x['rev'] = round($x['m_sum'] + $x['s_sum'] + $x['h_sum']); $x['prof'] = round($x['s_prof'] + $x['m_sum'] * 0.7 + $x['h_sum']);
+    $x['m_sum'] = round($x['m_sum']); $x['s_sum'] = round($x['s_sum']); $x['s_prof'] = round($x['s_prof']); $x['h_sum'] = round($x['h_sum']);
+    $x['cars'] = array_values($x['cars']); $x['nseas'] = count($x['seasons']); $x['seasons'] = array_keys($x['seasons']); $x['h_for'] = array_keys($x['h_for']);
+    if ($x['prof'] > 0) $prof[] = $x['prof'];
+  } unset($x);
+  $hist0 = (string)$p->query("SELECT MIN(day) FROM orders")->fetchColumn(); $a0 = (string)$p->query("SELECT MIN(day) FROM arch")->fetchColumn(); if ($a0 !== '' && ($hist0 === '' || $a0 < $hist0)) $hist0 = $a0;
+  rsort($prof); $vip = $prof ? max(20000, $prof[max(0, (int)floor(count($prof) * 0.1) - 1)]) : PHP_INT_MAX;
+  $cur = seasonOf($today) ?: (((int)date('n') <= 2) ? date('Y') . 'в' : date('Y') . 'о');
+  foreach ($R as &$x) { $t = [];
+    if ($x['prof'] >= $vip) $t[] = 'vip';
+    if ($x['m_n'] >= 3 || $x['nseas'] >= 2) $t[] = 'loyal';
+    // «новый» — первый визит или покупка за 60 дней; пока у пульта нет полугода истории, не размечаем (иначе новые все)
+    $f1 = min(array_filter([$x['m_first'] ?: '9', $x['s_first'] ?: '9'])); if ($hist0 !== '' && $hist0 < date('Y-m-d', strtotime('-6 months')) && $f1 !== '9' && $f1 >= date('Y-m-d', strtotime('-60 days')) && $x['s_last_arch'] === '') $t[] = 'new';
+    if ($x['last'] !== '' && $x['last'] < date('Y-m-d', strtotime('-12 months'))) $t[] = 'sleep';
+    if ($x['h_now'] > 0) $t[] = 'store';
+    if ($x['m_n'] >= 1 && $x['s_n'] === 0) $t[] = 'noshop';
+    if ($x['bday'] !== '' && ($dd = bdayIn($x['bday'])) !== null && $dd <= 10) { $t[] = 'bday'; $x['bday_in'] = $dd; }
+    if (in_array($cur, $x['seasons'], true)) $t[] = 'season';
+    $x['seg'] = $t; } unset($x);
+  return $R;
+}
+// через сколько дней день рождения (ДД.ММ или ГГГГ-ММ-ДД)
+function bdayIn(string $b): ?int {
+  if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $b, $m)) { $d = (int)$m[3]; $mo = (int)$m[2]; } elseif (preg_match('/^(\d{1,2})\.(\d{1,2})/', $b, $m)) { $d = (int)$m[1]; $mo = (int)$m[2]; } else return null;
+  if (!checkdate($mo, $d, 2024)) return null; $y = (int)date('Y'); $t = strtotime(date('Y-m-d'));
+  $x = @mktime(0, 0, 0, $mo, $d, $y); if ($x < $t) $x = mktime(0, 0, 0, $mo, $d, $y + 1); return (int)round(($x - $t) / 86400);
+}
+// имя для обращения: «Шиколов Никита» → Никита, «Светлана 2979» → Светлана, «СТ Солюшн» → без имени
+function crmFirstName(string $s): string {
+  $w = preg_split('/\s+/u', trim($s)); $ok = fn($x) => (bool)preg_match('/^[А-ЯЁ][а-яё]{1,20}$/u', $x); $sur = fn($x) => (bool)preg_match('/(ов|ев|ёв|ин|ын|ова|ева|ёва|ина|ына|ский|цкий|ская|цкая|ко|ук|юк|их|ых)$/u', $x);
+  if (isset($w[0], $w[1]) && $ok($w[0]) && $ok($w[1]) && $sur($w[0]) && !$sur($w[1])) return $w[1];
+  return isset($w[0]) && $ok($w[0]) && !(isset($w[1]) && $ok($w[1]) && $sur($w[0])) ? $w[0] : '';
+}
+// кому позвонить: причины и готовый текст сообщения
+function crmCalls(array $R): array {
+  $out = []; $today = date('Y-m-d'); $m = (int)date('n'); $md = date('m-d');
+  // окна переобувки: осень — с 20 сентября по декабрь, весна — с марта по май; летом и в январе–феврале сезонных звонков нет
+  $up = ($md >= '09-20') ? 'о' : (($m >= 3 && $m <= 5) ? 'в' : ''); $yy = (int)date('Y'); $cur = $yy . $up; $prev = ($yy - 1) . $up; $prev2 = ($yy - 2) . $up;
+  $sName = $up === 'о' ? 'зимние' : 'летние';
+  foreach ($R as $x) {
+    if (strlen($x['phone']) !== 11) continue;
+    // обращение — только имя (в базе бывает «Светлана 2979», «Елена Ford Transit»)
+    $n = crmFirstName($x['name']);
+    $recent = $x['touch'] !== '' && $x['touch'] >= date('Y-m-d', strtotime('-14 days'));
+    $hi = $n !== '' ? 'Здравствуйте, ' . $n . '! ' : 'Здравствуйте! ';
+    $add = function ($why, $txt, $prio) use (&$out, $x) { $out[] = ['phone' => $x['phone'], 'name' => $x['name'], 'cars' => array_slice($x['cars'], 0, 2), 'why' => $why, 'text' => $txt, 'prio' => $prio, 'rev' => $x['rev'], 'prof' => $x['prof'], 'last' => $x['last'], 'touch' => $x['touch'], 'consent' => $x['consent']]; };
+    if (!empty($x['bday_in']) || (isset($x['bday_in']) && $x['bday_in'] === 0)) { $add('bday', $hi . 'Шинный центр IVANOR поздравляет вас с днём рождения! Дарим скидку на шиномонтаж до конца месяца — просто назовите это сообщение.', 1); continue; }
+    if ($recent) continue;
+    if ($up !== '' && $x['h_now'] > 0 && in_array($up, $x['h_for'], true) && !in_array($cur, $x['seasons'], true)) { $add('store', $hi . 'Ваши ' . ($x['h_what'] ?: 'колёса') . ' хранятся у нас в IVANOR. Подходит время переобуваться — запишем вас на удобное время и заранее подготовим комплект. Ноябрьская, 129.', 2); continue; }
+    if ($up !== '' && !in_array($cur, $x['seasons'], true) && (in_array($prev, $x['seasons'], true) || in_array($prev2, $x['seasons'], true))) { $add('season', $hi . 'Пора менять резину на ' . $sName . '. В IVANOR (Ноябрьская, 129) запишем на удобное время без очереди. Если ваши шины уже уставшие — подберём новые, шиномонтаж при покупке со скидкой.', 3); continue; }
+    if ($x['tire_last'] !== '' && $x['tire_last'] < date('Y-m-d', strtotime('-4 years'))) { $add('tires', $hi . 'Шинам, которые вы брали у нас в ' . substr($x['tire_last'], 0, 4) . ' году, уже ' . ((int)date('Y') - (int)substr($x['tire_last'], 0, 4)) . ' лет. Приезжайте, бесплатно проверим протектор и резину' . ($x['tire_size'] ? ' (' . $x['tire_size'] . ')' : '') . ', а если пора — подберём замену со скидкой на шиномонтаж.', 4); continue; }
+    if ($x['m_n'] >= 2 && $x['s_n'] === 0) { $add('noshop', $hi . 'Спасибо, что обслуживаетесь в IVANOR! Когда будете менять шины — купите у нас: шиномонтаж при покупке комплекта бесплатно, подберём под ваш бюджет.', 5); continue; }
+    if ($x['m_n'] >= 2 && $x['h_n'] === 0 && $x['nseas'] >= 2) { $add('nostore', $hi . 'Чтобы не возить колёса туда-обратно, оставьте их на хранение в IVANOR: моем, упаковываем, храним в тёплом складе, к сезону всё готово.', 6); continue; }
+    if (in_array('sleep', $x['seg'], true) && $x['last'] >= date('Y-m-d', strtotime('-36 months')) && ($x['m_n'] >= 2 || $x['rev'] >= 10000)) { $add('sleep', $hi . 'Давно вас не видели в IVANOR! Будем рады снова помочь — шиномонтаж, шины, диски, хранение. Для вас скидка 10% на шиномонтаж до конца месяца.', 7); }
+  }
+  usort($out, fn($a, $b) => [$a['prio'], -$a['prof']] <=> [$b['prio'], -$b['prof']]);
+  return $out;
+}
 // ===== Пауэр Интернэшнл-шины (Форточки): CAE и их открытая выгрузка номенклатуры =====
 function isPower(string $pk): bool { return mb_strpos($pk, 'ПАУЭР') !== false || mb_strpos($pk, 'POWER INT') !== false || mb_strpos($pk, 'ФОРТОЧКИ') !== false || mb_strpos($pk, '4ТОЧКИ') !== false; }
 // слова для сравнения названий: без дефисов, звёздочек и точек внутри слов (i*Pike = IPIKE, FSR-802 = FSR802)
@@ -529,7 +666,7 @@ try {
     $pk = phoneKey($o['phone']); if ($pk === '' && strlen(digits($o['phone'])) <= 1) $o['phone'] = '';
     $o['phoneD'] = $pk !== '' ? $pk : digits($o['phone']);
     $o['sk'] = mb_strtoupper(trim($o['name'] . ' ' . $o['plate'] . ' ' . $o['model']));
-    touchClient($cfg, $pk, $o['name'], $o['model']);
+    touchClient($cfg, $pk, $o['name'], $o['model'], $o['plate']);
     $json = json_encode($o, JSON_UNESCAPED_UNICODE);
     if (strlen($json) > 50000) fail('Слишком большая запись');
     if ($id) {
@@ -608,7 +745,7 @@ try {
     $pk = phoneKey($keep['phone']); if ($pk === '' && strlen(digits($keep['phone'])) <= 1) $keep['phone'] = '';
     $keep['phoneD'] = $pk !== '' ? $pk : digits($keep['phone']);
     $keep['sk'] = mb_strtoupper(trim($keep['name'] . ' ' . $keep['plate'] . ' ' . $keep['model']));
-    touchClient($cfg, $pk, $keep['name'], $keep['model']);
+    touchClient($cfg, $pk, $keep['name'], $keep['model'], $keep['plate']);
     $json = json_encode($keep, JSON_UNESCAPED_UNICODE);
     if (!preg_match('/^(\d{2}:\d{2})?$/', (string)$b['tm'])) fail('Неверное время');
     if ($id) db($cfg)->prepare('UPDATE bookings SET day = ?, tm = ?, status = ?, body = ?, updated = ? WHERE id = ?')->execute([$b['day'], $b['tm'], $status, $json, time(), $id]);
@@ -723,8 +860,86 @@ try {
     foreach ($all as $x) { $k = phoneKey($x['phone'] ?? ''); if ($k) $keys[$k] = true; }
     foreach ($phones as $k => $_) $keys[$k] = true;
     $map = [];
-    if ($keys) { $kk = array_keys($keys); $st = db($cfg)->prepare('SELECT phone, name, model FROM clients WHERE phone IN (' . implode(',', array_fill(0, count($kk), '?')) . ')'); $st->execute($kk); foreach ($st->fetchAll() as $c) $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model']]; }
+    if ($keys) { $kk = array_keys($keys); $st = db($cfg)->prepare('SELECT phone, name, model, note, bday, tags FROM clients WHERE phone IN (' . implode(',', array_fill(0, count($kk), '?')) . ')'); $st->execute($kk);
+      foreach ($st->fetchAll() as $c) { $bi = $c['bday'] !== '' ? bdayIn($c['bday']) : null; $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model'], 'note' => $c['note'], 'tags' => $c['tags'], 'bday_in' => $bi]; } }
     out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'zak' => $zk, 'stor' => $stor, 'clients' => $map ?: new stdClass()]);
+
+  // ===== CRM (только собственник: тут деньги и прибыль) =====
+  case 'crm_list':
+    needRole($role, ['owner']);
+    $R = crmAll($cfg); $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); $dq = digits($q); $seg = (string)($_GET['seg'] ?? ''); $sort = (string)($_GET['sort'] ?? 'prof');
+    $cnt = ['all' => 0]; $tot = ['n' => 0, 'phone' => 0, 'active' => 0, 'store' => 0, 'bday' => 0, 'rev' => 0];
+    $act = date('Y-m-d', strtotime('-12 months')); $rows = [];
+    foreach ($R as $x) {
+      $cnt['all']++; foreach ($x['seg'] as $t) $cnt[$t] = ($cnt[$t] ?? 0) + 1;
+      $tot['n']++; if ($x['last'] >= $act) $tot['active']++; if ($x['h_now']) $tot['store']++; if (in_array('bday', $x['seg'], true)) $tot['bday']++; $tot['rev'] += $x['rev'];
+      if ($seg !== '' && $seg !== 'all' && !in_array($seg, $x['seg'], true)) continue;
+      if ($q !== '') { $hay = mb_strtoupper($x['name'] . ' ' . $x['note'] . ' ' . $x['tags'] . ' ' . implode(' ', array_map(fn($c) => $c['car'] . ' ' . $c['plate'] . ' ' . plateKey($c['plate']), $x['cars'])));
+        if (mb_strpos($hay, $q) === false && !(strlen($dq) >= 3 && (strpos($x['phone'], $dq) !== false || strpos(digits($x['phone2']), $dq) !== false))) continue; }
+      $rows[] = $x; }
+    $key = ['prof' => fn($x) => -$x['prof'], 'rev' => fn($x) => -$x['rev'], 'visits' => fn($x) => -($x['m_n'] * 1000 + $x['s_n']), 'last' => fn($x) => $x['last'] === '' ? 0 : -(int)str_replace('-', '', $x['last']), 'name' => fn($x) => $x['name'] === '' ? 'яяя' : mb_strtolower($x['name'])][$sort] ?? fn($x) => -$x['prof'];
+    usort($rows, fn($a, $b) => $key($a) <=> $key($b));
+    out(['rows' => array_slice($rows, 0, 400), 'n' => count($rows), 'cnt' => $cnt, 'total' => $tot]);
+
+  case 'crm_card':
+    needRole($role, ['owner']);
+    $k = phoneKey($_GET['phone'] ?? ''); if ($k === '') fail('Нужен номер телефона');
+    $R = crmAll($cfg); $x = $R[$k] ?? null;
+    $st = db($cfg)->prepare('SELECT id, car, plate, year, size, note FROM client_cars WHERE phone = ? ORDER BY id'); $st->execute([$k]); $cars = $st->fetchAll();
+    $tt = db($cfg)->prepare('SELECT id, day, kind, why, note, author FROM crm_touch WHERE phone = ? ORDER BY day DESC, id DESC LIMIT 50'); $tt->execute([$k]);
+    $calls = []; foreach (crmCalls($x ? [$k => $x] : []) as $c) $calls[] = $c;
+    out(['client' => $x, 'cars' => $cars, 'touches' => $tt->fetchAll(), 'offer' => $calls]);
+
+  case 'crm_save':
+    post(); needRole($role, ['owner']);
+    $b = body(); $k = phoneKey($b['phone'] ?? ''); if ($k === '') fail('Нужен полный номер телефона');
+    $old = phoneKey($b['old'] ?? ''); $p = db($cfg);
+    $bd = trim((string)($b['bday'] ?? '')); if ($bd !== '' && bdayIn($bd) === null) fail('День рождения: впишите как 25.03 или 25.03.1985');
+    $ph2 = trim((string)($b['phone2'] ?? '')); if ($ph2 !== '' && phoneKey($ph2) === '') fail('Второй телефон — нужен полный номер');
+    $p->beginTransaction();
+    // смена основного номера: переносим профиль, машины и касания (визиты и покупки остаются под старым номером — он попадёт во «второй телефон»)
+    if ($old !== '' && $old !== $k) { foreach (['client_cars', 'crm_touch'] as $t) $p->prepare("UPDATE $t SET phone = ? WHERE phone = ?")->execute([$k, $old]); $p->prepare('DELETE FROM clients WHERE phone = ?')->execute([$old]); if ($ph2 === '') $ph2 = $old; }
+    $c = $p->prepare('SELECT created FROM clients WHERE phone = ?'); $c->execute([$k]); $cr = $c->fetchColumn();
+    $cars = array_values(array_filter((array)($b['cars'] ?? []), fn($c) => trim((string)($c['car'] ?? '')) !== '' || trim((string)($c['plate'] ?? '')) !== ''));
+    $p->prepare('INSERT OR REPLACE INTO clients (phone, name, model, updated, phone2, bday, note, src, tags, consent, created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')->execute([$k, mb_substr(trim((string)($b['name'] ?? '')), 0, 100),
+      mb_substr(trim((string)($cars[0]['car'] ?? '')), 0, 100), time(), phoneKey($ph2) ?: '', $bd, mb_substr(trim((string)($b['note'] ?? '')), 0, 2000), mb_substr(trim((string)($b['src'] ?? '')), 0, 60), mb_substr(trim((string)($b['tags'] ?? '')), 0, 200), !empty($b['consent']) ? 1 : 0, $cr ?: time()]);
+    $p->prepare('DELETE FROM client_cars WHERE phone = ?')->execute([$k]);
+    $ins = $p->prepare('INSERT INTO client_cars (phone, car, plate, year, size, note, created) VALUES (?,?,?,?,?,?,?)');
+    foreach (array_slice($cars, 0, 10) as $c) $ins->execute([$k, mb_substr(trim((string)($c['car'] ?? '')), 0, 100), mb_substr(mb_strtoupper(trim((string)($c['plate'] ?? ''))), 0, 20), mb_substr(trim((string)($c['year'] ?? '')), 0, 10), mb_substr(trim((string)($c['size'] ?? '')), 0, 40), mb_substr(trim((string)($c['note'] ?? '')), 0, 200), time()]);
+    $p->commit(); logit($cfg, $role, 'crm_save', $k);
+    out(['ok' => true, 'phone' => $k]);
+
+  case 'crm_touch':
+    // касание: позвонили, написали, приезжал — чтобы не звонить дважды и видеть, что сработало
+    post(); needRole($role, ['owner']);
+    $b = body(); $k = phoneKey($b['phone'] ?? ''); if ($k === '') fail('Нужен номер');
+    if (!empty($b['del'])) { db($cfg)->prepare('DELETE FROM crm_touch WHERE id = ?')->execute([(int)$b['del']]); out(['ok' => true]); }
+    $kind = in_array($b['kind'] ?? '', ['call', 'msg', 'visit', 'no'], true) ? $b['kind'] : 'call';
+    db($cfg)->prepare('INSERT INTO crm_touch (phone, day, kind, why, note, author, created) VALUES (?,?,?,?,?,?,?)')->execute([$k, isDay($b['day'] ?? null) ? $b['day'] : date('Y-m-d'), $kind, mb_substr((string)($b['why'] ?? ''), 0, 20), mb_substr(trim((string)($b['note'] ?? '')), 0, 500), $role, time()]);
+    out(['ok' => true]);
+
+  case 'crm_calls':
+    needRole($role, ['owner']);
+    $why = (string)($_GET['why'] ?? ''); $all = crmCalls(crmAll($cfg)); $cnt = [];
+    foreach ($all as $c) $cnt[$c['why']] = ($cnt[$c['why']] ?? 0) + 1;
+    if ($why !== '') $all = array_values(array_filter($all, fn($c) => $c['why'] === $why));
+    out(['rows' => array_slice($all, 0, 300), 'cnt' => $cnt]);
+
+  case 'client_suggest':
+    // подсказка при вводе имени: имя, телефон, машины (без денег — доступно и мастеру)
+    needRole($role, ['owner', 'master', 'cashier']);
+    $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); if (mb_strlen($q) < 2) out(['rows' => []]);
+    $p = db($cfg); $cars = [];
+    foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) $cars[$c['phone']][] = trim($c['car'] . ' ' . $c['plate']);
+    $rows = []; $pq = plateKey($q);
+    foreach ($p->query("SELECT phone, name, model, updated FROM clients WHERE name != '' ORDER BY updated DESC")->fetchAll() as $c) {
+      $nm = mb_strtoupper($c['name']); $cs = $cars[$c['phone']] ?? ($c['model'] !== '' ? [$c['model']] : []);
+      $hit = mb_strpos($nm, $q) === 0 ? 3 : (preg_match('/(^|\s)' . preg_quote($q, '/') . '/u', $nm) ? 2 : (mb_strpos($nm, $q) !== false ? 1 : 0));
+      if (!$hit && mb_strlen($pq) >= 3) foreach ($cs as $cc) if (mb_strpos(plateKey($cc), $pq) !== false) { $hit = 1; break; }
+      if (!$hit) continue; $rows[] = ['phone' => $c['phone'], 'name' => $c['name'], 'cars' => array_slice($cs, 0, 3), 'h' => $hit, 'u' => (int)$c['updated']];
+    }
+    usort($rows, fn($a, $b) => [$b['h'], $b['u']] <=> [$a['h'], $a['u']]);
+    out(['rows' => array_map(fn($r) => ['phone' => $r['phone'], 'name' => $r['name'], 'cars' => $r['cars']], array_slice($rows, 0, 8))]);
 
   case 'hotel_info':
     // нашлась ли база отеля и сколько сейчас на хранении — для кнопки «Хранение»
