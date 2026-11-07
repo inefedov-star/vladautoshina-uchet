@@ -128,6 +128,8 @@ function db(array $cfg): PDO {
   // организации клиента: покупки на юрлицо (ООО, ИП) считаем его покупками
   $pdo->exec('CREATE TABLE IF NOT EXISTS client_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, org TEXT NOT NULL, okey TEXT NOT NULL, created INTEGER)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS client_orgs_k ON client_orgs(okey)');
+  // планировщик задач: кому поручено и к какому дню
+  $pdo->exec('CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, note TEXT NOT NULL DEFAULT \'\', who TEXT NOT NULL DEFAULT \'\', due TEXT NOT NULL DEFAULT \'\', prio INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT \'open\', phone TEXT NOT NULL DEFAULT \'\', created INTEGER, done_at INTEGER, author TEXT)');
   return $pdo;
 }
 function logit(array $cfg, ?string $role, string $action, string $ref = ''): void {
@@ -966,6 +968,31 @@ try {
     }
     usort($rows, fn($a, $b) => [$b['h'], $b['u']] <=> [$a['h'], $a['u']]);
     out(['rows' => array_map(fn($r) => ['phone' => $r['phone'], 'name' => $r['name'], 'cars' => $r['cars']], array_slice($rows, 0, 8))]);
+
+  // ===== планировщик задач (собственник) =====
+  case 'task_list':
+    needRole($role, ['owner']);
+    $st = ($_GET['st'] ?? 'open') === 'done' ? 'done' : 'open';
+    $q = db($cfg)->prepare("SELECT * FROM tasks WHERE status = ? ORDER BY " . ($st === 'done' ? 'done_at DESC LIMIT 300' : "CASE WHEN due = '' THEN 1 ELSE 0 END, due, prio DESC, id")); $q->execute([$st]);
+    $who = db($cfg)->query("SELECT who, COUNT(*) n, SUM(status = 'open') o FROM tasks WHERE who != '' GROUP BY who ORDER BY MAX(id) DESC")->fetchAll();
+    out(['rows' => $q->fetchAll(), 'who' => $who, 'open' => (int)db($cfg)->query("SELECT COUNT(*) FROM tasks WHERE status = 'open'")->fetchColumn(),
+      'late' => (int)db($cfg)->query("SELECT COUNT(*) FROM tasks WHERE status = 'open' AND due != '' AND due < '" . date('Y-m-d') . "'")->fetchColumn()]);
+
+  case 'task_save':
+    post(); needRole($role, ['owner']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $t = mb_substr(trim((string)($b['title'] ?? '')), 0, 300); if ($t === '') fail('Напишите, что сделать');
+    $due = (string)($b['due'] ?? ''); if ($due !== '' && !isDay($due)) fail('Неверная дата');
+    $v = [$t, mb_substr(trim((string)($b['note'] ?? '')), 0, 2000), mb_substr(trim((string)($b['who'] ?? '')), 0, 60), $due, !empty($b['prio']) ? 1 : 0, phoneKey($b['phone'] ?? '')];
+    if ($id) { $v[] = $id; db($cfg)->prepare('UPDATE tasks SET title = ?, note = ?, who = ?, due = ?, prio = ?, phone = ? WHERE id = ?')->execute($v); }
+    else { db($cfg)->prepare("INSERT INTO tasks (title, note, who, due, prio, phone, status, created, author) VALUES (?,?,?,?,?,?, 'open', ?, ?)")->execute(array_merge($v, [time(), $role])); $id = (int)db($cfg)->lastInsertId(); }
+    out(['ok' => true, 'id' => $id]);
+
+  case 'task_done':
+    post(); needRole($role, ['owner']);
+    $b = body(); $id = (int)($b['id'] ?? 0);
+    if (!empty($b['del'])) { db($cfg)->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]); out(['ok' => true]); }
+    $d = !empty($b['done']); db($cfg)->prepare('UPDATE tasks SET status = ?, done_at = ? WHERE id = ?')->execute([$d ? 'done' : 'open', $d ? time() : null, $id]);
+    out(['ok' => true]);
 
   case 'hotel_info':
     // нашлась ли база отеля и сколько сейчас на хранении — для кнопки «Хранение»
