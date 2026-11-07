@@ -939,7 +939,9 @@ function unit(o,line){
   if(line.k==='mount')return{p:line.p0*mk*sk,h:0};
   if(line.k==='cx'){
     const n=line.n6?6:4;const w=(b.wheel||0)*n,m=(b.mount||0)*n,bl=(b.bal||0)*(line.n6?4:n),sum=w+m+bl||1;
-    const scale=line.p0/sum;const p=(w*scale+m*scale*mk+bl*scale)*sk;return{p,h:w*scale*sk};}
+    const scale=line.p0/sum;const p=(w*scale+m*scale*mk+bl*scale)*sk;
+    /* помощнику — от полной цены снятия/установки по прайсу, без скидки комплекса */
+    return{p,h:Math.min(p,w*sk)};}
   return{p:line.p0*sk,h:0};
 }
 function calc(o){let list=0,h=0;const lines=o.lines.filter(l=>l.q>0).map(l=>{const u=unit(o,l);list+=u.p*l.q;h+=u.h*l.q;return{...l,p:u.p,h:u.h};});
