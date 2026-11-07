@@ -630,6 +630,12 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 /* телефон: в CRM и задачах — плитки и фильтры одной строкой с прокруткой, чтобы список был сразу виден */
 @media (max-width:760px){#v-crm .tiles,#v-task .tiles,#crSeg,#tkF{display:flex!important;flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;gap:6px}#v-crm .tiles::-webkit-scrollbar,#v-task .tiles::-webkit-scrollbar,#crSeg::-webkit-scrollbar,#tkF::-webkit-scrollbar{display:none}
   #v-crm .tile,#v-task .tile{flex:0 0 auto;min-width:118px;padding:8px 10px}#v-crm .tile b,#v-task .tile b{font-size:1.15rem}#crSeg .chip,#tkF .chip{flex:none}#crMode{display:none!important}.tkadd{display:none}#v-crm .note{display:none}}
+.invbox{grid-column:1/-1;display:grid;gap:8px;border:1.5px dashed var(--acc,#888);border-radius:12px;padding:10px 12px}
+.staffbtn{min-height:40px;padding:0 12px;border:1px solid var(--rule);border-radius:10px;font-size:.88rem;white-space:nowrap}.staffbtn .mono{font-size:.72rem;color:var(--ink-3)}.staffbtn.need{border-color:var(--signal)}
+@media (max-width:760px){.staffbtn{order:9;flex:1 1 100%;margin-top:6px}}
+.tile small.up{color:#1E7A44;font-weight:700}.tile small.dn{color:#C62828;font-weight:700}
+.pfg{display:grid;grid-template-columns:1fr 1fr;gap:6px 26px}@media (max-width:760px){.pfg{grid-template-columns:1fr}#pmMode{flex:1 1 100%;margin:0 0 6px!important}}
+.pfg .hbr{grid-template-columns:minmax(120px,210px) 1fr auto}
 </style>
 </head>
 <body>
@@ -684,6 +690,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
       <button class="arrow" type="button" id="next" aria-label="Следующий день">›</button>
       <span class="wx" id="wxDay" hidden></span>
       <div class="spacer"></div>
+      <button class="out staffbtn" type="button" id="staffBtn" title="Кто сегодня работает"></button>
       <button class="switch" type="button" role="switch" id="helper" aria-checked="false"><span class="knob"></span>С помощником</button>
       <button class="btn ghost" type="button" id="addBk">+ Запись</button>
       <button class="btn sig" type="button" id="add">+ Машина</button>
@@ -804,12 +811,14 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 
   <section id="v-sum" hidden>
     <div class="row" style="align-items:center;margin-top:18px">
-      <button class="arrow" type="button" id="y-prev" aria-label="Предыдущий год">‹</button>
+      <div class="row" id="pmMode" style="margin-right:10px"><button type="button" class="chip" data-pm="week">Неделя</button><button type="button" class="chip" data-pm="month" aria-pressed="true">Месяц</button><button type="button" class="chip" data-pm="year">Год</button></div>
+      <button class="arrow" type="button" id="y-prev" aria-label="Назад">‹</button>
       <h2 class="sec" id="y-title" style="margin:0 8px"></h2>
-      <button class="arrow" type="button" id="y-next" aria-label="Следующий год">›</button>
+      <button class="arrow" type="button" id="y-next" aria-label="Вперёд">›</button>
       <div class="spacer"></div>
       <button class="btn ghost" type="button" id="y-refresh">Обновить</button>
     </div>
+    <div id="perfOut"></div>
     <div id="sumOut"></div>
     <h2 class="sec">Купон производителя</h2>
     <div class="form" style="margin-top:0"><label><span class="mono lbl">Возмещение за одну машину, ₽</span><input class="inp tnum" id="cpnVal" type="number" inputmode="numeric" min="0"></label>
@@ -901,7 +910,7 @@ const MONTHS=['январь','февраль','март','апрель','май'
 const MONTHS_G=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 const WD=['вс','пн','вт','ср','чт','пт','сб'];
 const CAR={car:'Легковой',suv:'Внедорожник',com:'Коммерческий'};
-const PAY={cash:'Наличные',card:'Карта',transfer:'Перевод'};
+const PAY={cash:'Наличные',card:'Карта',transfer:'Перевод',invoice:'Счёт организации'};
 const EXP_CATS={cur:['Расходники (вентили, грузики, жгуты)','Электричество','Аренда','Ремонт оборудования','Инструмент мелкий','Прочее'],cap:['Оборудование','Ремонт помещения','Прочее капитальное']};
 
 /* ---------- телефон: основа клиента ---------- */
@@ -919,7 +928,8 @@ const who=x=>x.cname||x.name||'';
 const carOf=x=>x.model||x.cmodel||'';
 
 /* ---------- прайс и расчёт ---------- */
-function base(car,d){return car==='com'?PR.P.com:(PR.P[car]||{})[String(d)]||null;}
+/* внедорожник R13–R15 — одна цена (в прайсе строка «13») */
+function base(car,d){if(car==='com')return PR.P.com;if(car==='suv'&&+d<=15)d=13;return (PR.P[car]||{})[String(d)]||null;}
 function mountK(o){return 1+(o.mods.lp?.5:0)+(o.mods.rf?1:0);}
 function seasonK(o){return o.mods.season==='peak'?1.15:o.mods.season==='off'?.85:1;}
 /* единица работы: цена за 1 шт. после надбавок и доля, которая идёт помощнику (снятие/установка) */
@@ -939,7 +949,8 @@ function calc(o){let list=0,h=0;const lines=o.lines.filter(l=>l.q>0).map(l=>{con
   const paid=o.mode==='coupon'?coupon+extra:o.mode==='disc'?Math.max(0,Math.round(+o.paid||0)):list;
   return{lines,list,h,paid,coupon,extra};}
 /* что платит сам клиент на кассе: по купону — ничего */
-const needsPay=o=>o.mode!=='coupon'||(o.extra||0)>0;
+const needsPay=o=>o.pay!=='invoice'&&(o.mode!=='coupon'||(o.extra||0)>0);
+const invSt=o=>o.invPaid?`<span class="pst ok">Счёт${o.invNo?' № '+esc(o.invNo):''} оплачен ${fmtDay(o.invPaid)}</span>`:o.invNo?`<span class="pst wait">Счёт № ${esc(o.invNo)} — ждём оплату</span>`:'<span class="pst chg">Счёт не выставлен</span>';
 const clientDue=o=>o.mode==='coupon'?(o.extra||0):(o.paid||0);
 function payout(order,helperDay){const h=helperDay?order.h:0;return{master:Math.round((order.list-h)*.3),helper:Math.round(h*.3)};}
 
@@ -958,7 +969,7 @@ async function api(a,body,q){
   if(!r.ok)throw {code:r.status,message:j.error||('Ошибка '+r.status)};
   status('');return j;
 }
-async function loadDay(){try{const j=await api('day',null,{day:S.day});S.orders=j.orders||[];S.bookings=j.bookings||[];S.days[S.day]={helper:!!j.helper};renderDay();if(!S.ms||S._msMonth!==S.day.slice(0,7)){S._msMonth=S.day.slice(0,7);loadMonth();}}catch(e){if(e.code!=='auth')status(e.message,true);}}
+async function loadDay(){try{const j=await api('day',null,{day:S.day});S.orders=j.orders||[];S.bookings=j.bookings||[];S.days[S.day]={helper:!!j.helper};S.staff=j.staff||{};S.names=j.names||[];renderDay();if(!S.ms||S._msMonth!==S.day.slice(0,7)){S._msMonth=S.day.slice(0,7);loadMonth();}}catch(e){if(e.code!=='auth')status(e.message,true);}}
 /* заявки с витрины: счётчик на «Продажи» */
 async function reqBadge(){if(S.role!=='owner')return;let n=0;try{n=(await api('req_count')).n||0;}catch(_){return;}S.reqN=n;
   const b=document.querySelector('#side [data-p="sale"]');if(b){b.querySelector('.rq')?.remove();if(n)b.insertAdjacentHTML('beforeend',` <span class="rq">${n}</span>`);}
@@ -986,6 +997,7 @@ function renderDay(){
   $('#dayTitle').textContent=(today?'Сегодня, ':'')+`${d.getDate()} ${MONTHS_G[d.getMonth()]}, ${WD[d.getDay()]}`;
   {const w=S.wx[S.day],el=$('#wxDay');if(el){el.textContent=wxText(w);el.hidden=!w;}}
   const hd=!!(S.days[S.day]&&S.days[S.day].helper);
+  {const st=S.staff||{},sb=$('#staffBtn');sb.innerHTML=`<span class="mono">Мастер</span> <b>${esc(st.master||'указать')}</b>${hd?` · <span class="mono">помощник</span> <b>${esc(st.helperName||'указать')}</b>`:''}`;sb.classList.toggle('need',!st.master||(hd&&!st.helperName));sb.disabled=!S.canWrite;}
   $('#helper').setAttribute('aria-checked',hd);$('#helper').disabled=!S.canWrite;$('#add').disabled=!S.canWrite;
   let list=0,paid=0,master=0,helper=0;
   S.orders.forEach(o=>{list+=o.list||0;paid+=o.paid||0;const p=payout(o,hd);master+=p.master;helper+=p.helper;});
@@ -1005,7 +1017,7 @@ function renderDay(){
     const tm=o.t?new Date(o.t):null;
     const works=(o.lines||[]).filter(l=>l.q>0).map(l=>`${l.n}${l.q>1?' ×'+l.q:''}`).join(', ');
     const badge=o.mode==='coupon'?'<span class="badge cp">Купон</span>':o.mode==='disc'?'<span class="badge ds">Скидка</span>':'';
-    const st=!needsPay(o)?'<span class="pst ok">Купон — можно отпускать</span>':o.paidOk?(o.changedAfterPaid?'<span class="pst chg">Работы изменены после оплаты</span>':'<span class="pst ok">Оплачено</span>'):'<span class="pst wait">Ждёт оплаты</span>';
+    const st=o.pay==='invoice'?invSt(o):!needsPay(o)?'<span class="pst ok">Купон — можно отпускать</span>':o.paidOk?(o.changedAfterPaid?'<span class="pst chg">Работы изменены после оплаты</span>':'<span class="pst ok">Оплачено</span>'):'<span class="pst wait">Ждёт оплаты</span>';
     const canPay=S.role!=='master'&&needsPay(o);
     return `<div class="ordw ${o.paidOk||!needsPay(o)?'isPaid':'unpaid'}"><button class="ord" type="button" data-i="${i}"><span class="tm">${tm?pad(tm.getHours())+':'+pad(tm.getMinutes()):''}</span>
       <span class="what"><b>${esc([who(o),carOf(o),o.plate].filter(Boolean).join(' · ')||(o.phone||'Без номера'))} · ${CAR[o.car]}${o.car!=='com'?' R'+o.d:''}${badge}${st}</b><small>${esc(works)}${hd&&o.noHelper?' · без помощника':''}</small></span>
@@ -1015,8 +1027,20 @@ function renderDay(){
 }
 $('#prev').onclick=()=>{const d=fromIso(S.day);d.setDate(d.getDate()-1);S.day=iso(d);S.orders=[];renderDay();loadDay();};
 $('#next').onclick=()=>{const d=fromIso(S.day);d.setDate(d.getDate()+1);S.day=iso(d);S.orders=[];renderDay();loadDay();};
+$('#staffBtn').onclick=()=>{const st=S.staff||{},hd=!!(S.days[S.day]&&S.days[S.day].helper);
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Кто работает ${fmtDay(S.day)}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <div class="form" style="margin-top:0"><datalist id="stNames">${(S.names||[]).map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
+    <label><span class="mono lbl">Мастер</span><input class="inp" id="st_m" list="stNames" value="${esc(st.master||'')}" placeholder="Имя мастера" autocomplete="off"></label>
+    <label><span class="mono lbl">Помощник ${hd?'':'(сегодня без помощника)'}</span><input class="inp" id="st_h" list="stNames" value="${esc(st.helperName||'')}" placeholder="Имя помощника" autocomplete="off"></label>
+    <div style="grid-column:1/-1" class="row">${(S.names||[]).map(n=>`<button type="button" class="chip" data-nm="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+    <p class="note" style="grid-column:1/-1;margin:0">Каждый новый день мастер и помощник — как в прошлую смену. Поменять нужно только когда вышел другой. По именам считаются начисления в «Итогах».</p>
+    <div style="grid-column:1/-1" class="row"><button class="btn" type="button" id="st_go">Сохранить</button>${!hd?'<button class="btn ghost" type="button" id="st_gh">Сохранить и включить помощника</button>':''}</div></div>`;
+  let lastF='st_m';['st_m','st_h'].forEach(i=>$('#'+i).onfocus=()=>lastF=i);document.querySelectorAll('[data-nm]').forEach(b=>b.onclick=()=>{$('#'+lastF).value=b.dataset.nm;});
+  const go=async(on)=>{try{const r=await api('staff',{day:S.day,master:$('#st_m').value,helperName:$('#st_h').value});S.staff=r.staff;if(on&&!hd){await api('helper',{day:S.day,helper:true});S.days[S.day]={helper:true};}closeSheet();loadDay();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};
+  $('#st_go').onclick=()=>go(false);const gh=document.getElementById('st_gh');if(gh)gh.onclick=()=>go(true);
+  $('#close').onclick=closeSheet;const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});};
 $('#helper').onclick=async()=>{const cur=!!(S.days[S.day]&&S.days[S.day].helper);S.days[S.day]={helper:!cur};renderDay();
-  try{await api('helper',{day:S.day,helper:!cur});loadMonth();}catch(e){S.days[S.day]={helper:cur};renderDay();status('Не сохранилось: '+e.message,true);}};
+  try{await api('helper',{day:S.day,helper:!cur});loadMonth();loadDay();}catch(e){S.days[S.day]={helper:cur};renderDay();status('Не сохранилось: '+e.message,true);}};
 $('#add').onclick=()=>openOrder(null);
 function renderWeekMark(){document.querySelectorAll('#week .wd').forEach(b=>b.setAttribute('aria-current',b.dataset.day===S.day));}
 /* ---------- запись, неделя, игра ---------- */
@@ -2052,7 +2076,7 @@ function stackChart(el,ser,o){o=o||{};const W=Math.max(300,Math.round(el.clientW
     g+=`<rect x="${pl+cw*i}" y="0" width="${cw}" height="${H-pb}" fill="transparent" data-ci="${i}"/>`;});
   el.innerHTML=`<div class="chw"><svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="Выручка и прибыль по ${o.gbName||'периодам'}">${g}</svg><div class="tip" hidden></div></div>`;
   const tip=el.querySelector('.tip'),sv=el.querySelector('svg');
-  const showTip=(i,ev)=>{const s=ser[i];if(!s)return;tip.hidden=false;tip.innerHTML=`<b>${esc(o.full?o.full(s.k):s.k)}</b><span>Выручка <b class="tnum">${rub(s.rev)}</b></span><span>Прибыль <b class="tnum">${rub(s.rev-s.cost)}</b> · ${String(mrg(s.rev,s.cost)).replace('.',',')}%</span><span>Штук ${fmtQty(s.qty)}</span>`;
+  const showTip=(i,ev)=>{const s=ser[i];if(!s)return;tip.hidden=false;tip.innerHTML=o.tip?o.tip(s):`<b>${esc(o.full?o.full(s.k):s.k)}</b><span>Выручка <b class="tnum">${rub(s.rev)}</b></span><span>Прибыль <b class="tnum">${rub(s.rev-s.cost)}</b> · ${String(mrg(s.rev,s.cost)).replace('.',',')}%</span><span>Штук ${fmtQty(s.qty)}</span>`;
     const r=el.querySelector('.chw').getBoundingClientRect(),px=(pl+cw*(i+.5))/W*r.width;tip.style.left=Math.min(r.width-170,Math.max(0,px-85))+'px';};
   sv.querySelectorAll('[data-ci]').forEach(h=>{h.addEventListener('mouseenter',e=>showTip(+h.dataset.ci,e));h.addEventListener('click',e=>{showTip(+h.dataset.ci,e);if(o.onPick)o.onPick(ser[+h.dataset.ci]);});});
   sv.addEventListener('mouseleave',()=>tip.hidden=true);}
@@ -2260,6 +2284,12 @@ function renderSheet(){
       :`<button type="button" class="paybig ${O.paidOk?'ok':''}" id="o-paid-btn">${O.paidOk?'✓ Оплачено':'Оплачено'}</button>`):''}
     ${O.id&&O.mode==='coupon'&&!c.extra?`<div class="release ok">Купон — можно отпускать</div>`:''}
     ${(O.mode!=='coupon'||c.extra)&&S.role!=='master'?`<div><span class="mono lbl">Оплата${O.mode==='coupon'?' доплаты':''}</span><div class="row">${Object.entries(PAY).map(([k,t])=>`<button type="button" class="chip" data-pay="${k}" aria-pressed="${O.pay===k}">${t}</button>`).join('')}</div></div>`:''}
+    ${O.mode!=='coupon'&&S.role==='master'?`<button type="button" class="chip" data-pay="${O.pay==='invoice'?'card':'invoice'}" aria-pressed="${O.pay==='invoice'}" style="text-align:left">${O.pay==='invoice'?'✓ ':''}Оплата по счёту организации</button>`:''}
+    ${O.pay==='invoice'&&O.mode!=='coupon'?`<div class="invbox"><b>Счёт организации</b>
+      <label><span class="mono lbl">Организация</span><input class="inp" id="o-org" list="orgList" value="${esc(O.org||'')}" placeholder="ООО «…», ИП …" autocomplete="off"><datalist id="orgList">${(S.invOrgs||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+      <div class="row" style="flex-wrap:nowrap"><label style="flex:1"><span class="mono lbl">№ счёта</span><input class="inp" id="o-invno" value="${esc(O.invNo||'')}" placeholder="когда выставите" autocomplete="off"></label><label style="flex:1"><span class="mono lbl">Дата счёта</span><input class="inp" type="date" id="o-invday" value="${esc(O.invDay||'')}"></label></div>
+      ${O.id&&S.role!=='master'?`<div class="row" style="align-items:end;flex-wrap:nowrap"><label style="flex:1"><span class="mono lbl">Оплата пришла</span><input class="inp" type="date" id="o-invpaid" value="${esc(O.invPaid||'')}"></label><button class="btn ${O.invPaid?'ghost':''}" type="button" id="o-invgo">${O.invPaid?'Изменить':'Оплата пришла'}</button></div>`:''}
+      <p class="note" style="margin:0">${O.invPaid?'Оплачено '+fmtDay(O.invPaid)+'.':O.invNo?'Счёт выставлен — ждём оплату. Машину можно отпускать.':'Машину можно отпускать. Впишите № счёта, когда выставите (в Эльбе).'} Все счета — в «Итогах».</p></div>`:''}
     ${hd&&O.lines.some(l=>l.k==='wheel'||l.k==='cx')?`<button type="button" class="chip" id="o-nohelp" aria-pressed="${!!O.noHelper}" style="text-align:left;line-height:1.25;padding:8px 12px">${O.noHelper?'✓ ':''}Снятие/установку делал мастер — без помощника</button>`:''}
     <div class="split"><span>Мастеру</span><b class="tnum">${rub(po.master)}</b><span>Помощнику${hd?(O.noHelper?' (не участвовал)':''):' (сегодня без него)'}</span><b class="tnum">${rub(po.helper)}</b><span>${O.mode==='coupon'?'Выручка с купоном':'Итого получено'}</span><b class="tnum">${rub(c.paid)}</b></div>
     <label><span class="mono lbl">Телефон клиента</span><input class="inp" id="o-phone" type="tel" inputmode="tel" placeholder="+7 900 000-00-00" value="${esc(O.phone)}" autocomplete="off"></label>
@@ -2278,6 +2308,7 @@ function renderSheet(){
   bindSheet();
 }
 function keepInputs(){const v=id=>{const e=document.getElementById(id);return e?e.value:null;};
+  const og=v('o-org'),inn=v('o-invno'),ind=v('o-invday');if(og!==null)O.org=og;if(inn!==null)O.invNo=inn;if(ind!==null)O.invDay=ind;
   const p=v('o-plate'),ph=v('o-phone'),n=v('o-note'),pd=v('o-paid'),nm=v('o-name'),md=v('o-model');if(nm!==null)O.name=nm;if(md!==null)O.model=md;
   if(p!==null)O.plate=p;if(ph!==null)O.phone=ph;if(n!==null)O.note=n;if(pd!==null)O.paid=+pd||0;}
 function rer(){keepInputs();const sc=$('#sheet').scrollTop;renderSheet();$('#sheet').scrollTop=sc;}
@@ -2289,7 +2320,8 @@ function bindSheet(){
   document.querySelectorAll('[data-season]').forEach(b=>b.onclick=()=>{O.mods.season=O.mods.season===b.dataset.season?null:b.dataset.season;rer();});
   document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{O.mode=b.dataset.mode;if(O.mode==='disc'&&!O.paid)O.paid=calc(O).list;if(O.mode==='coupon'){O.coupon=S.coupon;O.extraSet=false;}rer();});
   const cpn=document.getElementById('o-cpn');if(cpn)cpn.onchange=()=>{O.coupon=+cpn.value||0;O.extraSet=false;rer();};
-  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{O.pay=b.dataset.pay;rer();});
+  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{O.pay=b.dataset.pay;if(O.pay==='invoice'&&!S.invOrgs)loadInvOrgs().then(rer);rer();});
+  const ig=document.getElementById('o-invgo');if(ig)ig.onclick=async()=>{keepInputs();const d=$('#o-invpaid').value||iso(new Date());try{await api('inv_set',{id:O.id,org:O.org||'',invNo:O.invNo||'',invDay:O.invDay||'',invPaid:d});O.invPaid=d;toast('<b>Оплата по счёту отмечена</b>'+fmtDay(d));rer();loadDay();}catch(e){showErr(e.message);}};
   document.querySelectorAll('.step button').forEach(b=>b.onclick=()=>{const w=WORKS[+b.dataset.w];const l=O.lines.find(x=>x.k===w.k&&x.n===w.n);
     const q=(l?l.q:0)+(b.dataset.a==='+'?1:-1);setQty(w.k,w.n,q,w.p,w.x);rer();});
   document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{const m=mainWorks(),g=k=>m.find(x=>x[0]===k);
@@ -2319,12 +2351,14 @@ function repeatLast(last){keepInputs();O.car=last.car||'car';O.d=last.d||16;if(l
     else{const f=all.find(x=>x.n===l.n);if(f)p0=f.p;}
     return{k:l.k,n:l.n,q:l.q,p0,...(l.n6?{n6:true}:{})};}).filter(l=>l.p0!=null&&l.q>0);
   rer();toast('<b>Работы как в прошлый раз</b>Проверьте и запишите машину');}
+async function loadInvOrgs(){try{const j=await api('inv_list');S.invOrgs=[...new Set(j.rows.map(r=>r.org).filter(Boolean))].slice(0,60);}catch(_){S.invOrgs=[];}}
 function showErr(t){const e=$('#o-err');e.textContent=t;e.hidden=false;}
 async function save(){keepInputs();O.phone=cleanPhone(O.phone);if(O.phone&&!phoneKey(O.phone)){showErr('Телефон неполный — нужно 10 цифр после +7.');return;}
   const c=calc(O);if(O.mode==='disc'&&(O.paid==null||O.paid<0)){showErr('Впишите, сколько взяли с клиента.');return;}
   const doc={day:O.day||S.day,t:O.t||Date.now(),car:O.car,d:O.car==='com'?null:O.d,mods:O.mods,
     lines:c.lines.map(l=>({k:l.k,n:l.n,q:l.q,p0:l.p0,p:Math.round(l.p),h:Math.round(l.h),...(l.n6?{n6:true}:{})})),
-    list:c.list,h:c.h,mode:O.mode,paid:c.paid,coupon:c.coupon,extra:c.extra,pay:O.mode==='coupon'&&!c.extra?null:O.pay,plate:(O.plate||'').trim().toUpperCase(),phone:(O.phone||'').trim(),note:(O.note||'').trim(),name:(O.name||'').trim(),model:(O.model||'').trim(),noHelper:!!O.noHelper,...(O.bookingId?{bookingId:O.bookingId}:{})};
+    list:c.list,h:c.h,mode:O.mode,paid:c.paid,coupon:c.coupon,extra:c.extra,pay:O.mode==='coupon'&&!c.extra?null:O.pay,plate:(O.plate||'').trim().toUpperCase(),phone:(O.phone||'').trim(),note:(O.note||'').trim(),name:(O.name||'').trim(),model:(O.model||'').trim(),noHelper:!!O.noHelper,...(O.pay==='invoice'&&O.mode!=='coupon'?{org:(O.org||'').trim(),invNo:(O.invNo||'').trim(),invDay:O.invDay||''}:{}),...(O.bookingId?{bookingId:O.bookingId}:{})};
+  if(doc.pay==='invoice'&&!doc.org){showErr('Впишите организацию, которой выставляем счёт.');return;}
   if(S._saving)return;S._saving=true;
   const btn=$('#o-save');btn.disabled=true;btn.textContent='Сохраняем…';{const b2=document.getElementById('o-save2');if(b2){b2.disabled=true;b2.textContent='Сохраняем…';}}
   if(O.id)doc.id=O.id;
@@ -2561,9 +2595,75 @@ function renderExp(){
 $('#e-prev').onclick=()=>{const[y,m]=S.expMonth.split('-').map(Number);const d=new Date(y,m-2,1);S.expMonth=iso(d).slice(0,7);loadExp();};
 $('#e-next').onclick=()=>{const[y,m]=S.expMonth.split('-').map(Number);const d=new Date(y,m,1);S.expMonth=iso(d).slice(0,7);loadExp();};
 
-/* ---------- итоги ---------- */
+/* ---------- итоги шиномонтажа: неделя / месяц / год, графики, по сотрудникам, счета ---------- */
+S.pm=S.pm||'month';S.pa=S.pa||iso(new Date());
+function perRange(mode,anchor){const d=fromIso(anchor);let f,t,lab;
+  if(mode==='week'){const w=(d.getDay()+6)%7;f=new Date(d);f.setDate(d.getDate()-w);t=new Date(f);t.setDate(f.getDate()+6);lab=`Неделя ${fmtDay(iso(f))} – ${fmtDay(iso(t))}`;}
+  else if(mode==='year'){f=new Date(d.getFullYear(),0,1);t=new Date(d.getFullYear(),11,31);lab=d.getFullYear()+' год';}
+  else{f=new Date(d.getFullYear(),d.getMonth(),1);t=new Date(d.getFullYear(),d.getMonth()+1,0);lab=MONTHS[d.getMonth()][0].toUpperCase()+MONTHS[d.getMonth()].slice(1)+' '+d.getFullYear();}
+  return{f:iso(f),t:iso(t),lab};}
+function perShift(mode,anchor,k){const d=fromIso(anchor);if(mode==='week')d.setDate(d.getDate()+7*k);else if(mode==='year')d.setFullYear(d.getFullYear()+k);else{d.setDate(1);d.setMonth(d.getMonth()+k);}return iso(d);}
+const SVC=l=>l.k==='cx'?'Комплекс (снятие, монтаж, балансировка)':l.k==='wheel'?'Снятие / установка колеса':l.k==='mount'?'Демонтаж / монтаж шины':l.k==='bal'?'Балансировка':/Ремонт|заплат|жгут|грибк|пластыр|Герметиз|вулкан/i.test(l.n||'')?'Ремонт проколов и порезов':/правк|прокат/i.test(l.n||'')?'Правка дисков':/Хранен/i.test(l.n||'')?'Хранение':'Прочие работы';
+function perAgg(j){const A={n:0,list:0,paid:0,master:0,helper:0,cur:0,cap:0,disc:0,cpn:0,phone:0,days:new Set(),byK:{},car:{},svc:{},pay:{},wd:Array(7).fill(0),wdDays:Array(7).fill(0).map(()=>new Set()),staff:{}};
+  const st=(nm,role)=>{const k=(nm||'не указан')+'|'+role;return A.staff[k]=A.staff[k]||{name:nm||'не указан',role,days:new Set(),n:0,base:0,pay:0};};
+  (j.orders||[]).forEach(o=>{const dd=(j.days||{})[o.day]||{},hd=!!dd.helper,p=payout(o,hd);A.n++;A.list+=o.list;A.paid+=o.paid;A.master+=p.master;A.helper+=p.helper;A.days.add(o.day);if(o.phone)A.phone++;
+    if(o.mode==='disc')A.disc+=o.list-o.paid;if(o.mode==='coupon')A.cpn+=o.coupon||0;
+    const key=S.pm==='year'?o.day.slice(0,7):o.day;const b=A.byK[key]=A.byK[key]||{rev:0,cost:0,qty:0};b.rev+=o.paid;b.cost+=p.master+p.helper;b.qty++;
+    const ck=CAR[o.car]+(o.car!=='com'&&o.d?(o.car==='suv'&&+o.d<=15?' R13–15':' R'+o.d):'');const c=A.car[ck]=A.car[ck]||{v:0,n:0};c.v+=o.paid;c.n++;
+    const sum=o.lines.reduce((a,l)=>a+l.s,0)||1;o.lines.forEach(l=>{const s=A.svc[SVC(l)]=A.svc[SVC(l)]||{v:0,n:0};s.v+=Math.round(o.paid*l.s/sum);s.n+=l.q;});
+    const pk=o.mode==='coupon'?'Купон производителя':(PAY[o.pay]||'—');const pp=A.pay[pk]=A.pay[pk]||{v:0,n:0};pp.v+=o.paid;pp.n++;
+    const w=(fromIso(o.day).getDay()+6)%7;A.wd[w]++;A.wdDays[w].add(o.day);
+    const m=st(dd.master,'Мастер');m.days.add(o.day);m.n++;m.base+=o.list-(hd?o.h:0);m.pay+=p.master;
+    if(hd&&o.h){const h=st(dd.helperName,'Помощник');h.days.add(o.day);h.n++;h.base+=o.h;h.pay+=p.helper;}});
+  (j.expenses||[]).forEach(x=>{A[x.kind==='cap'?'cap':'cur']+=+x.sum;});
+  A.res=A.paid-A.master-A.helper-A.cur;return A;}
+const dlt=(a,b)=>{if(!b)return '';const d=Math.round((a-b)/Math.abs(b)*100);return `<small class="${d>=0?'up':'dn'}">${d>=0?'▲':'▼'} ${Math.abs(d)}% к прошлому</small>`;};
+const vbars=(rows,unit)=>{if(!rows.length)return '<p class="note">Нет данных.</p>';const mx=Math.max(1,...rows.map(r=>r.v));return `<div class="hb">${rows.map(r=>`<div class="hbr"><span class="hbl">${esc(r.l)}</span><span class="hbt"><i style="width:${Math.max(2,r.v/mx*100)}%"></i></span><span class="hbv tnum">${unit==='n'?r.v:rub(r.v)}<small>${esc(r.sub||'')}</small></span></div>`).join('')}</div>`;};
 async function renderSum(){
-  $('#y-title').textContent=S.year+' год';const out=$('#sumOut');out.innerHTML=`<p class="note">Считаем…</p>`;
+  document.querySelectorAll('#pmMode [data-pm]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pm===S.pm));
+  const R=perRange(S.pm,S.pa),P=perRange(S.pm,perShift(S.pm,S.pa,-1));$('#y-title').textContent=R.lab;
+  /* период ещё идёт — сравниваем с тем же числом дней прошлого периода, иначе «минус» будет всегда */
+  const td=iso(new Date());let cmpNote='';if(td>=R.f&&td<R.t){const n=Math.round((fromIso(td)-fromIso(R.f))/864e5);const pt=fromIso(P.f);pt.setDate(pt.getDate()+n);if(iso(pt)<P.t)P.t=iso(pt);cmpNote=`Сравнение — с ${fmtDay(P.f)}–${fmtDay(P.t)}: столько же дней прошлого ${S.pm==='week'?'недели':S.pm==='year'?'года':'месяца'}.`;}
+  const out=$('#perfOut');out.innerHTML='<p class="note">Считаем…</p>';$('#sumOut').innerHTML='';
+  let j,jp,iv;try{[j,jp,iv]=await Promise.all([api('perf',null,{from:R.f,to:R.t}),api('perf',null,{from:P.f,to:P.t}),api('inv_list')]);}catch(e){out.innerHTML=`<div class="empty"><b>Не удалось посчитать</b>${esc(e.message)}</div>`;return;}
+  const A=perAgg(j),B=perAgg(jp),nd=A.days.size||1,nbd=B.days.size||1;
+  const ser=[];if(S.pm==='year'){for(let m=0;m<12;m++){const k=R.f.slice(0,4)+'-'+pad(m+1);ser.push({k,...(A.byK[k]||{rev:0,cost:0,qty:0})});}}
+  else{for(let t=fromIso(R.f);iso(t)<=R.t;t.setDate(t.getDate()+1)){const k=iso(t);ser.push({k,...(A.byK[k]||{rev:0,cost:0,qty:0})});}}
+  const best=ser.reduce((a,s)=>s.rev>(a?a.rev:0)?s:a,null);
+  const unpaid=iv.rows.filter(r=>!r.invPaid),noinv=unpaid.filter(r=>!r.invNo);
+  out.innerHTML=`<div class="tiles">
+    <div class="tile"><span class="mono">Машин</span><b class="tnum">${A.n}</b>${dlt(A.n,B.n)}</div>
+    <div class="tile"><span class="mono">Выручка</span><b class="tnum">${rub(A.paid)}</b>${dlt(A.paid,B.paid)}</div>
+    <div class="tile"><span class="mono">Средний чек</span><b class="tnum">${rub(A.n?A.paid/A.n:0)}</b>${dlt(A.n?A.paid/A.n:0,B.n?B.paid/B.n:0)}</div>
+    <div class="tile"><span class="mono">Машин в рабочий день</span><b class="tnum">${String(Math.round(A.n/nd*10)/10).replace('.',',')}</b>${dlt(A.n/nd,B.n/nbd)}</div>
+    <div class="tile"><span class="mono">Мастерам и помощникам</span><b class="tnum">${rub(A.master+A.helper)}</b><small class="pay">${A.paid?Math.round((A.master+A.helper)/A.paid*100):0}% выручки</small></div>
+    <div class="tile"><span class="mono">Текущие расходы</span><b class="tnum">${rub(A.cur)}</b>${A.cap?`<small class="pay">+ капитальные ${rub(A.cap)}</small>`:''}</div>
+    <div class="tile acc"><span class="mono">Результат</span><b class="tnum">${rub(A.res)}</b>${dlt(A.res,B.res)}</div>
+    <div class="tile"><span class="mono">Скидки и купоны</span><b class="tnum">${rub(A.disc)}</b><small class="pay">купонов ${rub(A.cpn)}</small></div></div>${cmpNote?`<p class="note" style="margin:-4px 0 10px">${cmpNote}</p>`:''}
+    <h3 class="sec" style="font-size:1rem">Выручка ${S.pm==='year'?'по месяцам':'по дням'} <span class="pay">тёмное — зарплата мастеру и помощнику, светлое — что остаётся${best&&best.rev?' · лучший '+(S.pm==='year'?MONTHS[+best.k.slice(5,7)-1]:fmtDay(best.k))+': '+rub(best.rev):''}</span></h3><div id="pfCh"></div>
+    <div class="pfg"><div><h3 class="sec" style="font-size:1rem">Какие работы приносят деньги</h3>${vbars(Object.entries(A.svc).map(([l,x])=>({l,v:x.v,sub:x.n+' шт'})).sort((a,b)=>b.v-a.v))}</div>
+      <div><h3 class="sec" style="font-size:1rem">Машины: тип и диаметр</h3>${vbars(Object.entries(A.car).map(([l,x])=>({l,v:x.n,sub:rub(x.v)})).sort((a,b)=>b.v-a.v).slice(0,12),'n')}</div>
+      <div><h3 class="sec" style="font-size:1rem">Оплата</h3>${vbars(Object.entries(A.pay).map(([l,x])=>({l,v:x.v,sub:x.n+' '+plural(x.n,'машина','машины','машин')})).sort((a,b)=>b.v-a.v))}</div>
+      ${S.pm!=='week'?`<div><h3 class="sec" style="font-size:1rem">Дни недели — машин в среднем</h3>${vbars(WD.slice(1).concat(WD[0]).map((l,i)=>({l,v:A.wdDays[i].size?Math.round(A.wd[i]/A.wdDays[i].size*10)/10:0,sub:A.wdDays[i].size+' '+plural(A.wdDays[i].size,'день','дня','дней')})),'n')}</div>`:''}</div>
+    <h3 class="sec" style="font-size:1rem">Кто сколько сделал</h3>
+    ${Object.keys(A.staff).length?`<div class="tw"><table><thead><tr><th style="text-align:left">Сотрудник</th><th>Дней</th><th>Машин</th><th>Работ по прайсу</th><th>Начислено (30%)</th></tr></thead><tbody>${Object.values(A.staff).sort((a,b)=>b.pay-a.pay).map(x=>`<tr><td style="text-align:left"><b>${esc(x.name)}</b> <span class="pay">${x.role.toLowerCase()}</span></td><td>${x.days.size}</td><td>${x.n}</td><td>${rub(x.base)}</td><td><b>${rub(x.pay)}</b></td></tr>`).join('')}</tbody></table></div>
+      <p class="note">Помощнику — 30% от снятия/установки колёс в дни «с помощником», мастеру — 30% от остального. Сладкий бонус мастера — в годовой таблице.</p>`:'<p class="note">Машин нет.</p>'}
+    <h3 class="sec" style="font-size:1rem">Счета организациям <span class="pay">все, не только за период</span></h3>
+    <div class="tiles"><div class="tile${unpaid.length?' acc':''}"><span class="mono">Ждём оплату</span><b class="tnum">${rub(unpaid.reduce((a,r)=>a+r.sum,0))}</b><small class="pay">${unpaid.length} ${plural(unpaid.length,'счёт','счёта','счетов')}</small></div>
+      <div class="tile"><span class="mono">Счёт ещё не выставлен</span><b class="tnum">${noinv.length}</b><small class="pay">${rub(noinv.reduce((a,r)=>a+r.sum,0))}</small></div>
+      <div class="tile"><span class="mono">Оплачено за период</span><b class="tnum">${rub(iv.rows.filter(r=>r.invPaid&&r.invPaid>=R.f&&r.invPaid<=R.t).reduce((a,r)=>a+r.sum,0))}</b></div></div>
+    ${iv.rows.length?`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Машина</th><th style="text-align:left">Организация</th><th>Сумма</th><th>№ счёта</th><th>Оплата</th></tr></thead><tbody>${(()=>{const L=iv.rows.filter(r=>!r.invPaid||r.invPaid>=R.f).sort((a,b)=>(!!a.invPaid-!!b.invPaid)||(a.day<b.day?1:-1));return L;})().map((r,ix)=>`<tr data-iv="${r.id}" ${ix>=15?'class="ivmore" hidden':''}><td style="text-align:left" class="tnum">${fmtDay(r.day)} <span class="pay">${esc([r.model,r.plate].filter(Boolean).join(' '))}</span></td><td style="text-align:left">${esc(r.org||'—')}</td><td>${rub(r.sum)}</td>
+      <td><input class="inp ivn" value="${esc(r.invNo)}" placeholder="№" style="max-width:110px;min-height:34px"></td><td>${r.invPaid?`<span class="pst ok">${fmtDay(r.invPaid)}</span>`:`<button type="button" class="out ivp" style="min-height:32px">Оплата пришла</button>`}</td></tr>`).join('')}</tbody></table></div>${iv.rows.filter(r=>!r.invPaid||r.invPaid>=R.f).length>15?`<button type="button" class="out" id="ivAll">Показать все</button>`:''}`:'<p class="note">Счетов пока не было. Выберите в машине оплату «Счёт организации».</p>'}`;
+  stackChart($('#pfCh'),ser,{labels:S.pm==='year'?12:16,lab:k=>S.pm==='year'?MONTHS[+k.slice(5,7)-1].slice(0,3):S.pm==='week'?WD[fromIso(k).getDay()]+' '+(+k.slice(8)):String(+k.slice(8)),
+    tip:s=>`<b>${S.pm==='year'?MONTHS[+s.k.slice(5,7)-1]:fmtDay(s.k)+' '+WD[fromIso(s.k).getDay()]}</b><span>Машин <b class="tnum">${s.qty}</b></span><span>Выручка <b class="tnum">${rub(s.rev)}</b></span><span>Мастеру и помощнику <b class="tnum">${rub(s.cost)}</b></span>`});
+  {const ia=document.getElementById('ivAll');if(ia)ia.onclick=()=>{out.querySelectorAll('.ivmore').forEach(t=>t.hidden=false);ia.remove();};}
+  out.querySelectorAll('tr[data-iv]').forEach(tr=>{const id=+tr.dataset.iv,inp=tr.querySelector('.ivn');inp.onchange=async()=>{try{await api('inv_set',{id,invNo:inp.value,invDay:inp.value?iso(new Date()):''});toast('<b>№ счёта сохранён</b>');}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};
+    const b=tr.querySelector('.ivp');if(b)b.onclick=async()=>{try{await api('inv_set',{id,invNo:inp.value,invPaid:iso(new Date())});toast('<b>Оплата по счёту отмечена</b>');renderSum();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};});
+  if(S.pm==='year'){S.year=+R.f.slice(0,4);renderYearTable();}
+}
+/* ---------- итоги: годовая таблица ---------- */
+async function renderYearTable(){
+  const out=$('#sumOut');out.innerHTML=`<p class="note">Считаем…</p>`;
   let j;try{j=await api('year',null,{year:S.year});}catch(e){out.innerHTML=`<div class="empty"><b>Не удалось посчитать</b>${esc(e.message)}. Нажмите «Обновить».</div>`;return;}
   const hdays=new Set(j.helperDays||[]);
   const M=Array.from({length:12},()=>({n:0,list:0,paid:0,master:0,helper:0,bonus:0,cur:0,cap:0,base:0,disc:0,cpn:0}));
@@ -2574,7 +2674,7 @@ async function renderSum(){
   const row=(name,r,cls)=>{const res=r.paid-r.master-r.helper-r.bonus-r.cur;return `<tr class="${cls||''}"><td>${name}</td><td>${r.n}</td><td>${rub(r.list)}</td><td>${rub(r.paid)}</td><td>${rub(r.cpn)}</td><td>${rub(r.disc)}</td><td>${rub(r.master)}</td><td>${rub(r.bonus)}</td><td>${rub(r.helper)}</td><td>${rub(r.cur)}</td><td class="res ${res<0?'neg':''}">${rub(res)}</td><td>${rub(r.cap)}</td></tr>`;};
   const used=M.map((r,i)=>[r,i]).filter(([r])=>r.n||r.cur||r.cap);
   if(!used.length){out.innerHTML=`<div class="empty"><b>За ${S.year} год записей нет</b>Итоги соберутся сами из смен и расходов.</div>`;return;}
-  out.innerHTML=`<div class="tw"><table><thead><tr><th>Месяц</th><th>Машин</th><th>По прайсу</th><th>Выручка</th><th>в т.ч. купоны</th><th>Скидки</th><th>Мастеру</th><th>Бонусы</th><th>Помощнику</th><th>Тек. расходы</th><th>Результат</th><th>Кап. расходы</th></tr></thead>
+  out.innerHTML=`<h3 class="sec" style="font-size:1rem">По месяцам ${S.year}: выручка, начисления, расходы</h3><div class="tw"><table><thead><tr><th>Месяц</th><th>Машин</th><th>По прайсу</th><th>Выручка</th><th>в т.ч. купоны</th><th>Скидки</th><th>Мастеру</th><th>Бонусы</th><th>Помощнику</th><th>Тек. расходы</th><th>Результат</th><th>Кап. расходы</th></tr></thead>
     <tbody>${used.map(([r,i])=>row(MONTHS[i][0].toUpperCase()+MONTHS[i].slice(1),r)).join('')}${row('Итого за год',T,'tot')}</tbody></table></div>
     <p class="note">Результат года с учётом капитальных расходов: <b>${rub(T.paid-T.master-T.helper-T.bonus-T.cur-T.cap)}</b>.</p>`;
 }
@@ -2588,7 +2688,8 @@ $('#bkp').onclick=async()=>{const b=$('#bkp');b.disabled=true;b.textContent='Г�
   catch(e){$('#bkpMsg').textContent='Не получилось: '+e.message;}
   b.disabled=false;b.textContent='Скачать копию';};
 $('#cpnSave').onclick=async()=>{try{const j=await api('coupon_set',{value:+$('#cpnVal').value});S.coupon=j.coupon;$('#cpnMsg').textContent='Сохранено: '+rub(j.coupon)+' за машину.';}catch(e){$('#cpnMsg').textContent=e.message;}};
-$('#y-prev').onclick=()=>{S.year--;renderSum();};$('#y-next').onclick=()=>{S.year++;renderSum();};$('#y-refresh').onclick=renderSum;
+$('#y-prev').onclick=()=>{S.pa=perShift(S.pm,S.pa,-1);renderSum();};$('#y-next').onclick=()=>{S.pa=perShift(S.pm,S.pa,1);renderSum();};$('#y-refresh').onclick=renderSum;
+document.querySelectorAll('#pmMode [data-pm]').forEach(b=>b.onclick=()=>{S.pm=b.dataset.pm;renderSum();});
 
 /* ---------- разделы: шиномонтаж и магазин (одна база, общие клиенты) ---------- */
 /* тема: магазин — светлая, шиномонтаж — тёмная; на устройстве можно закрепить вручную */

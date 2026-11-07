@@ -66,6 +66,10 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, t INTEGER NOT NULL, body TEXT NOT NULL, author TEXT, updated INTEGER)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS orders_day ON orders(day)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS days (day TEXT PRIMARY KEY, helper INTEGER NOT NULL DEFAULT 0)');
+  // кто работал: мастер и помощник по именам (пусто — как в прошлую смену)
+  $dcols = array_column($pdo->query('PRAGMA table_info(days)')->fetchAll(), 'name');
+  if (!in_array('master', $dcols, true)) $pdo->exec("ALTER TABLE days ADD COLUMN master TEXT NOT NULL DEFAULT ''");
+  if (!in_array('helper_name', $dcols, true)) $pdo->exec("ALTER TABLE days ADD COLUMN helper_name TEXT NOT NULL DEFAULT ''");
   $pdo->exec('CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, sum INTEGER NOT NULL, kind TEXT NOT NULL, cat TEXT, note TEXT, t INTEGER)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS log (t INTEGER, role TEXT, action TEXT, ref TEXT)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS bookings (id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, tm TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'planned\', body TEXT NOT NULL, updated INTEGER)');
@@ -361,6 +365,18 @@ function carRemember(array $cfg, string $phone, string $model, string $plate): v
   }
   $p->prepare('INSERT INTO client_cars (phone, car, plate, year, size, note, created) VALUES (?,?,?,?,?,?,?)')->execute([$phone, mb_substr($model, 0, 100), mb_substr($plate, 0, 20), '', '', '', time()]);
 }
+// мастер и помощник по дням: имя держится, пока его не поменяют (как в прошлую смену)
+function staffDays(array $cfg, string $from, string $to): array {
+  $p = db($cfg); $m = ''; $h = '';
+  $st = $p->prepare("SELECT master, helper_name FROM days WHERE day < ? AND master != '' ORDER BY day DESC LIMIT 1"); $st->execute([$from]); if ($r = $st->fetch()) $m = $r['master'];
+  $st = $p->prepare("SELECT helper_name FROM days WHERE day < ? AND helper_name != '' ORDER BY day DESC LIMIT 1"); $st->execute([$from]); if ($r = $st->fetch()) $h = $r['helper_name'];
+  $rows = []; $st = $p->prepare('SELECT day, helper, master, helper_name FROM days WHERE day BETWEEN ? AND ? ORDER BY day'); $st->execute([$from, $to]); foreach ($st->fetchAll() as $r) $rows[$r['day']] = $r;
+  $out = []; for ($t = strtotime($from); $t <= strtotime($to); $t += 86400) { $d = date('Y-m-d', $t); $r = $rows[$d] ?? null;
+    if ($r && $r['master'] !== '') $m = $r['master']; if ($r && $r['helper_name'] !== '') $h = $r['helper_name'];
+    $out[$d] = ['helper' => $r ? (int)$r['helper'] : 0, 'master' => $m, 'helperName' => ($r && (int)$r['helper']) ? $h : '', 'mSet' => $r && $r['master'] !== '', 'hSet' => $r && $r['helper_name'] !== '']; }
+  return $out;
+}
+function staffNames(array $cfg): array { $n = []; foreach (db($cfg)->query("SELECT master, helper_name FROM days")->fetchAll() as $r) { if ($r['master'] !== '') $n[$r['master']] = 1; if ($r['helper_name'] !== '') $n[$r['helper_name']] = 1; } return array_keys($n); }
 // сезон переобувки: осень (сент–дек) и весна (март–июнь)
 function seasonOf(string $day): string { $m = (int)substr($day, 5, 2); $y = substr($day, 0, 4); return $m >= 9 ? $y . 'о' : ($m >= 3 && $m <= 6 ? $y . 'в' : ''); }
 function crmAll(array $cfg): array {
@@ -631,12 +647,14 @@ try {
     $st->execute([$day]);
     $orders = array_map(fn($r) => ['id' => (int)$r['id']] + json_decode($r['body'], true), $st->fetchAll());
     $h = db($cfg)->prepare('SELECT helper FROM days WHERE day = ?'); $h->execute([$day]);
-    out(['orders' => withClients($cfg, $orders), 'helper' => (bool)$h->fetchColumn(), 'bookings' => withClients($cfg, bookingRows($cfg, 'day = ?', [$day]))]);
+    $sd = staffDays($cfg, $day, $day)[$day];
+    out(['orders' => withClients($cfg, $orders), 'helper' => (bool)$h->fetchColumn(), 'bookings' => withClients($cfg, bookingRows($cfg, 'day = ?', [$day])), 'staff' => $sd, 'names' => staffNames($cfg)]);
 
   case 'helper':
     post(); needRole($role, ['owner', 'master', 'cashier']);
     $b = body(); if (!isDay($b['day'] ?? null)) fail('Неверная дата');
-    db($cfg)->prepare('INSERT OR REPLACE INTO days (day, helper) VALUES (?, ?)')->execute([$b['day'], !empty($b['helper']) ? 1 : 0]);
+    db($cfg)->prepare('INSERT OR IGNORE INTO days (day, helper) VALUES (?, 0)')->execute([$b['day']]);
+    db($cfg)->prepare('UPDATE days SET helper = ? WHERE day = ?')->execute([!empty($b['helper']) ? 1 : 0, $b['day']]);
     logit($cfg, $role, 'helper', $b['day'] . '=' . (!empty($b['helper']) ? 1 : 0));
     out(['ok' => true]);
 
@@ -661,14 +679,19 @@ try {
       $o['coupon'] = (int)($prev['coupon'] ?? 0);
       $o['extra'] = 0; // по купону клиент не платит
       $o['paid'] = $mode === 'coupon' ? $o['coupon'] + $o['extra'] : ($mode === 'disc' ? (int)($prev['paid'] ?? 0) : $list);
-      if ($mode === 'full') $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','transfer'], true) ? $o['pay'] : 'card';
+      if ($mode === 'full') $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','transfer','invoice'], true) ? $o['pay'] : 'card';
     } else {
       $o['mode'] = in_array($o['mode'] ?? '', ['full','disc','coupon'], true) ? $o['mode'] : 'full';
       // купон: производитель возмещает фиксированную сумму, клиент не платит; разница с прайсом — наш плюс или минус
       $o['coupon'] = $o['mode'] === 'coupon' ? max(0, (int)($o['coupon'] ?? couponValue($cfg))) : 0;
       $o['extra'] = 0;
       $o['paid'] = $o['mode'] === 'coupon' ? $o['coupon'] + $o['extra'] : ($o['mode'] === 'disc' ? max(0, (int)($o['paid'] ?? 0)) : $list);
+      $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','transfer','invoice'], true) ? $o['pay'] : 'card';
     }
+    // счёт организации: название и № счёта пишет кто оформляет; дату оплаты — только касса/собственник (inv_set)
+    if (($o['pay'] ?? '') === 'invoice') { $o['org'] = mb_substr(trim((string)($o['org'] ?? '')), 0, 200); $o['invNo'] = mb_substr(trim((string)($o['invNo'] ?? ($prev['invNo'] ?? ''))), 0, 40);
+      $o['invDay'] = isDay($o['invDay'] ?? null) ? $o['invDay'] : ($prev['invDay'] ?? ''); $o['invPaid'] = $prev['invPaid'] ?? ''; }
+    else { unset($o['org'], $o['invNo'], $o['invDay'], $o['invPaid']); }
     $o['t'] = (int)($prev['t'] ?? ($o['t'] ?? round(microtime(true) * 1000)));
     foreach (['name', 'phone', 'plate', 'model', 'note'] as $k) $o[$k] = mb_substr(trim((string)($o[$k] ?? '')), 0, 200);
     $pk = phoneKey($o['phone']); if ($pk === '' && strlen(digits($o['phone'])) <= 1) $o['phone'] = '';
@@ -687,6 +710,49 @@ try {
     logit($cfg, $role, 'save', (string)$id);
     out(['id' => $id]);
 
+  case 'staff':
+    // кто сегодня мастер и помощник
+    post(); needRole($role, ['owner', 'master', 'cashier']);
+    $b = body(); if (!isDay($b['day'] ?? null)) fail('Неверная дата');
+    db($cfg)->prepare('INSERT OR IGNORE INTO days (day, helper) VALUES (?, 0)')->execute([$b['day']]);
+    if (array_key_exists('master', $b)) db($cfg)->prepare('UPDATE days SET master = ? WHERE day = ?')->execute([mb_substr(trim((string)$b['master']), 0, 40), $b['day']]);
+    if (array_key_exists('helperName', $b)) db($cfg)->prepare('UPDATE days SET helper_name = ? WHERE day = ?')->execute([mb_substr(trim((string)$b['helperName']), 0, 40), $b['day']]);
+    logit($cfg, $role, 'staff', $b['day'] . ' ' . ($b['master'] ?? '') . '/' . ($b['helperName'] ?? ''));
+    out(['ok' => true, 'staff' => staffDays($cfg, $b['day'], $b['day'])[$b['day']]]);
+
+  case 'perf':
+    // итоги шиномонтажа за период: машины, работы, оплата, кто работал, расходы
+    needRole($role, ['owner']);
+    $f = $_GET['from'] ?? ''; $t = $_GET['to'] ?? ''; if (!isDay($f) || !isDay($t) || $t < $f) fail('Неверный период');
+    $st = db($cfg)->prepare('SELECT id, day, body FROM orders WHERE day BETWEEN ? AND ? ORDER BY day, t'); $st->execute([$f, $t]);
+    $orders = array_map(function ($r) { $b = json_decode($r['body'], true) ?: []; $L = [];
+      foreach ($b['lines'] ?? [] as $l) if ((int)($l['q'] ?? 0) > 0) $L[] = ['k' => $l['k'] ?? '', 'n' => $l['n'] ?? '', 'q' => (int)$l['q'], 's' => (int)$l['q'] * (int)($l['p'] ?? 0)];
+      return ['id' => (int)$r['id'], 'day' => $r['day'], 'list' => (int)($b['list'] ?? 0), 'paid' => (int)($b['paid'] ?? 0), 'h' => (int)($b['h'] ?? 0), 'mode' => $b['mode'] ?? 'full', 'coupon' => (int)($b['coupon'] ?? 0),
+        'pay' => $b['pay'] ?? 'card', 'car' => $b['car'] ?? 'car', 'd' => $b['d'] ?? null, 'lines' => $L, 'phone' => phoneKey($b['phone'] ?? ''), 'org' => $b['org'] ?? '', 'invNo' => $b['invNo'] ?? '', 'invPaid' => $b['invPaid'] ?? '']; }, $st->fetchAll());
+    $e = db($cfg)->prepare('SELECT day, sum, kind, cat FROM expenses WHERE day BETWEEN ? AND ?'); $e->execute([$f, $t]);
+    out(['orders' => $orders, 'days' => staffDays($cfg, $f, $t), 'expenses' => $e->fetchAll()]);
+
+  case 'inv_list':
+    // счета организациям: что выставлено, что оплачено
+    needRole($role, ['owner', 'cashier']);
+    $rows = [];
+    foreach (db($cfg)->query('SELECT id, day, body FROM orders ORDER BY day DESC, t DESC')->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; if (($b['pay'] ?? '') !== 'invoice') continue;
+      $rows[] = ['id' => (int)$r['id'], 'day' => $r['day'], 'org' => $b['org'] ?? '', 'name' => $b['name'] ?? '', 'phone' => $b['phone'] ?? '', 'model' => $b['model'] ?? '', 'plate' => $b['plate'] ?? '', 'sum' => (int)($b['paid'] ?? 0), 'invNo' => $b['invNo'] ?? '', 'invDay' => $b['invDay'] ?? '', 'invPaid' => $b['invPaid'] ?? '']; }
+    out(['rows' => $rows]);
+
+  case 'inv_set':
+    // № счёта, дата счёта, дата прихода оплаты
+    post(); needRole($role, ['owner', 'cashier']);
+    $b = body(); $id = (int)($b['id'] ?? 0);
+    $st = db($cfg)->prepare('SELECT body FROM orders WHERE id = ?'); $st->execute([$id]); $prev = $st->fetchColumn(); if ($prev === false) fail('Запись не найдена', 404);
+    $o = json_decode($prev, true);
+    foreach (['org' => 200, 'invNo' => 40] as $k => $n) if (array_key_exists($k, $b)) $o[$k] = mb_substr(trim((string)$b[$k]), 0, $n);
+    foreach (['invDay', 'invPaid'] as $k) if (array_key_exists($k, $b)) { $v = (string)$b[$k]; if ($v !== '' && !isDay($v)) fail('Неверная дата'); $o[$k] = $v; }
+    if (($o['invPaid'] ?? '') !== '') { $o['paidOk'] = true; $o['paidAt'] = $o['paidAt'] ?? time(); }
+    db($cfg)->prepare('UPDATE orders SET body = ?, updated = ? WHERE id = ?')->execute([json_encode($o, JSON_UNESCAPED_UNICODE), time(), $id]);
+    logit($cfg, $role, 'inv_set', $id . ' ' . ($o['invNo'] ?? '') . ' ' . ($o['invPaid'] ?? ''));
+    out(['ok' => true]);
+
   case 'paid':
     // касса отмечает оплату — мастер видит и отпускает машину
     post(); needRole($role, ['owner', 'cashier']);
@@ -695,7 +761,7 @@ try {
     if ($prev === false) fail('Запись уже удалена', 404);
     $o = json_decode($prev, true);
     $o['paidOk'] = !empty($b['paid']); $o['paidAt'] = $o['paidOk'] ? time() : null; $o['changedAfterPaid'] = false;
-    if (in_array($b['pay'] ?? '', ['cash', 'card', 'transfer'], true)) $o['pay'] = $b['pay'];
+    if (in_array($b['pay'] ?? '', ['cash', 'card', 'transfer', 'invoice'], true)) $o['pay'] = $b['pay'];
     db($cfg)->prepare('UPDATE orders SET body = ?, updated = ? WHERE id = ?')->execute([json_encode($o, JSON_UNESCAPED_UNICODE), time(), $id]);
     logit($cfg, $role, 'paid', $id . '=' . ($o['paidOk'] ? 1 : 0));
     out(['ok' => true]);
