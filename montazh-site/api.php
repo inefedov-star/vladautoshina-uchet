@@ -125,6 +125,9 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE INDEX IF NOT EXISTS client_cars_ph ON client_cars(phone)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS crm_touch (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL DEFAULT \'\', why TEXT NOT NULL DEFAULT \'\', note TEXT NOT NULL DEFAULT \'\', author TEXT, created INTEGER)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS crm_touch_ph ON crm_touch(phone)');
+  // организации клиента: покупки на юрлицо (ООО, ИП) считаем его покупками
+  $pdo->exec('CREATE TABLE IF NOT EXISTS client_orgs (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, org TEXT NOT NULL, okey TEXT NOT NULL, created INTEGER)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS client_orgs_k ON client_orgs(okey)');
   return $pdo;
 }
 function logit(array $cfg, ?string $role, string $action, string $ref = ''): void {
@@ -341,6 +344,8 @@ function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-Я
 // ===== CRM: клиент = телефон. Профиль, машины, касания + сводка по всем разделам =====
 // госномер для сравнения: латиница-двойники → кириллица, без пробелов
 function plateKey($s): string { $s = mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); return strtr($s, ['A' => 'А', 'B' => 'В', 'E' => 'Е', 'K' => 'К', 'M' => 'М', 'H' => 'Н', 'O' => 'О', 'P' => 'Р', 'C' => 'С', 'T' => 'Т', 'Y' => 'У', 'X' => 'Х']); }
+// название организации для сравнения: без ООО/ИП/кавычек и знаков — «ООО "Ресурс-АД"» = «РЕСУРС АД»
+function orgKey($s): string { $s = mb_strtoupper(str_replace(['Ё', 'ё'], ['Е', 'е'], (string)$s)); $s = preg_replace('/(^|[\s"«»\'(])(ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУЗ|ГБУ|МБУ|МУП|ГУП|ФГУП|СПК|ТОО|НКО|LLC|ООО\.)(?=[\s"«»\')]|$)/u', ' ', $s); return preg_replace('/[^0-9A-ZА-Я]+/u', '', $s); }
 function carKey($s): string { return mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); }
 // машина из визита/записи — в список машин клиента (если такой ещё нет)
 function carRemember(array $cfg, string $phone, string $model, string $plate): void {
@@ -378,18 +383,19 @@ function crmAll(array $cfg): array {
       foreach ($x['cars'] as $c) if (($pk !== '' && plateKey($c['plate']) === $pk) || ($ck !== '' && carKey($c['car']) === $ck)) { $has = true; break; }
       if (!$has) $x['cars'][$ck . '|' . $pk] = ['car' => trim((string)($b['model'] ?? '')), 'plate' => mb_strtoupper(trim((string)($b['plate'] ?? '')))]; }
     if ($x['m_first'] === '' || $day < $x['m_first']) $x['m_first'] = $day; unset($x); $seen($k, $day); }
-  // магазин: проведённые продажи пульта
+  $orgOf = []; foreach ($p->query('SELECT phone, org, okey FROM client_orgs')->fetchAll() as $o) { $orgOf[$o['okey']] = $o['phone']; $row($o['phone']); $R[$o['phone']]['orgs'][] = $o['org']; }
+  // магазин: проведённые продажи пульта (без телефона, но на организацию клиента — тоже его)
   foreach ($p->query("SELECT d.day, d.type, d.phone, d.partner, SUM(ABS(m.qty) * IFNULL(m.price,0)) s, SUM(ABS(m.qty) * IFNULL(m.cost,0)) c, MAX(CASE WHEN p.kind = 'tire' THEN 1 ELSE 0 END) t, MAX(CASE WHEN p.kind = 'tire' THEN p.attrs ELSE '' END) a
-      FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products p ON p.id = m.product_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.phone != '' GROUP BY d.id")->fetchAll() as $d) {
-    $k = (string)$d['phone']; $row($k); $sg = $d['type'] === 'ret' ? -1 : 1; $x = &$R[$k];
+      FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products p ON p.id = m.product_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND (d.phone != '' OR d.partner != '') GROUP BY d.id")->fetchAll() as $d) {
+    $k = (string)$d['phone']; $org = false; if ($k === '') { $k = $orgOf[orgKey($d['partner'])] ?? ''; $org = true; } if ($k === '') continue; $row($k); if ($org) $R[$k]['s_org'] = ($R[$k]['s_org'] ?? 0) + 1; $sg = $d['type'] === 'ret' ? -1 : 1; $x = &$R[$k];
     if ($sg > 0) $x['s_n']++; $x['s_sum'] += $sg * (float)$d['s']; $x['s_prof'] += $sg * ((float)$d['s'] - (float)$d['c']); if ($d['day'] > $x['s_last']) $x['s_last'] = $d['day']; if ($x['s_first'] === '' || $d['day'] < $x['s_first']) $x['s_first'] = $d['day'];
     if (($sn = seasonOf($d['day'])) !== '' && (int)$d['t']) $x['seasons'][$sn] = true;
     if ($sg > 0 && (int)$d['t'] && $d['day'] > $x['tire_last']) { $x['tire_last'] = $d['day']; $a = json_decode((string)$d['a'], true) ?: []; if (!empty($a['w'])) $x['tire_size'] = $a['w'] . '/' . ($a['p'] ?? '') . ' R' . ($a['d'] ?? ''); }
     if ($x['name'] === '' && trim((string)$d['partner']) !== '') $x['name'] = trim($d['partner']); unset($x); $seen($k, $d['day']); }
   // магазин: история CloudShop
   foreach ($p->query("SELECT doc, day, type, phone, party, SUM(ABS(qty) * price) s, SUM(ABS(qty) * cost) c, MAX(CASE WHEN name GLOB '[0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]*' THEN 1 ELSE 0 END) t, MAX(CASE WHEN name GLOB '[0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]*' THEN name ELSE '' END) tn
-      FROM arch WHERE type IN ('sale','ret') AND phone IS NOT NULL AND phone != '' GROUP BY doc")->fetchAll() as $d) {
-    $k = phoneKey($d['phone']); if ($k === '') continue; $row($k); $sg = $d['type'] === 'ret' ? -1 : 1; $x = &$R[$k];
+      FROM arch WHERE type IN ('sale','ret') AND ((phone IS NOT NULL AND phone != '') OR party != '') GROUP BY doc")->fetchAll() as $d) {
+    $k = phoneKey($d['phone']); $org = false; if ($k === '') { $k = $orgOf[orgKey($d['party'])] ?? ''; $org = true; } if ($k === '') continue; $row($k); if ($org) $R[$k]['s_org'] = ($R[$k]['s_org'] ?? 0) + 1; $sg = $d['type'] === 'ret' ? -1 : 1; $x = &$R[$k];
     if ($sg > 0) $x['s_n']++; $x['s_sum'] += $sg * (float)$d['s']; $x['s_prof'] += $sg * ((float)$d['s'] - (float)$d['c']); if ($d['day'] > $x['s_last']) $x['s_last'] = $d['day']; if ($d['day'] > $x['s_last_arch']) $x['s_last_arch'] = $d['day'];
     if ($sg > 0 && (int)$d['t'] && $d['day'] > $x['tire_last']) { $x['tire_last'] = $d['day']; if (preg_match('/^(\d{3})\/(\d{2})\/(\d{2})/', (string)$d['tn'], $mm)) $x['tire_size'] = "$mm[1]/$mm[2] R$mm[3]"; }
     if ($x['name'] === '' && trim((string)$d['party']) !== '') $x['name'] = trim($d['party']); unset($x); $seen($k, $d['day']); }
@@ -874,7 +880,7 @@ try {
       $cnt['all']++; foreach ($x['seg'] as $t) $cnt[$t] = ($cnt[$t] ?? 0) + 1;
       $tot['n']++; if ($x['last'] >= $act) $tot['active']++; if ($x['h_now']) $tot['store']++; if (in_array('bday', $x['seg'], true)) $tot['bday']++; $tot['rev'] += $x['rev'];
       if ($seg !== '' && $seg !== 'all' && !in_array($seg, $x['seg'], true)) continue;
-      if ($q !== '') { $hay = mb_strtoupper($x['name'] . ' ' . $x['note'] . ' ' . $x['tags'] . ' ' . implode(' ', array_map(fn($c) => $c['car'] . ' ' . $c['plate'] . ' ' . plateKey($c['plate']), $x['cars'])));
+      if ($q !== '') { $hay = mb_strtoupper($x['name'] . ' ' . $x['note'] . ' ' . $x['tags'] . ' ' . implode(' ', $x['orgs'] ?? []) . ' ' . implode(' ', array_map(fn($c) => $c['car'] . ' ' . $c['plate'] . ' ' . plateKey($c['plate']), $x['cars'])));
         if (mb_strpos($hay, $q) === false && !(strlen($dq) >= 3 && (strpos($x['phone'], $dq) !== false || strpos(digits($x['phone2']), $dq) !== false))) continue; }
       $rows[] = $x; }
     $key = ['prof' => fn($x) => -$x['prof'], 'rev' => fn($x) => -$x['rev'], 'visits' => fn($x) => -($x['m_n'] * 1000 + $x['s_n']), 'last' => fn($x) => $x['last'] === '' ? 0 : -(int)str_replace('-', '', $x['last']), 'name' => fn($x) => $x['name'] === '' ? 'яяя' : mb_strtolower($x['name'])][$sort] ?? fn($x) => -$x['prof'];
@@ -888,7 +894,24 @@ try {
     $st = db($cfg)->prepare('SELECT id, car, plate, year, size, note FROM client_cars WHERE phone = ? ORDER BY id'); $st->execute([$k]); $cars = $st->fetchAll();
     $tt = db($cfg)->prepare('SELECT id, day, kind, why, note, author FROM crm_touch WHERE phone = ? ORDER BY day DESC, id DESC LIMIT 50'); $tt->execute([$k]);
     $calls = []; foreach (crmCalls($x ? [$k => $x] : []) as $c) $calls[] = $c;
-    out(['client' => $x, 'cars' => $cars, 'touches' => $tt->fetchAll(), 'offer' => $calls]);
+    $og = db($cfg)->prepare('SELECT org, okey FROM client_orgs WHERE phone = ? ORDER BY id'); $og->execute([$k]); $orgs = $og->fetchAll(); $ob = [];
+    if ($orgs) { $keys = array_flip(array_column($orgs, 'okey'));
+      foreach (db($cfg)->query("SELECT doc, day, type, party, SUM(ABS(qty) * price) s, GROUP_CONCAT(name, ', ') n FROM arch WHERE type IN ('sale','ret') AND party != '' AND (phone IS NULL OR phone = '') GROUP BY doc")->fetchAll() as $r) if (isset($keys[orgKey($r['party'])])) $ob[] = ['day' => $r['day'], 'type' => $r['type'], 'org' => $r['party'], 'items' => $r['n'], 'sum' => round((float)$r['s']), 'arch' => 1];
+      foreach (db($cfg)->query("SELECT d.id, d.day, d.type, d.partner, SUM(ABS(m.qty) * IFNULL(m.price,0)) s, GROUP_CONCAT(p.name, ', ') n FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products p ON p.id = m.product_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.phone = '' AND d.partner != '' GROUP BY d.id")->fetchAll() as $r) if (isset($keys[orgKey($r['partner'])])) $ob[] = ['day' => $r['day'], 'type' => $r['type'], 'org' => $r['partner'], 'items' => $r['n'], 'sum' => round((float)$r['s']), 'arch' => 0]; }
+    out(['client' => $x, 'cars' => $cars, 'touches' => $tt->fetchAll(), 'offer' => $calls, 'orgs' => array_column($orgs, 'org'), 'org_buys' => $ob]);
+
+  case 'crm_orgs':
+    // покупатели-организации из продаж (CloudShop и пульт) — чтобы привязать к клиенту
+    needRole($role, ['owner']);
+    $q = orgKey($_GET['q'] ?? ''); $t = []; $own = [];
+    foreach (db($cfg)->query('SELECT o.okey, o.phone, c.name FROM client_orgs o LEFT JOIN clients c ON c.phone = o.phone')->fetchAll() as $o) $own[$o['okey']] = $o['name'] ?: $o['phone'];
+    $add = function ($name, $day, $sum) use (&$t, $q) { $k = orgKey($name); if ($k === '' || ($q !== '' && mb_strpos($k, $q) === false)) return; if (!preg_match('/ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУ|МБУ|МУП|ГУП|СПК|"|«/u', mb_strtoupper($name))) return;
+      if (!isset($t[$k])) $t[$k] = ['org' => $name, 'n' => 0, 'sum' => 0, 'last' => '']; $t[$k]['n']++; $t[$k]['sum'] += $sum; if ($day > $t[$k]['last']) $t[$k]['last'] = $day; };
+    foreach (db($cfg)->query("SELECT party, MAX(day) day, SUM(ABS(qty) * price) s FROM arch WHERE type = 'sale' AND party != '' GROUP BY doc")->fetchAll() as $r) $add($r['party'], $r['day'], (float)$r['s']);
+    foreach (db($cfg)->query("SELECT d.partner, d.day, SUM(ABS(m.qty) * IFNULL(m.price,0)) s FROM docs d JOIN moves m ON m.doc_id = d.id WHERE d.type = 'sale' AND d.status = 'posted' AND d.partner != '' GROUP BY d.id")->fetchAll() as $r) $add($r['partner'], $r['day'], (float)$r['s']);
+    foreach ($t as $k => &$x) { $x['sum'] = round($x['sum']); $x['owner'] = $own[$k] ?? ''; } unset($x);
+    $rows = array_values($t); usort($rows, fn($a, $b) => $b['sum'] <=> $a['sum']);
+    out(['rows' => array_slice($rows, 0, 40)]);
 
   case 'crm_save':
     post(); needRole($role, ['owner']);
@@ -906,6 +929,9 @@ try {
     $p->prepare('DELETE FROM client_cars WHERE phone = ?')->execute([$k]);
     $ins = $p->prepare('INSERT INTO client_cars (phone, car, plate, year, size, note, created) VALUES (?,?,?,?,?,?,?)');
     foreach (array_slice($cars, 0, 10) as $c) $ins->execute([$k, mb_substr(trim((string)($c['car'] ?? '')), 0, 100), mb_substr(mb_strtoupper(trim((string)($c['plate'] ?? ''))), 0, 20), mb_substr(trim((string)($c['year'] ?? '')), 0, 10), mb_substr(trim((string)($c['size'] ?? '')), 0, 40), mb_substr(trim((string)($c['note'] ?? '')), 0, 200), time()]);
+    if (isset($b['orgs'])) { $p->prepare('DELETE FROM client_orgs WHERE phone = ?')->execute([$k]); $oi = $p->prepare('INSERT INTO client_orgs (phone, org, okey, created) VALUES (?,?,?,?)'); $od = $p->prepare('DELETE FROM client_orgs WHERE okey = ?');
+      foreach (array_slice((array)$b['orgs'], 0, 20) as $o) { $o = mb_substr(trim((string)$o), 0, 200); $ok = orgKey($o); if ($ok === '') continue; $od->execute([$ok]); $oi->execute([$k, $o, $ok, time()]); } }
+    if ($old !== '' && $old !== $k) $p->prepare('UPDATE client_orgs SET phone = ? WHERE phone = ?')->execute([$k, $old]);
     $p->commit(); logit($cfg, $role, 'crm_save', $k);
     out(['ok' => true, 'phone' => $k]);
 
