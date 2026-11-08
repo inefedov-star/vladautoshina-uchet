@@ -137,6 +137,13 @@ function db(array $cfg): PDO {
   if (!in_array('role', $ocols, true)) $pdo->exec("ALTER TABLE client_orgs ADD COLUMN role TEXT NOT NULL DEFAULT 'owner'");
   // организация как клиент сама по себе (в т.ч. без владельца-клиента): реквизиты и заметка
   $pdo->exec('CREATE TABLE IF NOT EXISTS orgs (okey TEXT PRIMARY KEY, name TEXT NOT NULL, inn TEXT NOT NULL DEFAULT \'\', note TEXT NOT NULL DEFAULT \'\', created INTEGER)');
+  // реквизиты и итоги из Контур.Эльбы (список контрагентов): kind — client / supplier / other (налоговая, банк)
+  $gcols = array_column($pdo->query('PRAGMA table_info(orgs)')->fetchAll(), 'name');
+  foreach (['kpp' => "TEXT NOT NULL DEFAULT ''", 'addr' => "TEXT NOT NULL DEFAULT ''", 'contact' => "TEXT NOT NULL DEFAULT ''", 'ophone' => "TEXT NOT NULL DEFAULT ''", 'email' => "TEXT NOT NULL DEFAULT ''",
+    'kind' => "TEXT NOT NULL DEFAULT 'client'", 'elba_in' => 'REAL NOT NULL DEFAULT 0', 'elba_out' => 'REAL NOT NULL DEFAULT 0', 'elba_debt' => 'REAL NOT NULL DEFAULT 0', 'src' => "TEXT NOT NULL DEFAULT ''", 'upd' => 'INTEGER'] as $c => $t)
+    if (!in_array($c, $gcols, true)) $pdo->exec("ALTER TABLE orgs ADD COLUMN $c $t");
+  // все известные организации — чтобы «АДМИНИСТРАЦИЯ …», «АНО …» и т.п. узнавались как организации
+  $GLOBALS['ORGK'] = array_flip(array_filter($pdo->query('SELECT okey FROM orgs')->fetchAll(PDO::FETCH_COLUMN), fn($k) => !preg_match('/^\d+$/', (string)$k)));
   // планировщик задач: кому поручено и к какому дню
   $pdo->exec('CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, note TEXT NOT NULL DEFAULT \'\', who TEXT NOT NULL DEFAULT \'\', due TEXT NOT NULL DEFAULT \'\', prio INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT \'open\', phone TEXT NOT NULL DEFAULT \'\', created INTEGER, done_at INTEGER, author TEXT)');
   return $pdo;
@@ -358,7 +365,10 @@ function plateKey($s): string { $s = mb_strtoupper(preg_replace('/[^0-9A-Za-zА-
 // название организации для сравнения: без ООО/ИП/кавычек и знаков — «ООО "Ресурс-АД"» = «РЕСУРС АД»
 function orgKey($s): string { $s = mb_strtoupper(str_replace(['Ё', 'ё'], ['Е', 'е'], (string)$s)); $s = preg_replace('/(^|[\s"«»\'(])(ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУЗ|ГБУ|МБУ|МУП|ГУП|ФГУП|СПК|ТОО|НКО|LLC|ООО\.)(?=[\s"«»\')]|$)/u', ' ', $s); return preg_replace('/[^0-9A-ZА-Я]+/u', '', $s); }
 // похоже на организацию: ООО, ИП, АО и т.п.
-function isOrgName($s): bool { return (bool)preg_match('/(^|[\s"«(])(ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУЗ|ГБУ|МБУ|МУП|ГУП|ФГУП|СПК|ТОО|LLC)(?=[\s"«»)]|$)/u', mb_strtoupper((string)$s)); }
+function isOrgName($s): bool { $u = mb_strtoupper((string)$s);
+  if (preg_match('/(^|[\s"«(])(ООО|ОАО|ЗАО|ПАО|АО|НАО|ИП|ГБУЗ|ГБУЗВО|ГБУ|ГБУСО|ГБУСОВО|ГБОУ|ГБПОУ|ГАУ|ГАУВО|ГКУ|МБУ|МБОУ|МБДОУ|МАДОУ|МАУ|МКУ|МУП|ГУП|ФГУП|ФГБУ|ФКУ|СПК|ТОО|АНО|НКО|КФХ|ТСЖ|ТСН|LLC)(?=[\s"«»)]|$)/u', $u)) return true;
+  if (preg_match('/^(АДМИНИСТРАЦИЯ|УПРАВЛЕНИЕ|КОМИТЕТ|ДЕПАРТАМЕНТ|ФИЛИАЛ|КОЛХОЗ|СЕЛЬСКОХОЗЯЙСТВЕННЫЙ|ВЛАДИМИРСКИЙ ФИЛИАЛ)\b/u', $u)) return true;
+  $k = orgKey($s); return $k !== '' && isset($GLOBALS['ORGK'][$k]); }
 // организация — клиенту как представителю (если ещё ни за кем не числится); владельцем его отмечают в CRM
 function orgLink(array $cfg, string $phone, string $org): void { $ok = orgKey($org); if ($phone === '' || $ok === '') return; $ex = db($cfg)->prepare('SELECT 1 FROM client_orgs WHERE okey = ?'); $ex->execute([$ok]);
   if (!$ex->fetchColumn()) db($cfg)->prepare("INSERT INTO client_orgs (phone, org, okey, created, role) VALUES (?,?,?,?, 'contact')")->execute([$phone, mb_substr(trim($org), 0, 200), $ok, time()]); }
@@ -389,6 +399,19 @@ function staffDays(array $cfg, string $from, string $to): array {
 function staffNames(array $cfg): array { $n = []; foreach (db($cfg)->query("SELECT master, helper_name FROM days")->fetchAll() as $r) { if ($r['master'] !== '') $n[$r['master']] = 1; if ($r['helper_name'] !== '') $n[$r['helper_name']] = 1; } return array_keys($n); }
 // сезон переобувки: осень (сент–дек) и весна (март–июнь)
 function seasonOf(string $day): string { $m = (int)substr($day, 5, 2); $y = substr($day, 0, 4); return $m >= 9 ? $y . 'о' : ($m >= 3 && $m <= 6 ? $y . 'в' : ''); }
+// все организации, какие мы знаем: CRM и Эльба, продажи CloudShop и пульта, счета шиномонтажа
+function orgDirectory(array $cfg): array {
+  $p = db($cfg); $D = [];
+  $add = function ($name, array $x = []) use (&$D) { $name = trim((string)$name); $k = orgKey($name); if ($k === '' || preg_match('/^\d+$/', $k)) return;
+    if (!isset($D[$k])) $D[$k] = ['okey' => $k, 'org' => $name, 'inn' => '', 'kind' => 'client', 'ophone' => '', 'contact' => '', 'n' => 0]; foreach ($x as $f => $v) if ($v !== '' && $v !== null) $D[$k][$f] = $v; };
+  foreach ($p->query('SELECT okey, name, inn, kind, ophone, contact FROM orgs')->fetchAll() as $o) { if ($o['kind'] === 'other') { $D[$o['okey']] = null; continue; } $add($o['name'], ['inn' => $o['inn'], 'kind' => $o['kind'], 'ophone' => $o['ophone'], 'contact' => $o['contact']]); }
+  foreach ($p->query('SELECT org FROM client_orgs')->fetchAll(PDO::FETCH_COLUMN) as $o) if (!array_key_exists(orgKey($o), $D)) $add($o);
+  foreach ($p->query("SELECT party, COUNT(DISTINCT doc) n FROM arch WHERE type = 'sale' AND party != '' GROUP BY party")->fetchAll() as $r) if (isOrgName($r['party'])) { $k = orgKey($r['party']); if (!array_key_exists($k, $D)) $add($r['party']); if (!empty($D[$k])) $D[$k]['n'] += (int)$r['n']; }
+  foreach ($p->query("SELECT partner, COUNT(*) n FROM docs WHERE type = 'sale' AND status = 'posted' AND partner != '' GROUP BY partner")->fetchAll() as $r) if (isOrgName($r['partner'])) { $k = orgKey($r['partner']); if (!array_key_exists($k, $D)) $add($r['partner']); if (!empty($D[$k])) $D[$k]['n'] += (int)$r['n']; }
+  foreach ($p->query('SELECT body FROM orders ORDER BY day DESC LIMIT 5000')->fetchAll(PDO::FETCH_COLUMN) as $bj) { $b = json_decode($bj, true) ?: [];
+    foreach ([($b['pay'] ?? '') === 'invoice' ? ($b['org'] ?? '') : '', isOrgName($b['name'] ?? '') ? $b['name'] : ''] as $o) if (trim((string)$o) !== '') { $k = orgKey($o); if (!array_key_exists($k, $D)) $add($o); if (!empty($D[$k])) $D[$k]['n']++; } }
+  return array_filter($D);
+}
 function crmAll(array $cfg): array {
   $p = db($cfg); $R = []; $today = date('Y-m-d');
   $row = function (string $k) use (&$R) { if (!isset($R[$k])) $R[$k] = ['phone' => $k, 'name' => '', 'phone2' => '', 'cars' => [], 'bday' => '', 'note' => '', 'src' => '', 'tags' => '', 'consent' => 0, 'first' => '', 'last' => '',
@@ -402,7 +425,7 @@ function crmAll(array $cfg): array {
   foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) { $k = (string)$c['phone']; $row($k);
     $ck = carKey($c['car']); unset($R[$k]['cars'][$ck]); $R[$k]['cars'][$ck . '|' . plateKey($c['plate'])] = ['car' => $c['car'], 'plate' => $c['plate']]; if (plateKey($c['plate']) !== '') $byPlate[plateKey($c['plate'])] = $k; }
   // организации: у владельца-клиента деньги фирмы — его; у фирмы без владельца — отдельная строка CRM «организация»
-  $orgName = []; foreach ($p->query('SELECT okey, name, inn, note FROM orgs')->fetchAll() as $o) $orgName[$o['okey']] = $o;
+  $orgName = []; $orgOther = []; foreach ($p->query('SELECT okey, name, inn, note, kind, contact, ophone, elba_in, elba_debt FROM orgs')->fetchAll() as $o) { if ($o['kind'] === 'other') { $orgOther[$o['okey']] = 1; continue; } $orgName[$o['okey']] = $o; }
   $orgOf = []; $orgPeople = [];
   foreach ($p->query('SELECT phone, org, okey, role FROM client_orgs ORDER BY id')->fetchAll() as $o) {
     if (!isset($orgName[$o['okey']])) $orgName[$o['okey']] = ['okey' => $o['okey'], 'name' => $o['org'], 'inn' => '', 'note' => ''];
@@ -415,7 +438,7 @@ function crmAll(array $cfg): array {
   // шиномонтаж: визит без телефона узнаём по госномеру или по организации из счёта
   $ords = $p->query('SELECT day, body FROM orders')->fetchAll(); $ob = [];
   foreach ($ords as $o) { $b = json_decode($o['body'], true) ?: []; $k = phoneKey($b['phone'] ?? ''); if ($k !== '' && plateKey($b['plate'] ?? '') !== '') $byPlate[plateKey($b['plate'])] = $byPlate[plateKey($b['plate'])] ?? $k; $ob[] = [$o['day'], $b, $k]; }
-  foreach ($ob as [$day, $b, $k]) { if (($b['pay'] ?? '') === 'invoice' && trim((string)($b['org'] ?? '')) !== '') $k = $orgR((string)$b['org'], $k) ?: $k; if ($k === '') $k = $byPlate[plateKey($b['plate'] ?? '')] ?? ''; if ($k === '') continue; $row($k);
+  foreach ($ob as [$day, $b, $k]) { if (($b['pay'] ?? '') === 'invoice' && trim((string)($b['org'] ?? '')) !== '') $k = $orgR((string)$b['org'], $k) ?: $k; if ($k === '') $k = $byPlate[plateKey($b['plate'] ?? '')] ?? ''; if ($k === '' && isOrgName($b['name'] ?? '')) $k = $orgR((string)$b['name']); if ($k === '') continue; $row($k);
     $x = &$R[$k];
     if (($b['pay'] ?? '') === 'invoice' && ($b['invPaid'] ?? '') === '') { $x['inv_due'] += (float)($b['paid'] ?? 0); $x['inv_n']++; if ($x['inv_old'] === '' || $day < $x['inv_old']) $x['inv_old'] = $day; $x['inv_list'][] = ['day' => $day, 'no' => $b['invNo'] ?? '', 'org' => $b['org'] ?? '', 'sum' => (int)($b['paid'] ?? 0)]; } $x['m_n']++; $x['m_sum'] += (float)($b['paid'] ?? $b['list'] ?? 0); if ($day > $x['m_last']) $x['m_last'] = $day;
     if (($s = seasonOf($day)) !== '') $x['seasons'][$s] = true; if ($x['name'] === '' && trim((string)($b['name'] ?? '')) !== '') $x['name'] = trim($b['name']);
@@ -451,7 +474,7 @@ function crmAll(array $cfg): array {
     if ($x['name'] === '' && trim((string)$h['client']) !== '') $x['name'] = trim($h['client']); unset($x); $seen($k, substr((string)$h['accepted_at'], 0, 10)); } } catch (Throwable $e) {} }
   foreach ($p->query('SELECT phone, MAX(day) d, kind FROM crm_touch GROUP BY phone')->fetchAll() as $t) if (isset($R[$t['phone']])) { $R[$t['phone']]['touch'] = $t['d']; $R[$t['phone']]['touch_kind'] = $t['kind']; }
   // строки-организации: название, реквизиты, люди (владелец / представители)
-  foreach ($R as $k => &$x) if ($x['type'] === 'org') { $ok = substr($k, 4); $o = $orgName[$ok] ?? ['name' => $ok, 'inn' => '', 'note' => '']; $x['name'] = $o['name']; $x['inn'] = $o['inn']; $x['note'] = $o['note']; $x['okey'] = $ok; $x['phone'] = '';
+  foreach ($R as $k => &$x) if ($x['type'] === 'org') { $ok = substr($k, 4); $o = $orgName[$ok] ?? ['name' => $ok, 'inn' => '', 'note' => '']; $x['name'] = $o['name']; $x['inn'] = $o['inn']; $x['note'] = $o['note']; $x['okey'] = $ok; $x['phone'] = ''; $x['kind'] = $o['kind'] ?? 'client'; $x['ocontact'] = $o['contact'] ?? ''; $x['ophone'] = $o['ophone'] ?? ''; $x['elba_in'] = round((float)($o['elba_in'] ?? 0)); $x['elba_debt'] = round((float)($o['elba_debt'] ?? 0));
     foreach ($orgPeople[$ok] ?? [] as $ph => $rl) { $ph = (string)$ph; $x['contacts'][] = ['phone' => $ph, 'name' => $R[$ph]['name'] ?? '', 'role' => $rl]; }
     usort($x['contacts'], fn($a, $b) => ($a['role'] === 'owner' ? 0 : 1) <=> ($b['role'] === 'owner' ? 0 : 1)); } unset($x);
   // итоги и метки
@@ -478,6 +501,7 @@ function crmAll(array $cfg): array {
     if ($x['inv_n'] > 0) $t[] = 'debt';
     if ($x['orgs']) $t[] = 'org';
     if ($x['type'] === 'org') $t[] = 'company';
+    if (($x['kind'] ?? '') === 'supplier') $t[] = 'supplier';
     $x['seg'] = $t; } unset($x);
   return $R;
 }
@@ -512,7 +536,7 @@ function crmTimeline(array $cfg, array $phones, array $okeys, bool $moneyByPhone
   $mine = fn($ph, $org) => ($moneyByPhone && $ph !== '' && isset($P[$ph])) || ($org !== '' && isset($O[orgKey($org)]));
   $plates = []; if ($moneyByPhone && $P) { $st = $p->prepare('SELECT plate FROM client_cars WHERE phone = ?'); foreach (array_keys($P) as $ph) { $st->execute([(string)$ph]); foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $pl) if (plateKey($pl) !== '') $plates[plateKey($pl)] = 1; } }
   foreach ($p->query('SELECT id, day, body FROM orders')->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; $ph = phoneKey($b['phone'] ?? ''); $inv = ($b['pay'] ?? '') === 'invoice';
-    $ok = $mine($ph, $inv ? (string)($b['org'] ?? '') : '') || ($moneyByPhone && $ph === '' && isset($plates[plateKey($b['plate'] ?? '')])); if (!$ok) continue;
+    $ok = $mine($ph, $inv ? (string)($b['org'] ?? '') : '') || ($ph === '' && isOrgName($b['name'] ?? '') && isset($O[orgKey($b['name'])])) || ($moneyByPhone && $ph === '' && isset($plates[plateKey($b['plate'] ?? '')])); if (!$ok) continue;
     $w = implode(', ', array_map(fn($l) => ($l['n'] ?? '') . ((int)($l['q'] ?? 1) > 1 ? ' ×' . $l['q'] : ''), array_filter($b['lines'] ?? [], fn($l) => (int)($l['q'] ?? 0) > 0)));
     $ev[] = ['day' => $r['day'], 'kind' => 'mont', 'title' => 'Шиномонтаж' . ($inv ? ' по счёту' . (($b['org'] ?? '') !== '' ? ' — ' . $b['org'] : '') : ''), 'detail' => trim(trim(($b['model'] ?? '') . ' ' . ($b['plate'] ?? '')) . ($w !== '' ? ': ' . $w : ''), ': '),
       'sum' => (int)($b['paid'] ?? 0), 'status' => $inv ? (($b['invPaid'] ?? '') !== '' ? 'счёт оплачен' : (($b['invNo'] ?? '') !== '' ? 'счёт № ' . $b['invNo'] . ' не оплачен' : 'счёт не выставлен')) : '', 'warn' => $inv && ($b['invPaid'] ?? '') === '', 'ref' => ['id' => (int)$r['id'], 'day' => $r['day']] + $b]; }
@@ -1037,7 +1061,7 @@ try {
       $cnt['all']++; foreach ($x['seg'] as $t) $cnt[$t] = ($cnt[$t] ?? 0) + 1;
       $tot['n']++; if ($x['last'] >= $act) $tot['active']++; if ($x['h_now']) $tot['store']++; if (in_array('bday', $x['seg'], true)) $tot['bday']++; $tot['rev'] += $x['rev'];
       if ($seg !== '' && $seg !== 'all' && !in_array($seg, $x['seg'], true)) continue;
-      if ($q !== '') { $hay = mb_strtoupper($x['name'] . ' ' . $x['note'] . ' ' . $x['tags'] . ' ' . implode(' ', $x['orgs'] ?? []) . ' ' . implode(' ', array_map(fn($c) => $c['car'] . ' ' . $c['plate'] . ' ' . plateKey($c['plate']), $x['cars'])));
+      if ($q !== '') { $hay = mb_strtoupper($x['name'] . ' ' . $x['note'] . ' ' . $x['tags'] . ' ' . ($x['inn'] ?? '') . ' ' . ($x['ocontact'] ?? '') . ' ' . implode(' ', $x['orgs'] ?? []) . ' ' . implode(' ', array_map(fn($c) => $c['car'] . ' ' . $c['plate'] . ' ' . plateKey($c['plate']), $x['cars'])));
         if (mb_strpos($hay, $q) === false && !(strlen($dq) >= 3 && (strpos($x['phone'], $dq) !== false || strpos(digits($x['phone2']), $dq) !== false))) continue; }
       $rows[] = $x; }
     $key = ['prof' => fn($x) => -$x['prof'], 'rev' => fn($x) => -$x['rev'], 'visits' => fn($x) => -($x['m_n'] * 1000 + $x['s_n']), 'last' => fn($x) => $x['last'] === '' ? 0 : -(int)str_replace('-', '', $x['last']), 'name' => fn($x) => $x['name'] === '' ? 'яяя' : mb_strtolower($x['name'])][$sort] ?? fn($x) => -$x['prof'];
@@ -1090,6 +1114,35 @@ try {
     if ($ok !== '') { $o = $p->prepare('SELECT phone FROM client_orgs WHERE okey = ?'); $o->execute([$ok]); out(['rows' => crmTimeline($cfg, $o->fetchAll(PDO::FETCH_COLUMN), [$ok], false)]); }
     fail('Не указан клиент');
 
+  case 'org_import':
+    // список контрагентов из Контур.Эльбы: новые организации заводим, у известных (по ИНН или названию) дополняем реквизиты и итоги
+    post(); needRole($role, ['owner']);
+    $b = body(); $p = db($cfg); $byInn = []; $have = [];
+    foreach ($p->query('SELECT okey, inn FROM orgs')->fetchAll() as $o) { $have[$o['okey']] = 1; if ($o['inn'] !== '') $byInn[$o['inn']] = $o['okey']; }
+    $n = ['new' => 0, 'upd' => 0, 'skip' => 0, 'sup' => 0]; $p->beginTransaction();
+    foreach (array_slice((array)($b['rows'] ?? []), 0, 5000) as $r) {
+      $name = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($r['name'] ?? ''))), 0, 200); $inn = mb_substr(preg_replace('/\D/', '', (string)($r['inn'] ?? '')), 0, 12);
+      if ($name === '' || orgKey($name) === '') { $n['skip']++; continue; }
+      if (mb_strpos(mb_strtoupper($name), 'НЕФЕДОВ ИЛЬЯ') !== false) { $n['skip']++; continue; } // это мы сами
+      $in = (float)($r['in'] ?? 0); $outS = (float)($r['out'] ?? 0); $grp = mb_strtolower((string)($r['group'] ?? ''));
+      $kind = mb_strpos($grp, 'налог') !== false || preg_match('/БАНК|КАЗНАЧЕЙСТВО|ФНС|СКБ КОНТУР|СОЦИАЛЬНОГО ФОНДА|ПЕНСИОННОГО/u', mb_strtoupper($name)) ? 'other' : ((mb_strpos($grp, 'поставщ') !== false || ($outS > 0 && $in <= 0)) ? 'supplier' : 'client');
+      if ($kind === 'supplier') $n['sup']++;
+      $ok = ($inn !== '' && isset($byInn[$inn])) ? $byInn[$inn] : orgKey($name);
+      $v = ['kpp' => mb_substr(preg_replace('/\D/', '', (string)($r['kpp'] ?? '')), 0, 9), 'addr' => mb_substr(trim((string)($r['addr'] ?? '')), 0, 300), 'contact' => mb_substr(trim((string)($r['contact'] ?? '')), 0, 200),
+        'ophone' => mb_substr(trim((string)($r['phone'] ?? '')), 0, 100), 'email' => mb_substr(trim((string)($r['email'] ?? '')), 0, 100), 'kind' => $kind, 'elba_in' => $in, 'elba_out' => $outS, 'elba_debt' => (float)($r['debt'] ?? 0)];
+      if (isset($have[$ok])) {
+        // у известной организации название и заметку не трогаем, пустые реквизиты дополняем, итоги Эльбы обновляем
+        $st = $p->prepare('SELECT * FROM orgs WHERE okey = ?'); $st->execute([$ok]); $cur = $st->fetch();
+        foreach (['kpp', 'addr', 'contact', 'ophone', 'email'] as $f) if ((string)$cur[$f] !== '' && $v[$f] === '') $v[$f] = $cur[$f]; elseif ((string)$cur[$f] !== '') $v[$f] = $cur[$f];
+        $p->prepare("UPDATE orgs SET inn = CASE WHEN inn = '' THEN ? ELSE inn END, kpp = ?, addr = ?, contact = ?, ophone = ?, email = ?, kind = ?, elba_in = ?, elba_out = ?, elba_debt = ?, src = 'elba', upd = ? WHERE okey = ?")
+          ->execute([$inn, $v['kpp'], $v['addr'], $v['contact'], $v['ophone'], $v['email'], $v['kind'], $v['elba_in'], $v['elba_out'], $v['elba_debt'], time(), $ok]); $n['upd']++;
+      } else {
+        $p->prepare("INSERT INTO orgs (okey, name, inn, note, created, kpp, addr, contact, ophone, email, kind, elba_in, elba_out, elba_debt, src, upd) VALUES (?,?,?,'',?,?,?,?,?,?,?,?,?,?,'elba',?)")
+          ->execute([$ok, $name, $inn, time(), $v['kpp'], $v['addr'], $v['contact'], $v['ophone'], $v['email'], $v['kind'], $v['elba_in'], $v['elba_out'], $v['elba_debt'], time()]); $have[$ok] = 1; if ($inn !== '') $byInn[$inn] = $ok; $n['new']++;
+      }
+    }
+    $p->commit(); logit($cfg, $role, 'org_import', json_encode($n)); out(['ok' => true] + $n);
+
   case 'crm_org':
     // карточка организации: реквизиты, люди (владелец, представители), итоги, история
     needRole($role, ['owner']);
@@ -1099,14 +1152,18 @@ try {
     $name = $o['name'] ?? ($people[0]['org'] ?? trim((string)($_GET['name'] ?? '')));
     $R = crmAll($cfg); $owner = null; foreach ($people as $x) if ($x['role'] === 'owner') { $owner = $x; break; }
     $row = $R['org:' . $ok] ?? ($owner ? null : null);
-    out(['okey' => $ok, 'name' => $name, 'inn' => $o['inn'] ?? '', 'note' => $o['note'] ?? '', 'saved' => (bool)$o, 'people' => array_map(fn($x) => ['phone' => $x['phone'], 'name' => (string)$x['name'], 'role' => $x['role']], $people),
+    out(['okey' => $ok, 'name' => $name, 'inn' => $o['inn'] ?? '', 'note' => $o['note'] ?? '', 'saved' => (bool)$o, 'kpp' => $o['kpp'] ?? '', 'addr' => $o['addr'] ?? '', 'contact' => $o['contact'] ?? '', 'ophone' => $o['ophone'] ?? '', 'email' => $o['email'] ?? '', 'kind' => $o['kind'] ?? 'client', 'elba_in' => round((float)($o['elba_in'] ?? 0)), 'elba_out' => round((float)($o['elba_out'] ?? 0)), 'elba_debt' => round((float)($o['elba_debt'] ?? 0)), 'src' => $o['src'] ?? '', 'people' => array_map(fn($x) => ['phone' => $x['phone'], 'name' => (string)$x['name'], 'role' => $x['role']], $people),
       'owner' => $owner ? ['phone' => $owner['phone'], 'name' => (string)$owner['name']] : null, 'stat' => $row, 'hist' => orgHistory($cfg, [$ok => 1], false)]);
 
   case 'org_save':
     post(); needRole($role, ['owner']);
     $b = body(); $name = mb_substr(trim((string)($b['name'] ?? '')), 0, 200); $ok = orgKey($b['okey'] ?? '') ?: orgKey($name); if ($ok === '' || $name === '') fail('Впишите название организации');
     $p = db($cfg); $p->beginTransaction();
-    $p->prepare('INSERT OR REPLACE INTO orgs (okey, name, inn, note, created) VALUES (?,?,?,?, COALESCE((SELECT created FROM orgs WHERE okey = ?), ?))')->execute([$ok, $name, mb_substr(preg_replace('/\D/', '', (string)($b['inn'] ?? '')), 0, 12), mb_substr(trim((string)($b['note'] ?? '')), 0, 2000), $ok, time()]);
+    $ov = [$name, mb_substr(preg_replace('/\D/', '', (string)($b['inn'] ?? '')), 0, 12), mb_substr(trim((string)($b['note'] ?? '')), 0, 2000), mb_substr(trim((string)($b['contact'] ?? '')), 0, 200), mb_substr(trim((string)($b['ophone'] ?? '')), 0, 100), mb_substr(trim((string)($b['email'] ?? '')), 0, 100), time(), $ok];
+    $ex = $p->prepare('SELECT * FROM orgs WHERE okey = ?'); $ex->execute([$ok]); $cur = $ex->fetch();
+    if ($cur) foreach (['contact' => 3, 'ophone' => 4, 'email' => 5] as $f => $i) if (!isset($b[$f])) $ov[$i] = (string)$cur[$f];
+    if ($cur) $p->prepare('UPDATE orgs SET name = ?, inn = ?, note = ?, contact = ?, ophone = ?, email = ?, upd = ? WHERE okey = ?')->execute($ov);
+    else $p->prepare('INSERT INTO orgs (name, inn, note, contact, ophone, email, upd, okey, created) VALUES (?,?,?,?,?,?,?,?,?)')->execute(array_merge($ov, [time()]));
     if (isset($b['people'])) { $p->prepare('DELETE FROM client_orgs WHERE okey = ?')->execute([$ok]); $ins = $p->prepare('INSERT INTO client_orgs (phone, org, okey, created, role) VALUES (?,?,?,?,?)'); $hasOwner = false;
       foreach (array_slice((array)$b['people'], 0, 30) as $x) { $ph = phoneKey($x['phone'] ?? ''); if ($ph === '') continue; $rl = ($x['role'] ?? '') === 'owner' && !$hasOwner ? 'owner' : 'contact'; if ($rl === 'owner') $hasOwner = true;
         $ins->execute([$ph, $name, $ok, time(), $rl]); $nm = trim((string)($x['name'] ?? ''));
@@ -1177,7 +1234,8 @@ try {
     $p = db($cfg); $cars = []; $orgs = [];
     foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) $cars[$c['phone']][] = trim($c['car'] . ' ' . $c['plate']);
     $byOrg = []; foreach ($p->query('SELECT o.phone, o.org, o.okey, o.role, c.name FROM client_orgs o LEFT JOIN clients c ON c.phone = o.phone ORDER BY o.id')->fetchAll() as $o) { $orgs[$o['phone']][] = $o; $byOrg[$o['okey']][] = $o; }
-    foreach ($p->query('SELECT okey, name FROM orgs')->fetchAll() as $o) if (!isset($byOrg[$o['okey']])) $byOrg[$o['okey']] = [['okey' => $o['okey'], 'org' => $o['name'], 'phone' => '', 'role' => '', 'name' => '']];
+    $dir = mb_strlen(orgKey($q)) >= 2 ? orgDirectory($cfg) : [];
+    foreach ($dir as $ok => $o) if (!isset($byOrg[$ok])) $byOrg[$ok] = [['okey' => $ok, 'org' => $o['org'], 'phone' => '', 'role' => '', 'name' => '']];
     $rows = []; $pq = plateKey($q); $oq = orgKey($q);
     foreach ($p->query("SELECT phone, name, model, updated FROM clients ORDER BY updated DESC")->fetchAll() as $c) {
       $nm = mb_strtoupper($c['name']); $cs = $cars[$c['phone']] ?? ($c['model'] !== '' ? [$c['model']] : []); $os = $orgs[$c['phone']] ?? [];
@@ -1189,8 +1247,9 @@ try {
     }
     // организации без владельца-клиента — отдельной строкой (с телефоном представителя, если есть)
     if (mb_strlen($oq) >= 2) foreach ($byOrg as $ok => $L) { $hasOwner = false; foreach ($L as $o) if ($o['role'] === 'owner') $hasOwner = true; if ($hasOwner || mb_strpos($ok, $oq) === false) continue;
-      $c = null; foreach ($L as $o) if ($o['phone'] !== '') { $c = $o; break; }
-      $rows[] = ['phone' => $c['phone'] ?? '', 'name' => $c ? (string)$c['name'] : '', 'cars' => [], 'org' => $L[0]['org'], 'orgs' => [], 'type' => 'org', 'h' => mb_strpos($ok, $oq) === 0 ? 3 : 2, 'u' => 0]; }
+      $c = null; foreach ($L as $o) if ($o['phone'] !== '') { $c = $o; break; } $d = $dir[$ok] ?? [];
+      $sub = array_values(array_filter([($d['kind'] ?? '') === 'supplier' ? 'поставщик' : '', !empty($d['inn']) ? 'ИНН ' . $d['inn'] : '', !$c && !empty($d['contact']) ? $d['contact'] : '', !$c && !empty($d['ophone']) ? $d['ophone'] : '', !empty($d['n']) ? $d['n'] . ' ' . ruPlural((int)$d['n'], 'покупка', 'покупки', 'покупок') : '']));
+      $rows[] = ['phone' => $c['phone'] ?? '', 'name' => $c ? (string)$c['name'] : '', 'cars' => [], 'sub' => implode(' · ', $sub), 'org' => ($dir[$ok]['org'] ?? $L[0]['org']), 'orgs' => [], 'type' => 'org', 'h' => (mb_strpos($ok, $oq) === 0 ? 3 : 2) + (mb_strpos(mb_strtoupper(str_replace(['«', '»'], '"', $dir[$ok]['org'] ?? $L[0]['org'])), str_replace(['«', '»'], '"', $q)) !== false ? 2 : 0), 'u' => (int)($d['n'] ?? 0)]; }
     usort($rows, fn($a, $b) => [$b['h'], $b['u']] <=> [$a['h'], $a['u']]);
     out(['rows' => array_map(fn($r) => array_diff_key($r, ['h' => 1, 'u' => 1]), array_slice($rows, 0, 8))]);
 

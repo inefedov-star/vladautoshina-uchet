@@ -637,7 +637,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 .pfg{display:grid;grid-template-columns:1fr 1fr;gap:6px 26px}@media (max-width:760px){.pfg{grid-template-columns:1fr}#pmMode{flex:1 1 100%;margin:0 0 6px!important}}
 .pfg .hbr{grid-template-columns:minmax(120px,210px) 1fr auto}
 .cb-debt{background:#FDE2E2;color:#B71C1C}.cb-org{background:#E8EAF6;color:#303F9F}
-.orgchip{display:inline-flex;align-items:center;gap:6px;background:var(--paper-2);border-radius:10px;padding:4px 8px}.orgico{color:#303F9F}.cb-company{background:#E8EAF6;color:#303F9F}
+.orgchip{display:inline-flex;align-items:center;gap:6px;background:var(--paper-2);border-radius:10px;padding:4px 8px}.orgico{color:#303F9F}.cb-company{background:#E8EAF6;color:#303F9F}.cb-supplier{background:#ECEFF1;color:#455A64}
 @media (max-width:760px){#ogP .carrow{grid-template-columns:1fr 1fr!important}}
 .tl{border-top:1px solid var(--rule)}
 .tlrow{display:grid;grid-template-columns:74px 6px 1fr auto;gap:10px;align-items:start;padding:9px 2px;border-bottom:1px solid var(--rule)}
@@ -792,7 +792,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
     <div id="tkOut"></div>
   </section>
   <section id="v-crm" hidden>
-    <div class="zhd"><h1 class="zh1">Клиенты</h1><div class="row"><button class="btn ghost" type="button" id="crNewOrg">+ Организация</button><button class="btn sig" type="button" id="crNew">+ Клиент</button></div></div>
+    <div class="zhd"><h1 class="zh1">Клиенты</h1><div class="row"><button class="btn ghost" type="button" id="crElba">Контрагенты из Эльбы</button><input type="file" id="crElbaF" accept=".xlsx,.xls" hidden><button class="btn ghost" type="button" id="crNewOrg">+ Организация</button><button class="btn sig" type="button" id="crNew">+ Клиент</button></div></div>
     <div class="row" id="crMode" style="margin:0 0 10px"><button type="button" class="chip" data-cm="list" aria-pressed="true">Все клиенты</button><button type="button" class="chip" data-cm="calls" aria-pressed="false">Кому позвонить</button></div>
     <div class="tiles" id="crTiles"></div>
     <div class="row" id="crSeg" style="margin:4px 0 10px"></div>
@@ -2394,8 +2394,8 @@ function openOrder(o,pre){O=o?JSON.parse(JSON.stringify(o)):Object.assign(blank(
   requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 /* ═══ CRM: клиент = телефон. Список с метками, карточка клиента, обзвон ═══ */
 const CRS={seg:'all',sort:'prof',q:'',mode:'list',why:'',rows:[]};let crT=null;
-const SEG=[['all','Все'],['vip','VIP'],['loyal','Постоянные'],['new','Новые'],['store','На хранении'],['noshop','Не покупали шины'],['sleep','Спящие'],['bday','ДР скоро'],['company','Организации'],['org','Владельцы фирм'],['debt','Долг по счёту']];
-const SEGL={vip:'VIP',loyal:'постоянный',new:'новый',store:'на хранении',noshop:'шины не покупал',sleep:'давно не был',bday:'ДР скоро',season:'был в этом сезоне',org:'владелец фирмы',company:'организация',debt:'долг по счёту'};
+const SEG=[['all','Все'],['vip','VIP'],['loyal','Постоянные'],['new','Новые'],['store','На хранении'],['noshop','Не покупали шины'],['sleep','Спящие'],['bday','ДР скоро'],['company','Организации'],['supplier','Поставщики'],['org','Владельцы фирм'],['debt','Долг по счёту']];
+const SEGL={vip:'VIP',loyal:'постоянный',new:'новый',store:'на хранении',noshop:'шины не покупал',sleep:'давно не был',bday:'ДР скоро',season:'был в этом сезоне',org:'владелец фирмы',company:'организация',supplier:'поставщик',debt:'долг по счёту'};
 const WHY={debt:['Не оплачен счёт','Напомнить об оплате счёта'],bday:['День рождения','Поздравить и подарить скидку'],store:['Хранение — пора переобуваться','Колёса у нас, в этом сезоне ещё не приезжал'],season:['Сезон: был в прошлом году','В этом сезоне ещё не приезжал'],
   tires:['Шинам 4+ года','Предложить проверку и замену'],noshop:['Шины покупает не у нас','Предложить комплект с бесплатным шиномонтажем'],nostore:['Не пользуется хранением','Переобувается у нас, колёса возит сам'],sleep:['Давно не был','Вернуть: скидка или напоминание']};
 const SRC=['','Постоянный','Сарафан, посоветовали','Яндекс Карты','2ГИС','Авито','Сайт','Соцсети','Проезжал мимо','Шинный отель','Другое'];
@@ -2412,7 +2412,7 @@ async function loadCrm(){renderBnav();const out=$('#crOut');document.querySelect
   $('#crSeg').innerHTML=SEG.map(([k,l])=>`<button type="button" class="chip" data-sg="${k}" aria-pressed="${CRS.seg===k}">${l}${j.cnt[k]!=null?` <span class="pay">${j.cnt[k]}</span>`:''}</button>`).join('');
   $('#crSeg').querySelectorAll('[data-sg]').forEach(b=>b.onclick=()=>{CRS.seg=b.dataset.sg;loadCrm();});
   if(!j.rows.length){out.innerHTML=`<div class="empty"><b>${CRS.q?'Никого не нашли':'Пусто'}</b>${CRS.q?'Попробуйте часть имени, номера или госномер.':''}</div>`;return;}
-  const who=x=>x.type==='org'?((x.contacts||[]).map(c=>(c.name||fmtPhone(c.phone))+(c.role==='owner'?' (владелец)':'')).join(', ')||'людей нет'):esc(fmtPhone(x.phone));
+  const who=x=>x.type==='org'?((x.contacts||[]).map(c=>(c.name||fmtPhone(c.phone))+(c.role==='owner'?' (владелец)':'')).join(', ')||[x.ocontact,x.ophone].filter(Boolean).join(' · ')||(x.inn?'ИНН '+x.inn:'людей нет')):esc(fmtPhone(x.phone));
   out.innerHTML=`<p class="note" style="margin:0 0 8px">Показано ${j.rows.length}${j.n>j.rows.length?' из '+j.n:''}. Прибыль = наценка в магазине + 70% шиномонтажа (без доли мастера) + хранение.</p><div class="crl">${j.rows.map((x,i)=>`<div class="crc" data-ci="${i}" tabindex="0" role="button">
     <div class="crc-a"><b>${x.type==='org'?'<span class="orgico" aria-hidden="true">▣</span> ':''}${esc(x.name||'Без имени')}</b><span class="tnum pay">${x.type==='org'?esc(who(x)):esc(fmtPhone(x.phone))}</span>${(x.works||[]).length?`<small class="pay">представитель: ${esc(x.works.join(', '))}</small>`:''}${carsLine(x)?`<small class="pay">${esc(carsLine(x))}</small>`:''}</div>
     <div class="crc-b">${segBadges(x)}</div>
@@ -2494,12 +2494,13 @@ async function openCrm(phone){let j=null;
 /* карточка организации: обезличенная фирма-клиент или фирма нашего клиента (владелец) */
 async function openOrg(okey,name){let j=null;
   if(okey||name){try{j=await api('crm_org',null,okey?{okey}:{name});}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}}
-  const o=j||{okey:'',name:name||'',inn:'',note:'',people:[],owner:null,stat:null,hist:[],saved:false};let people=o.people.map(x=>({...x}));const x=o.stat;
+  const o=j||{okey:'',name:name||'',inn:'',note:'',people:[],owner:null,stat:null,hist:[],saved:false,contact:'',ophone:'',email:'',addr:'',kpp:'',kind:'client',elba_in:0,elba_debt:0};let people=o.people.map(x=>({...x}));const x=o.stat;
   const typeLine=o.owner?`Организация нашего клиента — владелец <button type="button" class="out" data-own="${o.owner.phone}" style="min-height:0;padding:0;text-decoration:underline">${esc(o.owner.name||fmtPhone(o.owner.phone))}</button>. Её покупки и визиты считаются в его карточке.`:'Организация-клиент без владельца среди наших клиентов: деньги и визиты считаются на саму организацию.';
   const pRow=(p,i)=>`<div class="carrow" data-pp="${i}" style="grid-template-columns:1fr 1.1fr 150px 34px"><input class="inp tnum" data-f="phone" value="${p.phone?esc(fmtPhone(p.phone)):''}" placeholder="Телефон" type="tel" autocomplete="off"><input class="inp" data-f="name" value="${esc(p.name||'')}" placeholder="Имя (водитель, менеджер…)" autocomplete="off">
     <select class="inp" data-f="role"><option value="contact" ${p.role!=='owner'?'selected':''}>представитель</option><option value="owner" ${p.role==='owner'?'selected':''}>владелец</option></select><button type="button" class="out" data-pdel="${i}" aria-label="Убрать">×</button></div>`;
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${esc(o.name||'Новая организация')}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  ${o.okey?`<p class="note" style="margin:-4px 0 10px">${typeLine}</p>`:''}
+  ${o.okey?`<p class="note" style="margin:-4px 0 10px">${typeLine}${o.kind==='supplier'?' <b>Поставщик</b> (по Эльбе нам платили меньше, чем мы ему).':''}</p>`:''}
+  ${o.elba_in||o.elba_debt?`<p class="note" style="margin:0 0 10px">По Эльбе: оплатили нам на расчётный счёт <b class="tnum">${rub(o.elba_in)}</b>${o.elba_debt?` · <b style="color:var(--signal)">не оплачено по счетам ${rub(o.elba_debt)}</b>`:''}</p>`:''}
   ${x?`<div class="row" style="margin:0 0 10px;gap:6px">${segBadges(x)}</div><div class="tiles" style="margin:0 0 12px">
     <div class="tile"><span class="mono">Шиномонтаж</span><b class="tnum">${x.m_n} ${plural(x.m_n,'визит','визита','визитов')}</b><small class="pay">${rub(x.m_sum)}</small></div>
     <div class="tile"><span class="mono">Магазин</span><b class="tnum">${x.s_n} ${plural(x.s_n,'покупка','покупки','покупок')}</b><small class="pay">${rub(x.s_sum)} · наценка ${rub(x.s_prof)}</small></div>
@@ -2509,6 +2510,10 @@ async function openOrg(okey,name){let j=null;
     <label style="grid-column:1/-1"><span class="mono lbl">Название</span><input class="inp" id="og_name" value="${esc(o.name)}" placeholder="ООО «…», ИП …" autocomplete="off"></label>
     <label><span class="mono lbl">ИНН</span><input class="inp tnum" id="og_inn" value="${esc(o.inn)}" inputmode="numeric" autocomplete="off"></label>
     <label><span class="mono lbl">Заметка</span><input class="inp" id="og_note" value="${esc(o.note)}" placeholder="отсрочка 10 дней, счёт на почту…" autocomplete="off"></label>
+    <label><span class="mono lbl">Контактное лицо</span><input class="inp" id="og_contact" value="${esc(o.contact||'')}" placeholder="Иванов И.И., директор" autocomplete="off"></label>
+    <label><span class="mono lbl">Телефон организации${o.ophone?` · <a href="tel:${esc(o.ophone.replace(/[^\d+]/g,'').slice(0,12))}">позвонить</a>`:''}</span><input class="inp" id="og_ophone" value="${esc(o.ophone||'')}" placeholder="8 (4922) 00-00-00" autocomplete="off"></label>
+    <label><span class="mono lbl">Почта</span><input class="inp" id="og_email" value="${esc(o.email||'')}" placeholder="для счетов" autocomplete="off"></label>
+    ${o.addr||o.kpp?`<p class="note" style="margin:0;align-self:end">${o.kpp?'КПП '+esc(o.kpp)+'<br>':''}${esc(o.addr||'')}</p>`:''}
     <div style="grid-column:1/-1"><span class="mono lbl">Люди организации — владелец (наш клиент) или представители</span><div id="ogP">${(people.length?people:[{phone:'',name:'',role:'contact'}]).map(pRow).join('')}</div><button type="button" class="out" id="ogAdd" style="margin-top:6px">+ Человек</button></div>
     <p class="note" style="grid-column:1/-1;margin:0">Владелец — покупки фирмы считаются его покупками (одна карточка). Представитель — водитель или менеджер: приезжает от фирмы, деньги остаются на фирме.</p>
     <div style="grid-column:1/-1" class="row"><button class="btn" type="button" id="ogSave">Сохранить</button><p class="err" id="ogErr" hidden></p></div></div>
@@ -2521,7 +2526,7 @@ async function openOrg(okey,name){let j=null;
   if(o.okey){const ow=o.owner||(o.people||[])[0]||{};$('#ogKp').onclick=()=>newKp(o.name,ow.name||'',ow.phone||'');tlBox($('#tlBox'),{okey:o.okey},()=>openOrg(o.okey),'');}
   $('#ogSave').onclick=async()=>{const er=$('#ogErr');er.hidden=true;const P=read().filter(p=>p.phone.trim());if(P.some(p=>!phoneKey(p.phone))){er.textContent='Телефон неполный — нужно 10 цифр после +7.';er.hidden=false;return;}
     if(P.filter(p=>p.role==='owner').length>1){er.textContent='Владелец у организации один.';er.hidden=false;return;}
-    try{const r=await api('org_save',{okey:o.okey,name:$('#og_name').value,inn:$('#og_inn').value,note:$('#og_note').value,people:P});toast('<b>Организация сохранена</b>'+esc($('#og_name').value));if(S.view==='crm')loadCrm();openOrg(r.okey);}catch(e){er.textContent=e.message;er.hidden=false;}};}
+    try{const r=await api('org_save',{okey:o.okey,name:$('#og_name').value,inn:$('#og_inn').value,note:$('#og_note').value,contact:$('#og_contact').value,ophone:$('#og_ophone').value,email:$('#og_email').value,people:P});toast('<b>Организация сохранена</b>'+esc($('#og_name').value));if(S.view==='crm')loadCrm();openOrg(r.okey);}catch(e){er.textContent=e.message;er.hidden=false;}};}
 /* вся история клиента одной лентой: шиномонтаж, записи, магазин, заказы, хранение, задачи, звонки, КП — каждая строка открывает свой документ */
 const TLG=[['all','Всё'],['mont','Шиномонтаж',['mont','book']],['shop','Магазин',['shop']],['store','Хранение',['store']],['zak','Заказы',['zak']],['task','Задачи',['task']],['touch','Звонки',['touch']],['kp','КП',['kp']]];
 function newKp(org,person,phone){closeSheet();const q=new URLSearchParams();if(org)q.set('org',org);if(person)q.set('person',person);if(phone)q.set('phone',fmtPhone(phone));setArea('k');openFrame('k','index.php?'+q.toString());}
@@ -2563,14 +2568,25 @@ document.querySelectorAll('#crMode [data-cm]').forEach(b=>b.onclick=()=>{CRS.mod
 $('#crQ').addEventListener('input',()=>{clearTimeout(crT);crT=setTimeout(()=>{CRS.q=$('#crQ').value.trim();loadCrm();},350);});
 $('#crSort').onchange=()=>{CRS.sort=$('#crSort').value;loadCrm();};
 $('#crNew').onclick=()=>openCrm(null);$('#crNewOrg').onclick=()=>openOrg(null);
+/* список контрагентов из Контур.Эльбы (Контрагенты → выгрузить в Excel): организации, реквизиты, контакты, сколько оплатили */
+$('#crElba').onclick=()=>$('#crElbaF').click();
+$('#crElbaF').onchange=async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;toast('<b>Читаю файл…</b>'+esc(f.name));
+  try{await loadXlsxLib();const wb=XLSX.read(await f.arrayBuffer(),{type:'array'});const sh=wb.Sheets[wb.SheetNames.find(n=>/контраг/i.test(n))||wb.SheetNames[0]];
+    const A=XLSX.utils.sheet_to_json(sh,{header:1,raw:true,defval:''});const hi=A.findIndex(r=>r.some(c=>/Название контрагента/i.test(String(c))));if(hi<0)throw new Error('Не нашёл колонку «Название контрагента». Это точно выгрузка контрагентов из Эльбы?');
+    const H=A[hi].map(c=>String(c).trim().toLowerCase()),col=re=>H.findIndex(h=>re.test(h)),num=v=>typeof v==='number'?v:parseFloat(String(v).replace(/\s/g,'').replace(',','.'))||0;
+    const C={group:col(/^группа/),name:col(/название контрагента/),in:col(/всего поступило/),out:col(/всего списано/),debt:col(/неоплаченн/),addr:col(/адрес/),contact:col(/контактное лицо/),phone:col(/телефон/),email:col(/почта/),inn:col(/^инн/),kpp:col(/^кпп/)};
+    const rows=A.slice(hi+1).filter(r=>String(r[C.name]||'').trim()).map(r=>({group:r[C.group]||'',name:String(r[C.name]).trim(),in:num(r[C.in]),out:num(r[C.out]),debt:num(r[C.debt]),addr:r[C.addr]||'',contact:r[C.contact]||'',phone:String(r[C.phone]||''),email:r[C.email]||'',inn:String(r[C.inn]||''),kpp:String(r[C.kpp]||'')}));
+    if(!rows.length)throw new Error('В файле нет строк с контрагентами');
+    const j=await api('org_import',{rows});toast(`<b>Контрагенты загружены</b>новых ${j.new}, обновлено ${j.upd}${j.sup?', из них поставщиков '+j.sup:''}${j.skip?', пропущено '+j.skip:''}`);CRS.seg='company';loadCrm();}
+  catch(er){toast('<b>Не загрузилось</b>'+esc(er.message));}};
 /* подсказка по имени: в шиномонтаже, записи и заказе — выбрали человека, подставились телефон и машина */
 (function(){const MAP={'o-name':['o-phone','o-model','o-plate'],'b-name':['b-phone','b-model','b-plate'],'z_name':['z_phone',null,null],'dPartner':['dPhone',null,null]};let box=null,tm=null,cur=null;
   const close=()=>{if(box){box.remove();box=null;}};
   document.addEventListener('input',e=>{const el=e.target;if(!el||!MAP[el.id])return;if(el.id==='dPartner'&&!(typeof D!=='undefined'&&D&&(D.type==='sale'||D.type==='ret')))return;cur=el;clearTimeout(tm);const q=el.value.trim();if(q.length<2||/^\+?[\d\s()-]+$/.test(q)){close();return;}
     tm=setTimeout(async()=>{let j;try{j=await api('client_suggest',null,{q});}catch(_){return;}if(cur!==el||!j.rows.length){close();return;}
-      close();box=document.createElement('div');box.className='nsug';box.innerHTML=j.rows.map((r,i)=>`<button type="button" data-i="${i}"><b>${r.type==='org'?'▣ '+esc(r.org)+(r.name?' — '+esc(r.name):''):esc(r.name||'Без имени')+(r.org?' — '+esc(r.org):'')}</b><span class="tnum">${esc(fmtPhone(r.phone))}</span>${r.cars.length||(r.orgs||[]).length?`<small>${esc([...r.cars,...(r.org?[]:(r.orgs||[]))].join(' · '))}</small>`:''}</button>`).join('');
+      close();box=document.createElement('div');box.className='nsug';box.innerHTML=j.rows.map((r,i)=>`<button type="button" data-i="${i}"><b>${r.type==='org'?'▣ '+esc(r.org)+(r.name?' — '+esc(r.name):''):esc(r.name||'Без имени')+(r.org?' — '+esc(r.org):'')}</b><span class="tnum">${esc(fmtPhone(r.phone))}</span>${r.sub?`<small>${esc(r.sub)}</small>`:r.cars.length||(r.orgs||[]).length?`<small>${esc([...r.cars,...(r.org?[]:(r.orgs||[]))].join(' · '))}</small>`:''}</button>`).join('');
       el.insertAdjacentElement('afterend',box);
-      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();const r=j.rows[+b.dataset.i],[ph,md,pl]=MAP[el.id];const orgN=(r.org||'').replace(/ \(представитель\)$/,'');el.value=el.id==='dPartner'&&orgN?orgN:(r.name||orgN||el.value);
+      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();const r=j.rows[+b.dataset.i],[ph,md,pl]=MAP[el.id];const orgN=(r.org||'').replace(/ \(представитель\)$/,'');el.value=(el.id==='dPartner'||r.type==='org')&&orgN?orgN:(r.name||orgN||el.value);
         if(el.id==='o-name'&&O){const og=orgN||((r.orgs||[]).length===1?r.orgs[0]:'');if(og){O.org=og;const oo=document.getElementById('o-org');if(oo)oo.value=og;}}
         const P=document.getElementById(ph);if(P&&r.phone){P.value=fmtPhone(r.phone);P.dispatchEvent(new Event('input',{bubbles:true}));}
         const c0=(r.cars[0]||'');const m=c0.match(/^(.*?)\s*([А-ЯA-Z]\d{3}[А-ЯA-Z]{2}\d{0,3})?$/i)||[];const M=md&&document.getElementById(md),PL=pl&&document.getElementById(pl);
