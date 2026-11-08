@@ -636,6 +636,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 .tile small.up{color:#1E7A44;font-weight:700}.tile small.dn{color:#C62828;font-weight:700}
 .pfg{display:grid;grid-template-columns:1fr 1fr;gap:6px 26px}@media (max-width:760px){.pfg{grid-template-columns:1fr}#pmMode{flex:1 1 100%;margin:0 0 6px!important}}
 .pfg .hbr{grid-template-columns:minmax(120px,210px) 1fr auto}
+.cb-debt{background:#FDE2E2;color:#B71C1C}.cb-org{background:#E8EAF6;color:#303F9F}
 </style>
 </head>
 <body>
@@ -780,7 +781,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
     <div class="row" id="crMode" style="margin:0 0 10px"><button type="button" class="chip" data-cm="list" aria-pressed="true">Все клиенты</button><button type="button" class="chip" data-cm="calls" aria-pressed="false">Кому позвонить</button></div>
     <div class="tiles" id="crTiles"></div>
     <div class="row" id="crSeg" style="margin:4px 0 10px"></div>
-    <div class="row" id="crListBar" style="margin:0 0 12px;flex-wrap:nowrap"><input class="inp" type="search" id="crQ" placeholder="Поиск: имя, телефон, машина, госномер, заметка" autocomplete="off" style="flex:1"><select class="inp" id="crSort" style="width:auto"><option value="prof">По прибыли</option><option value="rev">По выручке</option><option value="visits">По визитам</option><option value="last">Кто был недавно</option><option value="name">По имени</option></select></div>
+    <div class="row" id="crListBar" style="margin:0 0 12px;flex-wrap:nowrap"><input class="inp" type="search" id="crQ" placeholder="Поиск: имя, телефон, организация, машина, госномер, заметка" autocomplete="off" style="flex:1"><select class="inp" id="crSort" style="width:auto"><option value="prof">По прибыли</option><option value="rev">По выручке</option><option value="visits">По визитам</option><option value="last">Кто был недавно</option><option value="name">По имени</option></select></div>
     <div id="crOut"></div>
   </section>
   <section id="v-zak" hidden>
@@ -1912,7 +1913,7 @@ function hookHint(phId,plId,outId,nameId,modelId,onRepeat){const run=()=>{clearT
       const zo=(j.zak||[]).filter(z=>k&&z.phone===k&&(z.status==='wait'||z.status==='came'||z.status==='done')&&z.promo).slice(0,1)[0];
       const so=(j.stor||[]).filter(x=>k&&x.phone===k&&x.status==='stored');
       const sl=so.length?`<div class="hint" style="border-color:var(--moss)"><b>На хранении у нас:</b> ${so.map(x=>esc(storLine(x))).join('; ')}</div>`:'';
-      const cn=(cl&&cl.note?`<div class="hint" style="border-color:var(--acc)"><b>Заметка:</b> ${esc(cl.note)}</div>`:'')+(cl&&cl.bday_in!=null&&cl.bday_in<=10?`<div class="hint" style="border-color:#C2186B"><b>${cl.bday_in===0?'Сегодня день рождения!':'День рождения через '+cl.bday_in+' '+plural(cl.bday_in,'день','дня','дней')}</b> — поздравьте.</div>`:'');
+      const cn=(cl&&cl.inv&&cl.inv.length?`<div class="hint" style="border-color:#C62828"><b>Не оплачен${cl.inv.length>1?'ы счета':' счёт'}${cl.inv.length>3?` (${cl.inv.length} на ${rub(cl.inv.reduce((a,i)=>a+i.sum,0))})`:''}:</b> ${cl.inv.slice(0,3).map(i=>(i.no?'№ '+esc(i.no)+' ':'')+'от '+fmtDay(i.day)+(i.org?' ('+esc(i.org)+')':'')+' — '+rub(i.sum)).join('; ')}</div>`:'')+(cl&&cl.orgs&&cl.orgs.length?`<div class="hint"><b>Организации клиента:</b> ${cl.orgs.map(esc).join(', ')} — для оплаты по счёту</div>`:'')+(cl&&cl.note?`<div class="hint" style="border-color:var(--acc)"><b>Заметка:</b> ${esc(cl.note)}</div>`:'')+(cl&&cl.bday_in!=null&&cl.bday_in<=10?`<div class="hint" style="border-color:#C2186B"><b>${cl.bday_in===0?'Сегодня день рождения!':'День рождения через '+cl.bday_in+' '+plural(cl.bday_in,'день','дня','дней')}</b> — поздравьте.</div>`:'');
       const zl=cn+sl+(zo?`<div class="hint" style="border-color:var(--signal)"><b>По заказу ${zo.promo==='bshm'?'обещан бесплатный шиномонтаж':'обещана скидка 20% на шиномонтаж'}</b> · ${esc(zo.items)}</div>`:'');
       if(!vs.length&&!cl){out.innerHTML=k?zl+'<div class="hint">Новый клиент.</div>':'';return;}
       const last=vs[0];
@@ -2378,13 +2379,13 @@ function openOrder(o,pre){O=o?JSON.parse(JSON.stringify(o)):Object.assign(blank(
   requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 /* ═══ CRM: клиент = телефон. Список с метками, карточка клиента, обзвон ═══ */
 const CRS={seg:'all',sort:'prof',q:'',mode:'list',why:'',rows:[]};let crT=null;
-const SEG=[['all','Все'],['vip','VIP'],['loyal','Постоянные'],['new','Новые'],['store','На хранении'],['noshop','Не покупали шины'],['sleep','Спящие'],['bday','ДР скоро']];
-const SEGL={vip:'VIP',loyal:'постоянный',new:'новый',store:'на хранении',noshop:'шины не покупал',sleep:'давно не был',bday:'ДР скоро',season:'был в этом сезоне'};
-const WHY={bday:['День рождения','Поздравить и подарить скидку'],store:['Хранение — пора переобуваться','Колёса у нас, в этом сезоне ещё не приезжал'],season:['Сезон: был в прошлом году','В этом сезоне ещё не приезжал'],
+const SEG=[['all','Все'],['vip','VIP'],['loyal','Постоянные'],['new','Новые'],['store','На хранении'],['noshop','Не покупали шины'],['sleep','Спящие'],['bday','ДР скоро'],['org','С организацией'],['debt','Долг по счёту']];
+const SEGL={vip:'VIP',loyal:'постоянный',new:'новый',store:'на хранении',noshop:'шины не покупал',sleep:'давно не был',bday:'ДР скоро',season:'был в этом сезоне',org:'организация',debt:'долг по счёту'};
+const WHY={debt:['Не оплачен счёт','Напомнить об оплате счёта'],bday:['День рождения','Поздравить и подарить скидку'],store:['Хранение — пора переобуваться','Колёса у нас, в этом сезоне ещё не приезжал'],season:['Сезон: был в прошлом году','В этом сезоне ещё не приезжал'],
   tires:['Шинам 4+ года','Предложить проверку и замену'],noshop:['Шины покупает не у нас','Предложить комплект с бесплатным шиномонтажем'],nostore:['Не пользуется хранением','Переобувается у нас, колёса возит сам'],sleep:['Давно не был','Вернуть: скидка или напоминание']};
 const SRC=['','Постоянный','Сарафан, посоветовали','Яндекс Карты','2ГИС','Авито','Сайт','Соцсети','Проезжал мимо','Шинный отель','Другое'];
 const telHref=k=>'tel:+'+k,waHref=(k,t)=>'https://wa.me/'+k+(t?'?text='+encodeURIComponent(t):'');
-const segBadges=x=>(x.seg||[]).filter(t=>t!=='season').map(t=>`<span class="cbadge cb-${t}">${SEGL[t]}${t==='bday'&&x.bday_in!=null?(x.bday_in===0?' — сегодня':' через '+x.bday_in+' дн.'):''}</span>`).join('');
+const segBadges=x=>(x.seg||[]).filter(t=>t!=='season').map(t=>`<span class="cbadge cb-${t}">${t==='org'&&(x.orgs||[]).length?esc(x.orgs[0])+(x.orgs.length>1?' +'+(x.orgs.length-1):''):SEGL[t]}${t==='debt'?' '+rub(x.inv_due):''}${t==='bday'&&x.bday_in!=null?(x.bday_in===0?' — сегодня':' через '+x.bday_in+' дн.'):''}</span>`).join('');
 const carsLine=x=>(x.cars||[]).map(c=>[c.car,c.plate].filter(Boolean).join(' ')).filter(Boolean).join(' · ');
 async function loadCrm(){renderBnav();const out=$('#crOut');document.querySelectorAll('#crMode [data-cm]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cm===CRS.mode));
   $('#crListBar').hidden=CRS.mode!=='list';
@@ -2432,7 +2433,7 @@ async function openCrm(phone){let j=null,H=null;
   const hist=[];if(H){(H.orders||[]).filter(o=>phoneKey(o.phone)===phone||!o.phone).forEach(o=>hist.push([o.day,'Шиномонтаж',(o.model||o.plate?[o.model,o.plate].filter(Boolean).join(' ')+': ':'')+o.works+(o.d?' (R'+o.d+')':''),o.list]));
     (H.buys||[]).forEach(b=>hist.push([b.day,b.type==='ret'?'Возврат':'Покупка'+(b.arch?' (CloudShop)':''),b.items,b.type==='ret'?-Math.abs(b.sum):b.sum]));(H.zak||[]).forEach(z=>hist.push([z.day,'Заказ',z.items+' — '+(ZST[z.status]||z.status),z.total]));
     (H.stor||[]).forEach(s=>hist.push([s.day,'Хранение',storLine(s)+(s.status==='issued'?' — выдано '+fmtDay(s.issued):' — на хранении'),s.paid||0]));(H.bookings||[]).filter(b=>b.status==='planned').forEach(b=>hist.push([b.day,'Запись',(b.time||'')+' '+(b.works||b.note||''),b.est||0]));}
-  ((j&&j.org_buys)||[]).forEach(b=>hist.push([b.day,(b.type==='ret'?'Возврат':'Покупка')+' на '+b.org+(b.arch?' (CloudShop)':''),b.items,b.type==='ret'?-Math.abs(b.sum):b.sum]));
+  ((j&&j.org_buys)||[]).forEach(b=>hist.push([b.day,(b.type==='mont'?'Шиномонтаж по счёту':b.type==='ret'?'Возврат':'Покупка')+' на '+b.org+(b.arch?' (CloudShop)':''),b.items,b.type==='ret'?-Math.abs(b.sum):b.sum]));
   hist.sort((a,b)=>a[0]<b[0]?1:-1);
   const carRow=(c,i)=>`<div class="carrow" data-car="${i}"><input class="inp" data-f="car" value="${esc(c.car||'')}" placeholder="Марка, модель" autocomplete="off"><input class="inp" data-f="plate" value="${esc(c.plate||'')}" placeholder="Госномер" autocomplete="off" style="text-transform:uppercase"><input class="inp" data-f="size" value="${esc(c.size||'')}" placeholder="Шины: 205/55 R16" autocomplete="off"><input class="inp" data-f="year" value="${esc(c.year||'')}" placeholder="Год" inputmode="numeric" autocomplete="off"><button type="button" class="out" data-cdel="${i}" aria-label="Убрать машину">×</button></div>`;
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${esc(x.name||(phone?fmtPhone(phone):'Новый клиент'))}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
@@ -2477,7 +2478,8 @@ async function openCrm(phone){let j=null,H=null;
   document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=async()=>{try{await api('crm_touch',{phone,del:+b.dataset.tdel});openCrm(phone);}catch(e){toast('<b>Не удалилось</b>'+esc(e.message));}});}
 /* подсказки «что предложить» в карточке */
 function crmTips(x,offers){const t=[];
-  offers.forEach(o=>t.push(`<b>${esc(WHY[o.why][0])}.</b> ${esc(WHY[o.why][1])}.`));
+  if(x.inv_n)t.push(`<b>Не оплачено по счетам: ${rub(x.inv_due)}.</b> ${(x.inv_list||[]).slice(0,4).map(i=>(i.no?'№ '+esc(i.no)+' ':'без № ')+'от '+fmtDay(i.day)+(i.org?' — '+esc(i.org):'')).join('; ')}`);
+  offers.filter(o=>o.why!=='debt').forEach(o=>t.push(`<b>${esc(WHY[o.why][0])}.</b> ${esc(WHY[o.why][1])}.`));
   if(x.m_n&&!x.h_n&&!offers.some(o=>o.why==='nostore'))t.push('<b>Хранение.</b> Переобувается у нас, но колёса возит сам — предложите оставить на хранение.');
   if(x.m_n&&!x.s_n&&!offers.some(o=>o.why==='noshop'))t.push('<b>Шины.</b> Ни разу не покупал у нас — при следующем визите посмотрите протектор и предложите комплект с бесплатным шиномонтажем.');
   if((x.cars||[]).length>1)t.push(`<b>${x.cars.length} машины.</b> Шиномонтаж и хранение для второй машины — тоже к нам.`);
@@ -2491,13 +2493,13 @@ $('#crQ').addEventListener('input',()=>{clearTimeout(crT);crT=setTimeout(()=>{CR
 $('#crSort').onchange=()=>{CRS.sort=$('#crSort').value;loadCrm();};
 $('#crNew').onclick=()=>openCrm(null);
 /* подсказка по имени: в шиномонтаже, записи и заказе — выбрали человека, подставились телефон и машина */
-(function(){const MAP={'o-name':['o-phone','o-model','o-plate'],'b-name':['b-phone','b-model','b-plate'],'z_name':['z_phone',null,null]};let box=null,tm=null,cur=null;
+(function(){const MAP={'o-name':['o-phone','o-model','o-plate'],'b-name':['b-phone','b-model','b-plate'],'z_name':['z_phone',null,null],'dPartner':['dPhone',null,null]};let box=null,tm=null,cur=null;
   const close=()=>{if(box){box.remove();box=null;}};
-  document.addEventListener('input',e=>{const el=e.target;if(!el||!MAP[el.id])return;cur=el;clearTimeout(tm);const q=el.value.trim();if(q.length<2||/^\+?[\d\s()-]+$/.test(q)){close();return;}
+  document.addEventListener('input',e=>{const el=e.target;if(!el||!MAP[el.id])return;if(el.id==='dPartner'&&!(typeof D!=='undefined'&&D&&(D.type==='sale'||D.type==='ret')))return;cur=el;clearTimeout(tm);const q=el.value.trim();if(q.length<2||/^\+?[\d\s()-]+$/.test(q)){close();return;}
     tm=setTimeout(async()=>{let j;try{j=await api('client_suggest',null,{q});}catch(_){return;}if(cur!==el||!j.rows.length){close();return;}
       close();box=document.createElement('div');box.className='nsug';box.innerHTML=j.rows.map((r,i)=>`<button type="button" data-i="${i}"><b>${esc(r.name||'Без имени')}${r.org?' — '+esc(r.org):''}</b><span class="tnum">${esc(fmtPhone(r.phone))}</span>${r.cars.length||(r.orgs||[]).length?`<small>${esc([...r.cars,...(r.org?[]:(r.orgs||[]))].join(' · '))}</small>`:''}</button>`).join('');
       el.insertAdjacentElement('afterend',box);
-      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();const r=j.rows[+b.dataset.i],[ph,md,pl]=MAP[el.id];el.value=r.name||el.value;
+      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();const r=j.rows[+b.dataset.i],[ph,md,pl]=MAP[el.id];el.value=el.id==='dPartner'&&r.org?r.org:(r.name||el.value);
         if(el.id==='o-name'&&O){const og=r.org||((r.orgs||[]).length===1?r.orgs[0]:'');if(og){O.org=og;const oo=document.getElementById('o-org');if(oo)oo.value=og;}}
         const P=document.getElementById(ph);if(P){P.value=fmtPhone(r.phone);P.dispatchEvent(new Event('input',{bubbles:true}));}
         const c0=(r.cars[0]||'');const m=c0.match(/^(.*?)\s*([А-ЯA-Z]\d{3}[А-ЯA-Z]{2}\d{0,3})?$/i)||[];const M=md&&document.getElementById(md),PL=pl&&document.getElementById(pl);

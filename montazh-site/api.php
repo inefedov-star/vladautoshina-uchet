@@ -352,6 +352,11 @@ function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-Я
 function plateKey($s): string { $s = mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); return strtr($s, ['A' => 'А', 'B' => 'В', 'E' => 'Е', 'K' => 'К', 'M' => 'М', 'H' => 'Н', 'O' => 'О', 'P' => 'Р', 'C' => 'С', 'T' => 'Т', 'Y' => 'У', 'X' => 'Х']); }
 // название организации для сравнения: без ООО/ИП/кавычек и знаков — «ООО "Ресурс-АД"» = «РЕСУРС АД»
 function orgKey($s): string { $s = mb_strtoupper(str_replace(['Ё', 'ё'], ['Е', 'е'], (string)$s)); $s = preg_replace('/(^|[\s"«»\'(])(ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУЗ|ГБУ|МБУ|МУП|ГУП|ФГУП|СПК|ТОО|НКО|LLC|ООО\.)(?=[\s"«»\')]|$)/u', ' ', $s); return preg_replace('/[^0-9A-ZА-Я]+/u', '', $s); }
+// похоже на организацию: ООО, ИП, АО и т.п.
+function isOrgName($s): bool { return (bool)preg_match('/(^|[\s"«(])(ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУЗ|ГБУ|МБУ|МУП|ГУП|ФГУП|СПК|ТОО|LLC)(?=[\s"«»)]|$)/u', mb_strtoupper((string)$s)); }
+// организация — клиенту (если ещё ни за кем не числится)
+function orgLink(array $cfg, string $phone, string $org): void { $ok = orgKey($org); if ($phone === '' || $ok === '') return; $ex = db($cfg)->prepare('SELECT 1 FROM client_orgs WHERE okey = ?'); $ex->execute([$ok]);
+  if (!$ex->fetchColumn()) db($cfg)->prepare('INSERT INTO client_orgs (phone, org, okey, created) VALUES (?,?,?,?)')->execute([$phone, mb_substr(trim($org), 0, 200), $ok, time()]); }
 function carKey($s): string { return mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); }
 // машина из визита/записи — в список машин клиента (если такой ещё нет)
 function carRemember(array $cfg, string $phone, string $model, string $plate): void {
@@ -383,7 +388,7 @@ function crmAll(array $cfg): array {
   $p = db($cfg); $R = []; $today = date('Y-m-d');
   $row = function (string $k) use (&$R) { if (!isset($R[$k])) $R[$k] = ['phone' => $k, 'name' => '', 'phone2' => '', 'cars' => [], 'bday' => '', 'note' => '', 'src' => '', 'tags' => '', 'consent' => 0, 'first' => '', 'last' => '',
       'm_n' => 0, 'm_sum' => 0.0, 'm_last' => '', 'seasons' => [], 's_n' => 0, 's_sum' => 0.0, 's_prof' => 0.0, 's_last' => '', 'tire_last' => '', 'tire_size' => '', 'h_now' => 0, 'h_n' => 0, 'h_sum' => 0.0, 'h_due' => '', 'h_what' => '',
-      'z_open' => 0, 'z_n' => 0, 'touch' => '', 'touch_kind' => '', 'known' => 0, 'h_for' => [], 'm_first' => '', 's_first' => '', 's_last_arch' => '']; };
+      'z_open' => 0, 'z_n' => 0, 'touch' => '', 'touch_kind' => '', 'known' => 0, 'h_for' => [], 'm_first' => '', 's_first' => '', 's_last_arch' => '', 'orgs' => [], 'inv_due' => 0.0, 'inv_n' => 0, 'inv_old' => '', 'inv_list' => []]; };
   $seen = function (string $k, string $day) use (&$R) { if ($day === '') return; if ($R[$k]['first'] === '' || $day < $R[$k]['first']) $R[$k]['first'] = $day; if ($day > $R[$k]['last']) $R[$k]['last'] = $day; };
   foreach ($p->query('SELECT * FROM clients')->fetchAll() as $c) { $k = (string)$c['phone']; if ($k === '') continue; $row($k);
     foreach (['name', 'phone2', 'bday', 'note', 'src', 'tags'] as $f) $R[$k][$f] = (string)($c[$f] ?? ''); $R[$k]['consent'] = (int)($c['consent'] ?? 0); $R[$k]['known'] = 1;
@@ -391,17 +396,18 @@ function crmAll(array $cfg): array {
   $byPlate = [];
   foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) { $k = (string)$c['phone']; $row($k);
     $ck = carKey($c['car']); unset($R[$k]['cars'][$ck]); $R[$k]['cars'][$ck . '|' . plateKey($c['plate'])] = ['car' => $c['car'], 'plate' => $c['plate']]; if (plateKey($c['plate']) !== '') $byPlate[plateKey($c['plate'])] = $k; }
-  // шиномонтаж: визит без телефона узнаём по госномеру
+  $orgOf = []; foreach ($p->query('SELECT phone, org, okey FROM client_orgs')->fetchAll() as $o) { $orgOf[$o['okey']] = $o['phone']; $row($o['phone']); $R[$o['phone']]['orgs'][] = $o['org']; }
+  // шиномонтаж: визит без телефона узнаём по госномеру или по организации из счёта
   $ords = $p->query('SELECT day, body FROM orders')->fetchAll(); $ob = [];
   foreach ($ords as $o) { $b = json_decode($o['body'], true) ?: []; $k = phoneKey($b['phone'] ?? ''); if ($k !== '' && plateKey($b['plate'] ?? '') !== '') $byPlate[plateKey($b['plate'])] = $byPlate[plateKey($b['plate'])] ?? $k; $ob[] = [$o['day'], $b, $k]; }
-  foreach ($ob as [$day, $b, $k]) { if ($k === '') $k = $byPlate[plateKey($b['plate'] ?? '')] ?? ''; if ($k === '') continue; $row($k);
-    $x = &$R[$k]; $x['m_n']++; $x['m_sum'] += (float)($b['paid'] ?? $b['list'] ?? 0); if ($day > $x['m_last']) $x['m_last'] = $day;
+  foreach ($ob as [$day, $b, $k]) { if ($k === '') $k = $byPlate[plateKey($b['plate'] ?? '')] ?? ''; if ($k === '' && ($b['pay'] ?? '') === 'invoice') $k = $orgOf[orgKey($b['org'] ?? '')] ?? ''; if ($k === '') continue; $row($k);
+    $x = &$R[$k];
+    if (($b['pay'] ?? '') === 'invoice' && ($b['invPaid'] ?? '') === '') { $x['inv_due'] += (float)($b['paid'] ?? 0); $x['inv_n']++; if ($x['inv_old'] === '' || $day < $x['inv_old']) $x['inv_old'] = $day; $x['inv_list'][] = ['day' => $day, 'no' => $b['invNo'] ?? '', 'org' => $b['org'] ?? '', 'sum' => (int)($b['paid'] ?? 0)]; } $x['m_n']++; $x['m_sum'] += (float)($b['paid'] ?? $b['list'] ?? 0); if ($day > $x['m_last']) $x['m_last'] = $day;
     if (($s = seasonOf($day)) !== '') $x['seasons'][$s] = true; if ($x['name'] === '' && trim((string)($b['name'] ?? '')) !== '') $x['name'] = trim($b['name']);
     if (trim((string)($b['model'] ?? '')) !== '' || trim((string)($b['plate'] ?? '')) !== '') { $ck = carKey($b['model'] ?? ''); $pk = plateKey($b['plate'] ?? ''); $has = false;
       foreach ($x['cars'] as $c) if (($pk !== '' && plateKey($c['plate']) === $pk) || ($ck !== '' && carKey($c['car']) === $ck)) { $has = true; break; }
       if (!$has) $x['cars'][$ck . '|' . $pk] = ['car' => trim((string)($b['model'] ?? '')), 'plate' => mb_strtoupper(trim((string)($b['plate'] ?? '')))]; }
     if ($x['m_first'] === '' || $day < $x['m_first']) $x['m_first'] = $day; unset($x); $seen($k, $day); }
-  $orgOf = []; foreach ($p->query('SELECT phone, org, okey FROM client_orgs')->fetchAll() as $o) { $orgOf[$o['okey']] = $o['phone']; $row($o['phone']); $R[$o['phone']]['orgs'][] = $o['org']; }
   // магазин: проведённые продажи пульта (без телефона, но на организацию клиента — тоже его)
   foreach ($p->query("SELECT d.day, d.type, d.phone, d.partner, SUM(ABS(m.qty) * IFNULL(m.price,0)) s, SUM(ABS(m.qty) * IFNULL(m.cost,0)) c, MAX(CASE WHEN p.kind = 'tire' THEN 1 ELSE 0 END) t, MAX(CASE WHEN p.kind = 'tire' THEN p.attrs ELSE '' END) a
       FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products p ON p.id = m.product_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND (d.phone != '' OR d.partner != '') GROUP BY d.id")->fetchAll() as $d) {
@@ -450,6 +456,8 @@ function crmAll(array $cfg): array {
     if ($x['m_n'] >= 1 && $x['s_n'] === 0) $t[] = 'noshop';
     if ($x['bday'] !== '' && ($dd = bdayIn($x['bday'])) !== null && $dd <= 10) { $t[] = 'bday'; $x['bday_in'] = $dd; }
     if (in_array($cur, $x['seasons'], true)) $t[] = 'season';
+    if ($x['inv_n'] > 0) $t[] = 'debt';
+    if ($x['orgs']) $t[] = 'org';
     $x['seg'] = $t; } unset($x);
   return $R;
 }
@@ -479,6 +487,9 @@ function crmCalls(array $R): array {
     $hi = $n !== '' ? 'Здравствуйте, ' . $n . '! ' : 'Здравствуйте! ';
     $add = function ($why, $txt, $prio) use (&$out, $x) { $out[] = ['phone' => $x['phone'], 'name' => $x['name'], 'cars' => array_slice($x['cars'], 0, 2), 'why' => $why, 'text' => $txt, 'prio' => $prio, 'rev' => $x['rev'], 'prof' => $x['prof'], 'last' => $x['last'], 'touch' => $x['touch'], 'consent' => $x['consent']]; };
     if (!empty($x['bday_in']) || (isset($x['bday_in']) && $x['bday_in'] === 0)) { $add('bday', $hi . 'Шинный центр IVANOR поздравляет вас с днём рождения! Дарим скидку на шиномонтаж до конца месяца — просто назовите это сообщение.', 1); continue; }
+    if ($x['inv_n'] > 0 && $x['inv_old'] <= date('Y-m-d', strtotime('-7 days')) && !$recent) { $L = $x['inv_list'];
+      if ($x['inv_n'] > 3) $add('debt', $hi . 'Напоминаем: в IVANOR не оплачено ' . $x['inv_n'] . ' счетов за шиномонтаж на ' . number_format($x['inv_due'], 0, ',', ' ') . ' ₽, самый ранний от ' . date('d.m.Y', strtotime($x['inv_old'])) . '. Пришлём сверку, если нужно. Спасибо!', 2); else
+      $add('debt', $hi . 'Напоминаем об оплате ' . ($x['inv_n'] > 1 ? 'счетов' : 'счёта') . ' за шиномонтаж в IVANOR: ' . implode('; ', array_map(fn($i) => ($i['no'] !== '' ? '№ ' . $i['no'] . ' ' : '') . 'от ' . date('d.m', strtotime($i['day'])) . ($i['org'] !== '' ? ' (' . $i['org'] . ')' : '') . ' — ' . number_format($i['sum'], 0, ',', ' ') . ' ₽', array_slice($L, 0, 4))) . '. Спасибо!', 2); continue; }
     if ($recent) continue;
     if ($up !== '' && $x['h_now'] > 0 && in_array($up, $x['h_for'], true) && !in_array($cur, $x['seasons'], true)) { $add('store', $hi . 'Ваши ' . ($x['h_what'] ?: 'колёса') . ' хранятся у нас в IVANOR. Подходит время переобуваться — запишем вас на удобное время и заранее подготовим комплект. Ноябрьская, 129.', 2); continue; }
     if ($up !== '' && !in_array($cur, $x['seasons'], true) && (in_array($prev, $x['seasons'], true) || in_array($prev2, $x['seasons'], true))) { $add('season', $hi . 'Пора менять резину на ' . $sName . '. В IVANOR (Ноябрьская, 129) запишем на удобное время без очереди. Если ваши шины уже уставшие — подберём новые, шиномонтаж при покупке со скидкой.', 3); continue; }
@@ -699,8 +710,7 @@ try {
     $o['sk'] = mb_strtoupper(trim($o['name'] . ' ' . $o['plate'] . ' ' . $o['model']));
     touchClient($cfg, $pk, $o['name'], $o['model'], $o['plate']);
     // счёт на организацию — она сама попадёт в организации клиента в CRM (если ещё ни за кем не числится)
-    if (($o['pay'] ?? '') === 'invoice' && $pk !== '' && ($ok = orgKey($o['org'] ?? '')) !== '') { $ex = db($cfg)->prepare('SELECT 1 FROM client_orgs WHERE okey = ?'); $ex->execute([$ok]);
-      if (!$ex->fetchColumn()) db($cfg)->prepare('INSERT INTO client_orgs (phone, org, okey, created) VALUES (?,?,?,?)')->execute([$pk, $o['org'], $ok, time()]); }
+    if (($o['pay'] ?? '') === 'invoice') orgLink($cfg, $pk, (string)($o['org'] ?? ''));
     $json = json_encode($o, JSON_UNESCAPED_UNICODE);
     if (strlen($json) > 50000) fail('Слишком большая запись');
     if ($id) {
@@ -880,6 +890,7 @@ try {
     // SQLite не умеет сравнивать кириллицу без учёта регистра — фильтруем здесь
     $phones = [];
     foreach (db($cfg)->query('SELECT phone, name, model FROM clients')->fetchAll() as $c) if (mb_strpos(mb_strtoupper($c['name'] . ' ' . $c['model']), $Q) !== false || (strlen($dq) >= 4 && strpos($c['phone'], $dq) !== false)) $phones[$c['phone']] = true;
+    $oq = orgKey($q); if (mb_strlen($oq) >= 2) foreach (db($cfg)->query('SELECT phone, okey FROM client_orgs')->fetchAll() as $o) if (mb_strpos($o['okey'], $oq) !== false) $phones[$o['phone']] = true;
     // 2) машины и записи
     $conds = ['body LIKE ?']; $cargs = [$like];
     if (strlen($dq) >= 4) { $conds[] = 'body LIKE ?'; $cargs[] = '%' . $dq . '%'; }
@@ -938,7 +949,12 @@ try {
     foreach ($phones as $k => $_) $keys[$k] = true;
     $map = [];
     if ($keys) { $kk = array_keys($keys); $st = db($cfg)->prepare('SELECT phone, name, model, note, bday, tags FROM clients WHERE phone IN (' . implode(',', array_fill(0, count($kk), '?')) . ')'); $st->execute($kk);
-      foreach ($st->fetchAll() as $c) { $bi = $c['bday'] !== '' ? bdayIn($c['bday']) : null; $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model'], 'note' => $c['note'], 'tags' => $c['tags'], 'bday_in' => $bi]; } }
+      foreach ($st->fetchAll() as $c) { $bi = $c['bday'] !== '' ? bdayIn($c['bday']) : null; $map[$c['phone']] = ['name' => $c['name'], 'model' => $c['model'], 'note' => $c['note'], 'tags' => $c['tags'], 'bday_in' => $bi, 'orgs' => [], 'inv' => []]; }
+      // организации клиента и неоплаченные счета (по телефону или на его организацию)
+      $okeys = []; foreach (db($cfg)->query('SELECT phone, org, okey FROM client_orgs')->fetchAll() as $o) if (isset($keys[$o['phone']])) { if (!isset($map[$o['phone']])) $map[$o['phone']] = ['name' => '', 'model' => '', 'orgs' => [], 'inv' => []]; $map[$o['phone']]['orgs'][] = $o['org']; $okeys[$o['okey']] = $o['phone']; }
+      foreach (db($cfg)->query("SELECT day, body FROM orders WHERE body LIKE '%invoice%'")->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; if (($b['pay'] ?? '') !== 'invoice' || ($b['invPaid'] ?? '') !== '') continue;
+        $k = phoneKey($b['phone'] ?? ''); if ($k === '' || !isset($keys[$k])) $k = $okeys[orgKey($b['org'] ?? '')] ?? ''; if ($k === '' || !isset($map[$k])) continue;
+        $map[$k]['inv'][] = ['day' => $r['day'], 'no' => $b['invNo'] ?? '', 'org' => $b['org'] ?? '', 'sum' => (int)($b['paid'] ?? 0)]; } }
     out(['orders' => $orders, 'bookings' => $bk, 'buys' => $buys, 'zak' => $zk, 'stor' => $stor, 'clients' => $map ?: new stdClass()]);
 
   // ===== CRM (только собственник: тут деньги и прибыль) =====
@@ -968,6 +984,8 @@ try {
     $og = db($cfg)->prepare('SELECT org, okey FROM client_orgs WHERE phone = ? ORDER BY id'); $og->execute([$k]); $orgs = $og->fetchAll(); $ob = [];
     if ($orgs) { $keys = array_flip(array_column($orgs, 'okey'));
       foreach (db($cfg)->query("SELECT doc, day, type, party, SUM(ABS(qty) * price) s, GROUP_CONCAT(name, ', ') n FROM arch WHERE type IN ('sale','ret') AND party != '' AND (phone IS NULL OR phone = '') GROUP BY doc")->fetchAll() as $r) if (isset($keys[orgKey($r['party'])])) $ob[] = ['day' => $r['day'], 'type' => $r['type'], 'org' => $r['party'], 'items' => $r['n'], 'sum' => round((float)$r['s']), 'arch' => 1];
+      foreach (db($cfg)->query("SELECT day, body FROM orders")->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; if (($b['pay'] ?? '') !== 'invoice' || phoneKey($b['phone'] ?? '') !== '' || !isset($keys[orgKey($b['org'] ?? '')])) continue;
+        $ob[] = ['day' => $r['day'], 'type' => 'mont', 'org' => $b['org'], 'items' => trim(($b['model'] ?? '') . ' ' . ($b['plate'] ?? '')), 'sum' => (int)($b['paid'] ?? 0), 'arch' => 0]; }
       foreach (db($cfg)->query("SELECT d.id, d.day, d.type, d.partner, SUM(ABS(m.qty) * IFNULL(m.price,0)) s, GROUP_CONCAT(p.name, ', ') n FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products p ON p.id = m.product_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.phone = '' AND d.partner != '' GROUP BY d.id")->fetchAll() as $r) if (isset($keys[orgKey($r['partner'])])) $ob[] = ['day' => $r['day'], 'type' => $r['type'], 'org' => $r['partner'], 'items' => $r['n'], 'sum' => round((float)$r['s']), 'arch' => 0]; }
     out(['client' => $x, 'cars' => $cars, 'touches' => $tt->fetchAll(), 'offer' => $calls, 'orgs' => array_column($orgs, 'org'), 'org_buys' => $ob]);
 
@@ -1403,7 +1421,9 @@ try {
     }
     $p->beginTransaction();
     if ($setCost) { $uc = $p->prepare('UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ? AND wh = ?'); foreach ($setCost as $k => $c) { [$pid, $w] = explode('|', $k); $uc->execute([$c, $id, (int)$pid, $w]); } }
-    if (in_array($d['type'], ['sale', 'ret'], true) && $d['phone'] !== '') touchClient($cfg, $d['phone'], trim((string)$d['partner']), '');
+    if (in_array($d['type'], ['sale', 'ret'], true) && $d['phone'] !== '') { $pt = trim((string)$d['partner']);
+      // покупатель — организация: имя клиента не трогаем, а организацию привязываем к нему в CRM
+      if (isOrgName($pt)) { touchClient($cfg, $d['phone'], '', ''); orgLink($cfg, $d['phone'], $pt); } else touchClient($cfg, $d['phone'], $pt, ''); }
     if ($d['type'] === 'in' && $d['wh'] === 'shop') { $up = $p->prepare('UPDATE products SET price = ?, updated = ? WHERE id = ? AND price != ?'); foreach ($lines as $x) if ($x['price'] !== null && (float)$x['price'] > 0) $up->execute([(float)$x['price'], time(), $x['product_id'], (float)$x['price']]); }
     // ответхранение: если у карточки ещё нет цены продажи — ставим по оценке поставщика с нашей наценкой
     if ($d['type'] === 'in' && $d['wh'] === 'custody') { $k = $p->prepare('SELECT kind, price FROM products WHERE id = ?'); $up = $p->prepare('UPDATE products SET price = ?, updated = ? WHERE id = ? AND (price IS NULL OR price <= 0)');
