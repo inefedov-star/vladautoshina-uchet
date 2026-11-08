@@ -142,6 +142,7 @@ function db(array $cfg): PDO {
   foreach (['kpp' => "TEXT NOT NULL DEFAULT ''", 'addr' => "TEXT NOT NULL DEFAULT ''", 'contact' => "TEXT NOT NULL DEFAULT ''", 'ophone' => "TEXT NOT NULL DEFAULT ''", 'email' => "TEXT NOT NULL DEFAULT ''",
     'kind' => "TEXT NOT NULL DEFAULT 'client'", 'elba_in' => 'REAL NOT NULL DEFAULT 0', 'elba_out' => 'REAL NOT NULL DEFAULT 0', 'elba_debt' => 'REAL NOT NULL DEFAULT 0', 'src' => "TEXT NOT NULL DEFAULT ''", 'upd' => 'INTEGER'] as $c => $t)
     if (!in_array($c, $gcols, true)) $pdo->exec("ALTER TABLE orgs ADD COLUMN $c $t");
+  foreach ($pdo->query('SELECT okey, name FROM orgs')->fetchAll() as $o) if (orgJunk($o['name'])) $pdo->prepare('DELETE FROM orgs WHERE okey = ?')->execute([$o['okey']]);
   // все известные организации — чтобы «АДМИНИСТРАЦИЯ …», «АНО …» и т.п. узнавались как организации
   $GLOBALS['ORGK'] = array_flip(array_filter($pdo->query('SELECT okey FROM orgs')->fetchAll(PDO::FETCH_COLUMN), fn($k) => !preg_match('/^\d+$/', (string)$k)));
   // планировщик задач: кому поручено и к какому дню
@@ -364,13 +365,15 @@ function normModel(string $s): string { return trim(preg_replace('/[^0-9A-ZА-Я
 function plateKey($s): string { $s = mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); return strtr($s, ['A' => 'А', 'B' => 'В', 'E' => 'Е', 'K' => 'К', 'M' => 'М', 'H' => 'Н', 'O' => 'О', 'P' => 'Р', 'C' => 'С', 'T' => 'Т', 'Y' => 'У', 'X' => 'Х']); }
 // название организации для сравнения: без ООО/ИП/кавычек и знаков — «ООО "Ресурс-АД"» = «РЕСУРС АД»
 function orgKey($s): string { $s = mb_strtoupper(str_replace(['Ё', 'ё'], ['Е', 'е'], (string)$s)); $s = preg_replace('/(^|[\s"«»\'(])(ООО|ОАО|ЗАО|ПАО|АО|ИП|ГБУЗ|ГБУ|МБУ|МУП|ГУП|ФГУП|СПК|ТОО|НКО|LLC|ООО\.)(?=[\s"«»\')]|$)/u', ' ', $s); return preg_replace('/[^0-9A-ZА-Я]+/u', '', $s); }
+// служебные «покупатели» CloudShop и Эльбы — не организации и не клиенты
+function orgJunk($s): bool { $k = orgKey($s); return $k === '' || preg_match('/^\d+$/', $k) || strpos($k, 'ЧАСТНОЕЛИЦО') === 0 || in_array($k, ['ПОСТОЯННЫЙКЛИЕНТ', 'РОЗНИЧНЫЙПОКУПАТЕЛЬ', 'ЮРИДИЧЕСКОЕЛИЦО', 'ФИЗИЧЕСКОЕЛИЦО', 'ПОКУПАТЕЛЬ', 'КЛИЕНТ', 'AVITOАВИТО', 'AVITO', 'АВИТО', 'OZON', 'ОЗОН', 'WILDBERRIES', 'ЯНДЕКСМАРКЕТ'], true); }
 // похоже на организацию: ООО, ИП, АО и т.п.
-function isOrgName($s): bool { $u = mb_strtoupper((string)$s);
+function isOrgName($s): bool { $u = mb_strtoupper((string)$s); if (orgJunk($s)) return false;
   if (preg_match('/(^|[\s"«(])(ООО|ОАО|ЗАО|ПАО|АО|НАО|ИП|ГБУЗ|ГБУЗВО|ГБУ|ГБУСО|ГБУСОВО|ГБОУ|ГБПОУ|ГАУ|ГАУВО|ГКУ|МБУ|МБОУ|МБДОУ|МАДОУ|МАУ|МКУ|МУП|ГУП|ФГУП|ФГБУ|ФКУ|СПК|ТОО|АНО|НКО|КФХ|ТСЖ|ТСН|LLC)(?=[\s"«»)]|$)/u', $u)) return true;
   if (preg_match('/^(АДМИНИСТРАЦИЯ|УПРАВЛЕНИЕ|КОМИТЕТ|ДЕПАРТАМЕНТ|ФИЛИАЛ|КОЛХОЗ|СЕЛЬСКОХОЗЯЙСТВЕННЫЙ|ВЛАДИМИРСКИЙ ФИЛИАЛ)\b/u', $u)) return true;
   $k = orgKey($s); return $k !== '' && isset($GLOBALS['ORGK'][$k]); }
 // организация — клиенту как представителю (если ещё ни за кем не числится); владельцем его отмечают в CRM
-function orgLink(array $cfg, string $phone, string $org): void { $ok = orgKey($org); if ($phone === '' || $ok === '') return; $ex = db($cfg)->prepare('SELECT 1 FROM client_orgs WHERE okey = ?'); $ex->execute([$ok]);
+function orgLink(array $cfg, string $phone, string $org): void { $ok = orgKey($org); if ($phone === '' || $ok === '' || orgJunk($org)) return; $ex = db($cfg)->prepare('SELECT 1 FROM client_orgs WHERE okey = ?'); $ex->execute([$ok]);
   if (!$ex->fetchColumn()) db($cfg)->prepare("INSERT INTO client_orgs (phone, org, okey, created, role) VALUES (?,?,?,?, 'contact')")->execute([$phone, mb_substr(trim($org), 0, 200), $ok, time()]); }
 function carKey($s): string { return mb_strtoupper(preg_replace('/[^0-9A-Za-zА-Яа-яЁё]/u', '', (string)$s)); }
 // машина из визита/записи — в список машин клиента (если такой ещё нет)
@@ -402,7 +405,7 @@ function seasonOf(string $day): string { $m = (int)substr($day, 5, 2); $y = subs
 // все организации, какие мы знаем: CRM и Эльба, продажи CloudShop и пульта, счета шиномонтажа
 function orgDirectory(array $cfg): array {
   $p = db($cfg); $D = [];
-  $add = function ($name, array $x = []) use (&$D) { $name = trim((string)$name); $k = orgKey($name); if ($k === '' || preg_match('/^\d+$/', $k)) return;
+  $add = function ($name, array $x = []) use (&$D) { $name = trim((string)$name); $k = orgKey($name); if (orgJunk($name)) return;
     if (!isset($D[$k])) $D[$k] = ['okey' => $k, 'org' => $name, 'inn' => '', 'kind' => 'client', 'ophone' => '', 'contact' => '', 'n' => 0]; foreach ($x as $f => $v) if ($v !== '' && $v !== null) $D[$k][$f] = $v; };
   foreach ($p->query('SELECT okey, name, inn, kind, ophone, contact FROM orgs')->fetchAll() as $o) { if ($o['kind'] === 'other') { $D[$o['okey']] = null; continue; } $add($o['name'], ['inn' => $o['inn'], 'kind' => $o['kind'], 'ophone' => $o['ophone'], 'contact' => $o['contact']]); }
   foreach ($p->query('SELECT org FROM client_orgs')->fetchAll(PDO::FETCH_COLUMN) as $o) if (!array_key_exists(orgKey($o), $D)) $add($o);
@@ -425,13 +428,13 @@ function crmAll(array $cfg): array {
   foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) { $k = (string)$c['phone']; $row($k);
     $ck = carKey($c['car']); unset($R[$k]['cars'][$ck]); $R[$k]['cars'][$ck . '|' . plateKey($c['plate'])] = ['car' => $c['car'], 'plate' => $c['plate']]; if (plateKey($c['plate']) !== '') $byPlate[plateKey($c['plate'])] = $k; }
   // организации: у владельца-клиента деньги фирмы — его; у фирмы без владельца — отдельная строка CRM «организация»
-  $orgName = []; $orgOther = []; foreach ($p->query('SELECT okey, name, inn, note, kind, contact, ophone, elba_in, elba_debt FROM orgs')->fetchAll() as $o) { if ($o['kind'] === 'other') { $orgOther[$o['okey']] = 1; continue; } $orgName[$o['okey']] = $o; }
+  $orgName = []; $orgOther = []; foreach ($p->query('SELECT okey, name, inn, note, kind, contact, ophone, elba_in, elba_debt FROM orgs')->fetchAll() as $o) { if ($o['kind'] === 'other' || orgJunk($o['name'])) { $orgOther[$o['okey']] = 1; continue; } $orgName[$o['okey']] = $o; }
   $orgOf = []; $orgPeople = [];
   foreach ($p->query('SELECT phone, org, okey, role FROM client_orgs ORDER BY id')->fetchAll() as $o) {
     if (!isset($orgName[$o['okey']])) $orgName[$o['okey']] = ['okey' => $o['okey'], 'name' => $o['org'], 'inn' => '', 'note' => ''];
     if ($o['phone'] === '') continue; $row($o['phone']); $orgPeople[$o['okey']][$o['phone']] = $o['role'];
     if ($o['role'] === 'owner' && !isset($orgOf[$o['okey']])) { $orgOf[$o['okey']] = $o['phone']; $R[$o['phone']]['orgs'][] = $o['org']; } else $R[$o['phone']]['works'][] = $o['org']; }
-  $orgR = function (string $name, string $contact = '') use (&$orgOf, &$orgName, &$orgPeople, $row): string { $ok = orgKey($name); if ($ok === '') return '';
+  $orgR = function (string $name, string $contact = '') use (&$orgOf, &$orgName, &$orgPeople, $row): string { $ok = orgKey($name); if ($ok === '' || orgJunk($name)) return '';
     if (isset($orgOf[$ok])) return $orgOf[$ok]; if (!isset($orgName[$ok])) $orgName[$ok] = ['okey' => $ok, 'name' => trim($name), 'inn' => '', 'note' => ''];
     if ($contact !== '' && !isset($orgPeople[$ok][$contact])) $orgPeople[$ok][$contact] = 'contact'; $row('org:' . $ok); return 'org:' . $ok; };
   foreach ($orgName as $ok => $o) if (!isset($orgOf[$ok])) $row('org:' . $ok);
@@ -1122,7 +1125,7 @@ try {
     $n = ['new' => 0, 'upd' => 0, 'skip' => 0, 'sup' => 0]; $p->beginTransaction();
     foreach (array_slice((array)($b['rows'] ?? []), 0, 5000) as $r) {
       $name = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($r['name'] ?? ''))), 0, 200); $inn = mb_substr(preg_replace('/\D/', '', (string)($r['inn'] ?? '')), 0, 12);
-      if ($name === '' || orgKey($name) === '') { $n['skip']++; continue; }
+      if ($name === '' || orgJunk($name)) { $n['skip']++; continue; }
       if (mb_strpos(mb_strtoupper($name), 'НЕФЕДОВ ИЛЬЯ') !== false) { $n['skip']++; continue; } // это мы сами
       $in = (float)($r['in'] ?? 0); $outS = (float)($r['out'] ?? 0); $grp = mb_strtolower((string)($r['group'] ?? ''));
       $kind = mb_strpos($grp, 'налог') !== false || preg_match('/БАНК|КАЗНАЧЕЙСТВО|ФНС|СКБ КОНТУР|СОЦИАЛЬНОГО ФОНДА|ПЕНСИОННОГО/u', mb_strtoupper($name)) ? 'other' : ((mb_strpos($grp, 'поставщ') !== false || ($outS > 0 && $in <= 0)) ? 'supplier' : 'client');
@@ -1618,7 +1621,7 @@ try {
     if ($setCost) { $uc = $p->prepare('UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ? AND wh = ?'); foreach ($setCost as $k => $c) { [$pid, $w] = explode('|', $k); $uc->execute([$c, $id, (int)$pid, $w]); } }
     if (in_array($d['type'], ['sale', 'ret'], true) && $d['phone'] !== '') { $pt = trim((string)$d['partner']);
       // покупатель — организация: имя клиента не трогаем, а организацию привязываем к нему в CRM
-      if (isOrgName($pt)) { touchClient($cfg, $d['phone'], '', ''); orgLink($cfg, $d['phone'], $pt); } else touchClient($cfg, $d['phone'], $pt, ''); }
+      if (isOrgName($pt)) { touchClient($cfg, $d['phone'], '', ''); orgLink($cfg, $d['phone'], $pt); } else touchClient($cfg, $d['phone'], orgJunk($pt) ? '' : $pt, ''); }
     if ($d['type'] === 'in' && $d['wh'] === 'shop') { $up = $p->prepare('UPDATE products SET price = ?, updated = ? WHERE id = ? AND price != ?'); foreach ($lines as $x) if ($x['price'] !== null && (float)$x['price'] > 0) $up->execute([(float)$x['price'], time(), $x['product_id'], (float)$x['price']]); }
     // ответхранение: если у карточки ещё нет цены продажи — ставим по оценке поставщика с нашей наценкой
     if ($d['type'] === 'in' && $d['wh'] === 'custody') { $k = $p->prepare('SELECT kind, price FROM products WHERE id = ?'); $up = $p->prepare('UPDATE products SET price = ?, updated = ? WHERE id = ? AND (price IS NULL OR price <= 0)');

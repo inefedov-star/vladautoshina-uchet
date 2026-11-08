@@ -652,6 +652,9 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 .tls{white-space:nowrap;display:flex;gap:6px;align-items:center}
 .tlchips .fchip{min-height:36px}
 @media(max-width:560px){.tlrow{grid-template-columns:6px 1fr auto;row-gap:2px}.tld{grid-column:2/4;grid-row:1;padding:0}.tli{grid-column:1;grid-row:1/3}.tlb{grid-column:2;grid-row:2}.tls{grid-column:3;grid-row:2}}
+@media(max-width:760px){#crElba{display:none}}
+@media(max-width:560px){#crAct{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}#crAct .btn{padding-inline:4px;font-size:.88rem;justify-content:center;text-align:center}}
+@media(max-width:560px){.doclist th:nth-child(4),.doclist td:nth-child(4){display:none}.doclist td,.doclist th{padding-left:6px;padding-right:6px}.doclist td:first-child{font-size:.85rem}}
 </style>
 </head>
 <body>
@@ -1478,7 +1481,7 @@ async function loadDocs(){reqBadge();const[y,m]=S.dl.month.split('-').map(Number
   if(fixed){const ps=S.dl.docs.filter(d=>d.status==='posted');const tot=ps.reduce((a,d)=>a+(d.type==='in'?(d.wh==='custody'?0:d.cost):d.type==='iss'?d.qty:d.rev),0);
     $('#dlPartner').insertAdjacentHTML('beforeend',`<p class="mono" style="color:var(--ink-3);margin:0 0 10px">Проведено: ${ps.length} · ${S.dl.type==='iss'?fmtQty(tot)+' шт.':S.dl.type==='in'?'закупка на '+rub(tot)+(ps.some(d=>d.wh==='custody')?' (без ответхранения)':''):rub(tot)}${S.dl.type==='sale'?' · прибыль '+rub(ps.reduce((a,d)=>a+d.rev-d.cost,0)):''}</p>`);}
   const el=$('#dlOut');if(!S.dl.docs.length){el.innerHTML=`<div class="empty"><b>Документов нет</b>«+ Продажа» или «+ Приход» — оформить первый.</div>`;return;}
-  el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th style="text-align:left">Кто</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>
+  el.innerHTML=`<div class="tw"><table class="sttab doclist"><thead><tr><th>Дата</th><th style="text-align:left">Документ</th><th style="text-align:left">Кто</th><th>Штук</th><th>Сумма</th></tr></thead><tbody>
     ${S.dl.docs.map(d=>`<tr data-d="${d.id}" class="${d.status==='cancelled'?'cxl':''}"><td>${fmtDay(d.day)}</td><td style="text-align:left">${esc(d.label)} № ${d.id}${d.num&&d.type!=='open'?' <span class="pay">('+esc(d.num)+')</span>':''}${d.base_id?' <span class="pay">по продаже № '+d.base_id+'</span>':''} <span class="badge ${DOC_ST[d.status][1]}">${+d.req&&d.status==='draft'?'ждёт подтверждения':stLbl(d.type,d.status)}</span>${d.type==='in'&&d.wh==='custody'?' <span class="badge cp">ответхранение</span>':''}${d.seller?` <span class="selb">${+d.req?'витрина · ':''}${esc(d.seller)}</span>`:''}</td>
       <td style="text-align:left">${esc(d.partner||(d.phone?fmtPhone(d.phone):'')||'—')}${d.pay?` <span class="pay">· ${DPAY[d.pay]}</span>`:''}</td><td>${fmtQty(d.qty)}</td><td>${d.type==='iss'?'—':rub(isMoney(d.type)?d.rev:d.cost)}${d.type==='sale'&&d.status==='posted'?`<small class="pay" style="display:block">прибыль ${rub(d.rev-d.cost)}</small>`:''}</td></tr>`).join('')}</tbody></table></div>`;
   el.querySelectorAll('tr[data-d]').forEach(tr=>tr.onclick=()=>openDoc(+tr.dataset.d));}
@@ -2407,7 +2410,7 @@ async function loadCrm(){renderBnav();const out=$('#crOut');document.querySelect
   if(CRS.mode==='calls')return loadCalls();
   let j;try{j=await api('crm_list',null,{seg:CRS.seg,sort:CRS.sort,q:CRS.q});}catch(e){if(e.code!=='auth')out.innerHTML=`<div class="empty"><b>Не получилось</b>${esc(e.message)}</div>`;return;}
   CRS.rows=j.rows;const t=j.total;
-  $('#crTiles').innerHTML=`<div class="tile"><span class="mono">Клиентов с телефоном</span><b class="tnum">${t.n}</b></div><div class="tile"><span class="mono">Были за 12 месяцев</span><b class="tnum">${t.active}</b></div>
+  $('#crTiles').innerHTML=`<div class="tile"><span class="mono">Клиентов в базе</span><b class="tnum">${t.n}</b></div><div class="tile"><span class="mono">Были за 12 месяцев</span><b class="tnum">${t.active}</b></div>
     <div class="tile"><span class="mono">Сейчас на хранении</span><b class="tnum">${t.store}</b></div><div class="tile acc"><span class="mono">ДР в ближайшие 10 дней</span><b class="tnum">${t.bday}</b></div>`;
   $('#crSeg').innerHTML=SEG.map(([k,l])=>`<button type="button" class="chip" data-sg="${k}" aria-pressed="${CRS.seg===k}">${l}${j.cnt[k]!=null?` <span class="pay">${j.cnt[k]}</span>`:''}</button>`).join('');
   $('#crSeg').querySelectorAll('[data-sg]').forEach(b=>b.onclick=()=>{CRS.seg=b.dataset.sg;loadCrm();});
@@ -2448,7 +2451,7 @@ async function openCrm(phone){let j=null;
   const offers=(j&&j.offer)||[];
   const carRow=(c,i)=>`<div class="carrow" data-car="${i}"><input class="inp" data-f="car" value="${esc(c.car||'')}" placeholder="Марка, модель" autocomplete="off"><input class="inp" data-f="plate" value="${esc(c.plate||'')}" placeholder="Госномер" autocomplete="off" style="text-transform:uppercase"><input class="inp" data-f="size" value="${esc(c.size||'')}" placeholder="Шины: 205/55 R16" autocomplete="off"><input class="inp" data-f="year" value="${esc(c.year||'')}" placeholder="Год" inputmode="numeric" autocomplete="off"><button type="button" class="out" data-cdel="${i}" aria-label="Убрать машину">×</button></div>`;
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${esc(x.name||(phone?fmtPhone(phone):'Новый клиент'))}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  ${phone?`<div class="row" style="margin:-4px 0 10px;gap:6px">${segBadges(x)}</div><div class="row" style="margin:0 0 12px"><a class="btn ghost" href="${telHref(phone)}">Позвонить</a><a class="btn ghost" href="${waHref(phone)}" target="_blank" rel="noopener">WhatsApp</a><button type="button" class="btn ghost" id="crT">Отметить звонок</button><button type="button" class="btn ghost" id="crZ">+ Заказ</button><button type="button" class="btn ghost" id="crTk">+ Задача</button><button type="button" class="btn ghost" id="crKp">+ КП</button></div>
+  ${phone?`<div class="row" style="margin:-4px 0 10px;gap:6px">${segBadges(x)}</div><div class="row" id="crAct" style="margin:0 0 12px"><a class="btn ghost" href="${telHref(phone)}">Позвонить</a><a class="btn ghost" href="${waHref(phone)}" target="_blank" rel="noopener">WhatsApp</a><button type="button" class="btn ghost" id="crT">Отметить звонок</button><button type="button" class="btn ghost" id="crZ">+ Заказ</button><button type="button" class="btn ghost" id="crTk">+ Задача</button><button type="button" class="btn ghost" id="crKp">+ КП</button></div>
   <div class="tiles" style="margin:0 0 12px"><div class="tile"><span class="mono">Шиномонтаж</span><b class="tnum">${x.m_n} ${plural(x.m_n,'визит','визита','визитов')}</b><small class="pay">${rub(x.m_sum)}${x.nseas?' · сезонов: '+x.nseas:''}</small></div>
     <div class="tile"><span class="mono">Магазин</span><b class="tnum">${x.s_n} ${plural(x.s_n,'покупка','покупки','покупок')}</b><small class="pay">${rub(x.s_sum)} · наценка ${rub(x.s_prof)}${x.s_org?' · на организацию: '+x.s_org:''}</small></div>
     <div class="tile"><span class="mono">Хранение</span><b class="tnum">${x.h_now?x.h_now+' сейчас':x.h_n?x.h_n+' раз':'нет'}</b><small class="pay">${x.h_sum?rub(x.h_sum):''}${x.h_due?' · до '+fmtDay(x.h_due):''}</small></div>
@@ -2513,7 +2516,7 @@ async function openOrg(okey,name){let j=null;
     <label><span class="mono lbl">Контактное лицо</span><input class="inp" id="og_contact" value="${esc(o.contact||'')}" placeholder="Иванов И.И., директор" autocomplete="off"></label>
     <label><span class="mono lbl">Телефон организации${o.ophone?` · <a href="tel:${esc(o.ophone.replace(/[^\d+]/g,'').slice(0,12))}">позвонить</a>`:''}</span><input class="inp" id="og_ophone" value="${esc(o.ophone||'')}" placeholder="8 (4922) 00-00-00" autocomplete="off"></label>
     <label><span class="mono lbl">Почта</span><input class="inp" id="og_email" value="${esc(o.email||'')}" placeholder="для счетов" autocomplete="off"></label>
-    ${o.addr||o.kpp?`<p class="note" style="margin:0;align-self:end">${o.kpp?'КПП '+esc(o.kpp)+'<br>':''}${esc(o.addr||'')}</p>`:''}
+    ${o.addr||o.kpp?`<p class="note" style="grid-column:1/-1;margin:0">${o.kpp?'КПП '+esc(o.kpp)+(o.addr?' · ':''):''}${esc(o.addr||'')}</p>`:''}
     <div style="grid-column:1/-1"><span class="mono lbl">Люди организации — владелец (наш клиент) или представители</span><div id="ogP">${(people.length?people:[{phone:'',name:'',role:'contact'}]).map(pRow).join('')}</div><button type="button" class="out" id="ogAdd" style="margin-top:6px">+ Человек</button></div>
     <p class="note" style="grid-column:1/-1;margin:0">Владелец — покупки фирмы считаются его покупками (одна карточка). Представитель — водитель или менеджер: приезжает от фирмы, деньги остаются на фирме.</p>
     <div style="grid-column:1/-1" class="row"><button class="btn" type="button" id="ogSave">Сохранить</button><p class="err" id="ogErr" hidden></p></div></div>
@@ -2603,7 +2606,7 @@ async function loadTasks(){renderBnav();setTimeout(tkBadge,300);const out=$('#tk
   TK.rows=j.rows;TK.whos=j.who;
   $('#tkWhoList').innerHTML=j.who.map(w=>`<option value="${esc(w.who)}">`).join('');
   const openW=j.who.filter(w=>+w.o>0);
-  $('#tkF').innerHTML=`<button type="button" class="chip" data-st="open" aria-pressed="${TK.st==='open'}">В работе <span class="pay">${j.open}</span></button><button type="button" class="chip" data-st="done" aria-pressed="${TK.st==='done'}">Сделано</button><span style="width:10px"></span>`+
+  $('#tkF').innerHTML=`<button type="button" class="chip" data-st="open" aria-pressed="${TK.st==='open'}">В работе <span class="pay">${j.open}</span></button><button type="button" class="chip" data-st="done" aria-pressed="${TK.st==='done'}">Сделано</button><span class="pay" style="align-self:center;margin-left:10px">Кто:</span>`+
     `<button type="button" class="chip" data-w="" aria-pressed="${!TK.who}">Все</button>`+openW.map(w=>`<button type="button" class="chip" data-w="${esc(w.who)}" aria-pressed="${TK.who===w.who}">${esc(w.who)} <span class="pay">${w.o}</span></button>`).join('')+
     (j.rows.some(r=>!r.who)&&TK.st==='open'?`<button type="button" class="chip" data-w="—" aria-pressed="${TK.who==='—'}">Без исполнителя</button>`:'');
   $('#tkF').querySelectorAll('[data-st]').forEach(b=>b.onclick=()=>{TK.st=b.dataset.st;loadTasks();});$('#tkF').querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>{TK.who=b.dataset.w;loadTasks();});

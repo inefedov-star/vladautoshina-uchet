@@ -229,6 +229,9 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
 .mysh{margin:24px 0 8px;font-size:1.05rem}.ms{display:grid;grid-template-columns:52px 1fr auto auto;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule-soft,#eee);font-size:.92rem}.ms small{display:block;color:var(--signal-deep)}
 .mst{font-size:.75rem;font-weight:700;padding:2px 8px;border-radius:8px}.mst.w{background:#FFF4E5;color:#8A4B00}.mst.ok{background:#E8F5EC;color:#1E6B39}.mst.x{background:#FDECEC;color:#A12A2A}
 @media (max-width:640px){.cl{grid-template-columns:1fr auto;}.cl .cp{grid-column:1}.cl .cs{text-align:right}.cform{grid-template-columns:1fr}}
+/* внутри пульта: выход и «на весь экран» — у пульта свои; на телефоне шапка в одну строку */
+html.embed #selBtn{display:none}
+@media(max-width:600px){#fs{display:none}.bar .logo i{display:none}}
 </style>
 
 <header class="top">
@@ -268,6 +271,8 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
 </section>
 
 <script>
+try{if(window.self!==window.top)document.documentElement.classList.add('embed');}catch(_){document.documentElement.classList.add('embed');}
+
 let STAMP='__STAMP__';
 let TIRES=__TIRES__;
 let OTHER=__OTHER__;
