@@ -698,6 +698,9 @@ try {
     $o['phoneD'] = $pk !== '' ? $pk : digits($o['phone']);
     $o['sk'] = mb_strtoupper(trim($o['name'] . ' ' . $o['plate'] . ' ' . $o['model']));
     touchClient($cfg, $pk, $o['name'], $o['model'], $o['plate']);
+    // счёт на организацию — она сама попадёт в организации клиента в CRM (если ещё ни за кем не числится)
+    if (($o['pay'] ?? '') === 'invoice' && $pk !== '' && ($ok = orgKey($o['org'] ?? '')) !== '') { $ex = db($cfg)->prepare('SELECT 1 FROM client_orgs WHERE okey = ?'); $ex->execute([$ok]);
+      if (!$ex->fetchColumn()) db($cfg)->prepare('INSERT INTO client_orgs (phone, org, okey, created) VALUES (?,?,?,?)')->execute([$pk, $o['org'], $ok, time()]); }
     $json = json_encode($o, JSON_UNESCAPED_UNICODE);
     if (strlen($json) > 50000) fail('Слишком большая запись');
     if ($id) {
@@ -1020,45 +1023,33 @@ try {
     out(['rows' => array_slice($all, 0, 300), 'cnt' => $cnt]);
 
   case 'client_suggest':
-    // подсказка при вводе имени: имя, телефон, машины (без денег — доступно и мастеру)
+    // подсказка при вводе имени: клиенты и их организации (без денег — доступно и мастеру)
     needRole($role, ['owner', 'master', 'cashier']);
     $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); if (mb_strlen($q) < 2) out(['rows' => []]);
-    $p = db($cfg); $cars = [];
+    $p = db($cfg); $cars = []; $orgs = [];
     foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) $cars[$c['phone']][] = trim($c['car'] . ' ' . $c['plate']);
-    $rows = []; $pq = plateKey($q);
-    foreach ($p->query("SELECT phone, name, model, updated FROM clients WHERE name != '' ORDER BY updated DESC")->fetchAll() as $c) {
-      $nm = mb_strtoupper($c['name']); $cs = $cars[$c['phone']] ?? ($c['model'] !== '' ? [$c['model']] : []);
-      $hit = mb_strpos($nm, $q) === 0 ? 3 : (preg_match('/(^|\s)' . preg_quote($q, '/') . '/u', $nm) ? 2 : (mb_strpos($nm, $q) !== false ? 1 : 0));
+    foreach ($p->query('SELECT phone, org, okey FROM client_orgs ORDER BY id')->fetchAll() as $o) $orgs[$o['phone']][] = $o;
+    $rows = []; $pq = plateKey($q); $oq = orgKey($q);
+    foreach ($p->query("SELECT phone, name, model, updated FROM clients ORDER BY updated DESC")->fetchAll() as $c) {
+      $nm = mb_strtoupper($c['name']); $cs = $cars[$c['phone']] ?? ($c['model'] !== '' ? [$c['model']] : []); $os = $orgs[$c['phone']] ?? [];
+      $hit = $nm === '' ? 0 : (mb_strpos($nm, $q) === 0 ? 3 : (preg_match('/(^|\s)' . preg_quote($q, '/') . '/u', $nm) ? 2 : (mb_strpos($nm, $q) !== false ? 1 : 0))); $org = '';
+      if (mb_strlen($oq) >= 2) foreach ($os as $o) if (mb_strpos($o['okey'], $oq) !== false) { $org = $o['org']; $hit = max($hit, mb_strpos($o['okey'], $oq) === 0 ? 3 : 2); break; }
       if (!$hit && mb_strlen($pq) >= 3) foreach ($cs as $cc) if (mb_strpos(plateKey($cc), $pq) !== false) { $hit = 1; break; }
-      if (!$hit) continue; $rows[] = ['phone' => $c['phone'], 'name' => $c['name'], 'cars' => array_slice($cs, 0, 3), 'h' => $hit, 'u' => (int)$c['updated']];
+      if (!$hit) continue;
+      $rows[] = ['phone' => $c['phone'], 'name' => $c['name'], 'cars' => array_slice($cs, 0, 3), 'org' => $org, 'orgs' => array_column($os, 'org'), 'h' => $hit, 'u' => (int)$c['updated']];
     }
     usort($rows, fn($a, $b) => [$b['h'], $b['u']] <=> [$a['h'], $a['u']]);
-    out(['rows' => array_map(fn($r) => ['phone' => $r['phone'], 'name' => $r['name'], 'cars' => $r['cars']], array_slice($rows, 0, 8))]);
+    out(['rows' => array_map(fn($r) => array_diff_key($r, ['h' => 1, 'u' => 1]), array_slice($rows, 0, 8))]);
 
-  // ===== планировщик задач (собственник) =====
-  case 'task_list':
-    needRole($role, ['owner']);
-    $st = ($_GET['st'] ?? 'open') === 'done' ? 'done' : 'open';
-    $q = db($cfg)->prepare("SELECT * FROM tasks WHERE status = ? ORDER BY " . ($st === 'done' ? 'done_at DESC LIMIT 300' : "CASE WHEN due = '' THEN 1 ELSE 0 END, due, prio DESC, id")); $q->execute([$st]);
-    $who = db($cfg)->query("SELECT who, COUNT(*) n, SUM(status = 'open') o FROM tasks WHERE who != '' GROUP BY who ORDER BY MAX(id) DESC")->fetchAll();
-    out(['rows' => $q->fetchAll(), 'who' => $who, 'open' => (int)db($cfg)->query("SELECT COUNT(*) FROM tasks WHERE status = 'open'")->fetchColumn(),
-      'late' => (int)db($cfg)->query("SELECT COUNT(*) FROM tasks WHERE status = 'open' AND due != '' AND due < '" . date('Y-m-d') . "'")->fetchColumn()]);
-
-  case 'task_save':
-    post(); needRole($role, ['owner']);
-    $b = body(); $id = (int)($b['id'] ?? 0); $t = mb_substr(trim((string)($b['title'] ?? '')), 0, 300); if ($t === '') fail('Напишите, что сделать');
-    $due = (string)($b['due'] ?? ''); if ($due !== '' && !isDay($due)) fail('Неверная дата');
-    $v = [$t, mb_substr(trim((string)($b['note'] ?? '')), 0, 2000), mb_substr(trim((string)($b['who'] ?? '')), 0, 60), $due, !empty($b['prio']) ? 1 : 0, phoneKey($b['phone'] ?? '')];
-    if ($id) { $v[] = $id; db($cfg)->prepare('UPDATE tasks SET title = ?, note = ?, who = ?, due = ?, prio = ?, phone = ? WHERE id = ?')->execute($v); }
-    else { db($cfg)->prepare("INSERT INTO tasks (title, note, who, due, prio, phone, status, created, author) VALUES (?,?,?,?,?,?, 'open', ?, ?)")->execute(array_merge($v, [time(), $role])); $id = (int)db($cfg)->lastInsertId(); }
-    out(['ok' => true, 'id' => $id]);
-
-  case 'task_done':
-    post(); needRole($role, ['owner']);
-    $b = body(); $id = (int)($b['id'] ?? 0);
-    if (!empty($b['del'])) { db($cfg)->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]); out(['ok' => true]); }
-    $d = !empty($b['done']); db($cfg)->prepare('UPDATE tasks SET status = ?, done_at = ? WHERE id = ?')->execute([$d ? 'done' : 'open', $d ? time() : null, $id]);
-    out(['ok' => true]);
+  case 'org_suggest':
+    // организации для оплаты по счёту: сначала организации этого клиента из CRM, потом все из CRM и прошлых счетов
+    needRole($role, ['owner', 'master', 'cashier']);
+    $k = phoneKey($_GET['phone'] ?? ''); $oq = orgKey($_GET['q'] ?? ''); $p = db($cfg); $out = [];
+    $add = function ($org, $who, $mine) use (&$out, $oq) { $ok = orgKey($org); if ($ok === '' || ($oq !== '' && mb_strpos($ok, $oq) === false)) return; if (!isset($out[$ok]) || $mine) $out[$ok] = ['org' => $org, 'who' => $who, 'mine' => $mine]; };
+    foreach ($p->query('SELECT o.phone, o.org, c.name FROM client_orgs o LEFT JOIN clients c ON c.phone = o.phone ORDER BY o.id DESC')->fetchAll() as $o) $add($o['org'], $o['name'] ?: $o['phone'], $k !== '' && $o['phone'] === $k);
+    foreach ($p->query("SELECT body FROM orders ORDER BY day DESC LIMIT 3000")->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; if (($b['pay'] ?? '') === 'invoice' && trim((string)($b['org'] ?? '')) !== '') $add($b['org'], trim((string)($b['name'] ?? '')), false); }
+    $rows = array_values($out); usort($rows, fn($a, $b) => $b['mine'] <=> $a['mine']);
+    out(['rows' => array_slice($rows, 0, 12), 'mine' => array_values(array_filter($rows, fn($r) => $r['mine']))]);
 
   case 'hotel_info':
     // нашлась ли база отеля и сколько сейчас на хранении — для кнопки «Хранение»

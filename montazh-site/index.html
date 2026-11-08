@@ -2288,7 +2288,7 @@ function renderSheet(){
     ${(O.mode!=='coupon'||c.extra)&&S.role!=='master'?`<div><span class="mono lbl">Оплата${O.mode==='coupon'?' доплаты':''}</span><div class="row">${Object.entries(PAY).map(([k,t])=>`<button type="button" class="chip" data-pay="${k}" aria-pressed="${O.pay===k}">${t}</button>`).join('')}</div></div>`:''}
     ${O.mode!=='coupon'&&S.role==='master'?`<button type="button" class="chip" data-pay="${O.pay==='invoice'?'card':'invoice'}" aria-pressed="${O.pay==='invoice'}" style="text-align:left">${O.pay==='invoice'?'✓ ':''}Оплата по счёту организации</button>`:''}
     ${O.pay==='invoice'&&O.mode!=='coupon'?`<div class="invbox"><b>Счёт организации</b>
-      <label><span class="mono lbl">Организация</span><input class="inp" id="o-org" list="orgList" value="${esc(O.org||'')}" placeholder="ООО «…», ИП …" autocomplete="off"><datalist id="orgList">${(S.invOrgs||[]).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
+      <label><span class="mono lbl">Организация</span><input class="inp" id="o-org" value="${esc(O.org||'')}" placeholder="ООО «…», ИП … — начните вводить" autocomplete="off"></label>
       <div class="row" style="flex-wrap:nowrap"><label style="flex:1"><span class="mono lbl">№ счёта</span><input class="inp" id="o-invno" value="${esc(O.invNo||'')}" placeholder="когда выставите" autocomplete="off"></label><label style="flex:1"><span class="mono lbl">Дата счёта</span><input class="inp" type="date" id="o-invday" value="${esc(O.invDay||'')}"></label></div>
       ${O.id&&S.role!=='master'?`<div class="row" style="align-items:end;flex-wrap:nowrap"><label style="flex:1"><span class="mono lbl">Оплата пришла</span><input class="inp" type="date" id="o-invpaid" value="${esc(O.invPaid||'')}"></label><button class="btn ${O.invPaid?'ghost':''}" type="button" id="o-invgo">${O.invPaid?'Изменить':'Оплата пришла'}</button></div>`:''}
       <p class="note" style="margin:0">${O.invPaid?'Оплачено '+fmtDay(O.invPaid)+'.':O.invNo?'Счёт выставлен — ждём оплату. Машину можно отпускать.':'Машину можно отпускать. Впишите № счёта, когда выставите (в Эльбе).'} Все счета — в «Итогах».</p></div>`:''}
@@ -2322,7 +2322,14 @@ function bindSheet(){
   document.querySelectorAll('[data-season]').forEach(b=>b.onclick=()=>{O.mods.season=O.mods.season===b.dataset.season?null:b.dataset.season;rer();});
   document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{O.mode=b.dataset.mode;if(O.mode==='disc'&&!O.paid)O.paid=calc(O).list;if(O.mode==='coupon'){O.coupon=S.coupon;O.extraSet=false;}rer();});
   const cpn=document.getElementById('o-cpn');if(cpn)cpn.onchange=()=>{O.coupon=+cpn.value||0;O.extraSet=false;rer();};
-  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{O.pay=b.dataset.pay;if(O.pay==='invoice'&&!S.invOrgs)loadInvOrgs().then(rer);rer();});
+  document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=async()=>{O.pay=b.dataset.pay;rer();
+    // счёт: если у клиента в CRM одна организация — подставим её
+    if(O.pay==='invoice'&&!O.org){keepInputs();const k=phoneKey(O.phone||'');if(k){try{const j=await api('org_suggest',null,{phone:k});if(j.mine.length===1&&!O.org){O.org=j.mine[0].org;rer();}}catch(_){}}}});
+  {const og=document.getElementById('o-org');if(og){let tm=null,box=null;const close=()=>{if(box){box.remove();box=null;}};
+    const show=async()=>{let j;try{j=await api('org_suggest',null,{q:og.value.trim(),phone:phoneKey(($('#o-phone')||{}).value||O.phone||'')});}catch(_){return;}close();if(!j.rows.length||document.activeElement!==og)return;
+      box=document.createElement('div');box.className='nsug';box.innerHTML=j.rows.map((r,i)=>`<button type="button" data-i="${i}"><b>${esc(r.org)}</b><span>${r.mine?'<span class="cbadge cb-loyal">этого клиента</span>':''}</span>${r.who?`<small>${esc(r.who)}</small>`:''}</button>`).join('');og.insertAdjacentElement('afterend',box);
+      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();og.value=j.rows[+b.dataset.i].org;O.org=og.value;close();});};
+    og.onfocus=show;og.oninput=()=>{O.org=og.value;clearTimeout(tm);tm=setTimeout(show,250);};og.onblur=()=>setTimeout(close,150);}}
   const ig=document.getElementById('o-invgo');if(ig)ig.onclick=async()=>{keepInputs();const d=$('#o-invpaid').value||iso(new Date());try{await api('inv_set',{id:O.id,org:O.org||'',invNo:O.invNo||'',invDay:O.invDay||'',invPaid:d});O.invPaid=d;toast('<b>Оплата по счёту отмечена</b>'+fmtDay(d));rer();loadDay();}catch(e){showErr(e.message);}};
   document.querySelectorAll('.step button').forEach(b=>b.onclick=()=>{const w=WORKS[+b.dataset.w];const l=O.lines.find(x=>x.k===w.k&&x.n===w.n);
     const q=(l?l.q:0)+(b.dataset.a==='+'?1:-1);setQty(w.k,w.n,q,w.p,w.x);rer();});
@@ -2488,9 +2495,10 @@ $('#crNew').onclick=()=>openCrm(null);
   const close=()=>{if(box){box.remove();box=null;}};
   document.addEventListener('input',e=>{const el=e.target;if(!el||!MAP[el.id])return;cur=el;clearTimeout(tm);const q=el.value.trim();if(q.length<2||/^\+?[\d\s()-]+$/.test(q)){close();return;}
     tm=setTimeout(async()=>{let j;try{j=await api('client_suggest',null,{q});}catch(_){return;}if(cur!==el||!j.rows.length){close();return;}
-      close();box=document.createElement('div');box.className='nsug';box.innerHTML=j.rows.map((r,i)=>`<button type="button" data-i="${i}"><b>${esc(r.name)}</b><span class="tnum">${esc(fmtPhone(r.phone))}</span>${r.cars.length?`<small>${esc(r.cars.join(' · '))}</small>`:''}</button>`).join('');
+      close();box=document.createElement('div');box.className='nsug';box.innerHTML=j.rows.map((r,i)=>`<button type="button" data-i="${i}"><b>${esc(r.name||'Без имени')}${r.org?' — '+esc(r.org):''}</b><span class="tnum">${esc(fmtPhone(r.phone))}</span>${r.cars.length||(r.orgs||[]).length?`<small>${esc([...r.cars,...(r.org?[]:(r.orgs||[]))].join(' · '))}</small>`:''}</button>`).join('');
       el.insertAdjacentElement('afterend',box);
-      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();const r=j.rows[+b.dataset.i],[ph,md,pl]=MAP[el.id];el.value=r.name;
+      box.querySelectorAll('[data-i]').forEach(b=>b.onmousedown=ev=>{ev.preventDefault();const r=j.rows[+b.dataset.i],[ph,md,pl]=MAP[el.id];el.value=r.name||el.value;
+        if(el.id==='o-name'&&O){const og=r.org||((r.orgs||[]).length===1?r.orgs[0]:'');if(og){O.org=og;const oo=document.getElementById('o-org');if(oo)oo.value=og;}}
         const P=document.getElementById(ph);if(P){P.value=fmtPhone(r.phone);P.dispatchEvent(new Event('input',{bubbles:true}));}
         const c0=(r.cars[0]||'');const m=c0.match(/^(.*?)\s*([А-ЯA-Z]\d{3}[А-ЯA-Z]{2}\d{0,3})?$/i)||[];const M=md&&document.getElementById(md),PL=pl&&document.getElementById(pl);
         if(M&&!M.value&&m[1])M.value=m[1];if(PL&&!PL.value&&m[2])PL.value=m[2].toUpperCase();el.dispatchEvent(new Event('change',{bubbles:true}));close();});},250);});
