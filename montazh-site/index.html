@@ -639,6 +639,19 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 .cb-debt{background:#FDE2E2;color:#B71C1C}.cb-org{background:#E8EAF6;color:#303F9F}
 .orgchip{display:inline-flex;align-items:center;gap:6px;background:var(--paper-2);border-radius:10px;padding:4px 8px}.orgico{color:#303F9F}.cb-company{background:#E8EAF6;color:#303F9F}
 @media (max-width:760px){#ogP .carrow{grid-template-columns:1fr 1fr!important}}
+.tl{border-top:1px solid var(--rule)}
+.tlrow{display:grid;grid-template-columns:74px 6px 1fr auto;gap:10px;align-items:start;padding:9px 2px;border-bottom:1px solid var(--rule)}
+.tlrow.warn{background:color-mix(in srgb,var(--signal) 7%,transparent)}
+.tld{color:var(--ink-3,#777);font-size:.9rem;padding-top:2px}
+.tli{align-self:stretch;border-radius:3px;background:#9aa3ad}
+.tli.k-mont{background:#1f6feb}.tli.k-book{background:#7aa7f0}.tli.k-shop{background:#ff6600}.tli.k-store{background:#2e9d5b}.tli.k-zak{background:#b7791f}.tli.k-task{background:#7c3aed}.tli.k-touch{background:#64748b}.tli.k-kp{background:#c2185b}
+.tlt{background:none;border:0;padding:0;font:inherit;font-weight:700;color:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer;text-align:left}
+.tlt0{font-weight:700}
+.tlst{font-size:.82rem;padding:1px 6px;border-radius:3px;border:1px solid var(--rule);white-space:nowrap}
+.tlrow.warn .tlst{border-color:var(--signal);color:var(--signal)}
+.tls{white-space:nowrap;display:flex;gap:6px;align-items:center}
+.tlchips .fchip{min-height:36px}
+@media(max-width:560px){.tlrow{grid-template-columns:6px 1fr auto;row-gap:2px}.tld{grid-column:2/4;grid-row:1;padding:0}.tli{grid-column:1;grid-row:1/3}.tlb{grid-column:2;grid-row:2}.tls{grid-column:3;grid-row:2}}
 </style>
 </head>
 <body>
@@ -2428,19 +2441,14 @@ function touchSheet(x,after){$('#shIn').innerHTML=`<div class="sh-hd"><h2 id="sh
   let kind='call';$('#tk').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{kind=b.dataset.k;$('#tk').querySelectorAll('[data-k]').forEach(c=>c.setAttribute('aria-pressed',c===b));});
   $('#close').onclick=closeSheet;openSh();$('#tGo').onclick=async()=>{try{await api('crm_touch',{phone:x.phone,kind,why:x.why||'',note:$('#tn').value});toast('<b>Отмечено</b>'+esc(x.name||fmtPhone(x.phone)));closeSheet();after&&after();}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));}};}
 function openSh(){const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
-async function openCrm(phone){let j=null,H=null;
-  if(phone){try{[j,H]=await Promise.all([api('crm_card',null,{phone}),api('clients',null,{q:phone})]);}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}}
+async function openCrm(phone){let j=null;
+  if(phone){try{j=await api('crm_card',null,{phone});}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}}
   const x=(j&&j.client)||{phone:phone||'',name:'',phone2:'',bday:'',note:'',src:'',tags:'',consent:0,seg:[],m_n:0,m_sum:0,s_n:0,s_sum:0,s_prof:0,h_n:0,h_now:0,h_sum:0,rev:0,prof:0,cars:[]};
   let cars=j&&j.cars&&j.cars.length?j.cars.map(c=>({...c})):(x.cars||[]).map(c=>({car:c.car,plate:c.plate,year:'',size:'',note:''}));if(!cars.length)cars=[{car:'',plate:'',year:'',size:'',note:''}];
   const offers=(j&&j.offer)||[];
-  const hist=[];if(H){(H.orders||[]).filter(o=>phoneKey(o.phone)===phone||!o.phone).forEach(o=>hist.push([o.day,'Шиномонтаж',(o.model||o.plate?[o.model,o.plate].filter(Boolean).join(' ')+': ':'')+o.works+(o.d?' (R'+o.d+')':''),o.list]));
-    (H.buys||[]).forEach(b=>hist.push([b.day,b.type==='ret'?'Возврат':'Покупка'+(b.arch?' (CloudShop)':''),b.items,b.type==='ret'?-Math.abs(b.sum):b.sum]));(H.zak||[]).forEach(z=>hist.push([z.day,'Заказ',z.items+' — '+(ZST[z.status]||z.status),z.total]));
-    (H.stor||[]).forEach(s=>hist.push([s.day,'Хранение',storLine(s)+(s.status==='issued'?' — выдано '+fmtDay(s.issued):' — на хранении'),s.paid||0]));(H.bookings||[]).filter(b=>b.status==='planned').forEach(b=>hist.push([b.day,'Запись',(b.time||'')+' '+(b.works||b.note||''),b.est||0]));}
-  ((j&&j.org_buys)||[]).forEach(b=>hist.push([b.day,(b.type==='mont'?'Шиномонтаж по счёту':b.type==='ret'?'Возврат':'Покупка')+' на '+b.org+(b.arch?' (CloudShop)':''),b.items,b.type==='ret'?-Math.abs(b.sum):b.sum]));
-  hist.sort((a,b)=>a[0]<b[0]?1:-1);
   const carRow=(c,i)=>`<div class="carrow" data-car="${i}"><input class="inp" data-f="car" value="${esc(c.car||'')}" placeholder="Марка, модель" autocomplete="off"><input class="inp" data-f="plate" value="${esc(c.plate||'')}" placeholder="Госномер" autocomplete="off" style="text-transform:uppercase"><input class="inp" data-f="size" value="${esc(c.size||'')}" placeholder="Шины: 205/55 R16" autocomplete="off"><input class="inp" data-f="year" value="${esc(c.year||'')}" placeholder="Год" inputmode="numeric" autocomplete="off"><button type="button" class="out" data-cdel="${i}" aria-label="Убрать машину">×</button></div>`;
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${esc(x.name||(phone?fmtPhone(phone):'Новый клиент'))}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  ${phone?`<div class="row" style="margin:-4px 0 10px;gap:6px">${segBadges(x)}</div><div class="row" style="margin:0 0 12px"><a class="btn ghost" href="${telHref(phone)}">Позвонить</a><a class="btn ghost" href="${waHref(phone)}" target="_blank" rel="noopener">WhatsApp</a><button type="button" class="btn ghost" id="crT">Отметить звонок</button><button type="button" class="btn ghost" id="crZ">+ Заказ</button><button type="button" class="btn ghost" id="crTk">+ Задача</button></div>
+  ${phone?`<div class="row" style="margin:-4px 0 10px;gap:6px">${segBadges(x)}</div><div class="row" style="margin:0 0 12px"><a class="btn ghost" href="${telHref(phone)}">Позвонить</a><a class="btn ghost" href="${waHref(phone)}" target="_blank" rel="noopener">WhatsApp</a><button type="button" class="btn ghost" id="crT">Отметить звонок</button><button type="button" class="btn ghost" id="crZ">+ Заказ</button><button type="button" class="btn ghost" id="crTk">+ Задача</button><button type="button" class="btn ghost" id="crKp">+ КП</button></div>
   <div class="tiles" style="margin:0 0 12px"><div class="tile"><span class="mono">Шиномонтаж</span><b class="tnum">${x.m_n} ${plural(x.m_n,'визит','визита','визитов')}</b><small class="pay">${rub(x.m_sum)}${x.nseas?' · сезонов: '+x.nseas:''}</small></div>
     <div class="tile"><span class="mono">Магазин</span><b class="tnum">${x.s_n} ${plural(x.s_n,'покупка','покупки','покупок')}</b><small class="pay">${rub(x.s_sum)} · наценка ${rub(x.s_prof)}${x.s_org?' · на организацию: '+x.s_org:''}</small></div>
     <div class="tile"><span class="mono">Хранение</span><b class="tnum">${x.h_now?x.h_now+' сейчас':x.h_n?x.h_n+' раз':'нет'}</b><small class="pay">${x.h_sum?rub(x.h_sum):''}${x.h_due?' · до '+fmtDay(x.h_due):''}</small></div>
@@ -2461,8 +2469,7 @@ async function openCrm(phone){let j=null,H=null;
     <div style="grid-column:1/-1"><span class="mono lbl">Машины</span><div id="crCars">${cars.map(carRow).join('')}</div><button type="button" class="out" id="crAddCar" style="margin-top:6px">+ Ещё машина</button></div>
     <div style="grid-column:1/-1" class="row"><button class="btn" type="button" id="crSave">Сохранить</button><p class="err" id="crErr" hidden></p></div>
   </div>
-  ${j&&j.touches&&j.touches.length?`<h3 class="sec" style="font-size:1rem;margin-top:14px">Касания</h3><div class="tw"><table class="sttab"><tbody>${j.touches.map(t=>`<tr><td class="tnum">${fmtDay(t.day)}</td><td>${{call:'Звонок',msg:'Сообщение',visit:'Приехал',no:'Не дозвонились'}[t.kind]||t.kind}${t.why&&WHY[t.why]?' · '+esc(WHY[t.why][0]):''}</td><td class="nm">${esc(t.note)}</td><td><button type="button" class="out" data-tdel="${t.id}" aria-label="Удалить">×</button></td></tr>`).join('')}</tbody></table></div>`:''}
-  ${hist.length?`<h3 class="sec" style="font-size:1rem;margin-top:14px">История</h3><div class="tw"><table class="sttab"><tbody>${hist.slice(0,80).map(h=>`<tr><td class="tnum">${fmtDay(h[0])}</td><td>${esc(h[1])}</td><td class="nm">${esc(h[2]||'')}</td><td class="tnum" style="text-align:right">${h[3]?rub(h[3]):''}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+  ${phone?`<div id="tlBox"></div>`:''}`;
   $('#close').onclick=closeSheet;openSh();
   let orgs=((j&&j.orgs)||[]).map(o=>typeof o==='string'?{org:o,role:'owner'}:{...o});
   const drawOrgs=()=>{$('#crOrgs').innerHTML=orgs.length?orgs.map((o,i)=>`<span class="orgchip"><button type="button" class="out" data-oop="${i}" style="min-height:0;padding:0;font-weight:700;text-decoration:underline">${esc(o.org)}</button>
@@ -2482,7 +2489,8 @@ async function openCrm(phone){let j=null,H=null;
   const tb=document.getElementById('crT');if(tb)tb.onclick=()=>touchSheet({phone,name:x.name,why:(offers[0]||{}).why||''},()=>openCrm(phone));
   const tkb=document.getElementById('crTk');if(tkb)tkb.onclick=()=>openTask({id:0,title:'',note:'',who:'',due:iso(new Date()),prio:0,phone,status:'open',_name:x.name});
   const zb=document.getElementById('crZ');if(zb)zb.onclick=()=>openZak({id:0,day:iso(new Date()),phone,name:x.name||'',items:'',total:'',prepay:'',supplier:'',promo:'',note:'',status:'wait'});
-  document.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=async()=>{try{await api('crm_touch',{phone,del:+b.dataset.tdel});openCrm(phone);}catch(e){toast('<b>Не удалилось</b>'+esc(e.message));}});}
+  const kb=document.getElementById('crKp');if(kb)kb.onclick=()=>newKp(((orgs.find(o=>o.role==='owner')||orgs[0]||{}).org)||'',x.name||'',phone);
+  if(phone)tlBox($('#tlBox'),{phone},()=>openCrm(phone),phone);}
 /* карточка организации: обезличенная фирма-клиент или фирма нашего клиента (владелец) */
 async function openOrg(okey,name){let j=null;
   if(okey||name){try{j=await api('crm_org',null,okey?{okey}:{name});}catch(e){toast('<b>Не открылось</b>'+esc(e.message));return;}}
@@ -2504,15 +2512,41 @@ async function openOrg(okey,name){let j=null;
     <div style="grid-column:1/-1"><span class="mono lbl">Люди организации — владелец (наш клиент) или представители</span><div id="ogP">${(people.length?people:[{phone:'',name:'',role:'contact'}]).map(pRow).join('')}</div><button type="button" class="out" id="ogAdd" style="margin-top:6px">+ Человек</button></div>
     <p class="note" style="grid-column:1/-1;margin:0">Владелец — покупки фирмы считаются его покупками (одна карточка). Представитель — водитель или менеджер: приезжает от фирмы, деньги остаются на фирме.</p>
     <div style="grid-column:1/-1" class="row"><button class="btn" type="button" id="ogSave">Сохранить</button><p class="err" id="ogErr" hidden></p></div></div>
-  ${o.hist&&o.hist.length?`<h3 class="sec" style="font-size:1rem;margin-top:14px">История организации</h3><div class="tw"><table class="sttab"><tbody>${o.hist.slice(0,80).map(h=>`<tr><td class="tnum">${fmtDay(h.day)}</td><td>${h.type==='mont'?'Шиномонтаж по счёту':h.type==='ret'?'Возврат':'Покупка'}${h.arch?' (CloudShop)':''}</td><td class="nm">${esc(h.items||'')}${h.phone?` <span class="pay">· ${esc(fmtPhone(h.phone))}</span>`:''}</td><td class="tnum" style="text-align:right">${rub(h.type==='ret'?-Math.abs(h.sum):h.sum)}</td></tr>`).join('')}</tbody></table></div>`:''}`;
+  ${o.okey?`<div class="row" style="margin:12px 0 0"><button type="button" class="btn ghost" id="ogKp">+ КП для организации</button></div><div id="tlBox"></div>`:''}`;
   $('#close').onclick=closeSheet;openSh();
   const read=()=>[...document.querySelectorAll('#ogP .carrow')].map(r=>{const v={};r.querySelectorAll('[data-f]').forEach(i=>v[i.dataset.f]=i.value);return v;});
   const bind=()=>document.querySelectorAll('#ogP [data-pdel]').forEach(b=>b.onclick=()=>{people=read();people.splice(+b.dataset.pdel,1);$('#ogP').innerHTML=(people.length?people:[{phone:'',name:'',role:'contact'}]).map(pRow).join('');bind();});bind();
   $('#ogAdd').onclick=()=>{people=read();people.push({phone:'',name:'',role:'contact'});$('#ogP').innerHTML=people.map(pRow).join('');bind();};
   document.querySelectorAll('[data-own]').forEach(b=>b.onclick=()=>openCrm(b.dataset.own));
+  if(o.okey){const ow=o.owner||(o.people||[])[0]||{};$('#ogKp').onclick=()=>newKp(o.name,ow.name||'',ow.phone||'');tlBox($('#tlBox'),{okey:o.okey},()=>openOrg(o.okey),'');}
   $('#ogSave').onclick=async()=>{const er=$('#ogErr');er.hidden=true;const P=read().filter(p=>p.phone.trim());if(P.some(p=>!phoneKey(p.phone))){er.textContent='Телефон неполный — нужно 10 цифр после +7.';er.hidden=false;return;}
     if(P.filter(p=>p.role==='owner').length>1){er.textContent='Владелец у организации один.';er.hidden=false;return;}
     try{const r=await api('org_save',{okey:o.okey,name:$('#og_name').value,inn:$('#og_inn').value,note:$('#og_note').value,people:P});toast('<b>Организация сохранена</b>'+esc($('#og_name').value));if(S.view==='crm')loadCrm();openOrg(r.okey);}catch(e){er.textContent=e.message;er.hidden=false;}};}
+/* вся история клиента одной лентой: шиномонтаж, записи, магазин, заказы, хранение, задачи, звонки, КП — каждая строка открывает свой документ */
+const TLG=[['all','Всё'],['mont','Шиномонтаж',['mont','book']],['shop','Магазин',['shop']],['store','Хранение',['store']],['zak','Заказы',['zak']],['task','Задачи',['task']],['touch','Звонки',['touch']],['kp','КП',['kp']]];
+function newKp(org,person,phone){closeSheet();const q=new URLSearchParams();if(org)q.set('org',org);if(person)q.set('person',person);if(phone)q.set('phone',fmtPhone(phone));setArea('k');openFrame('k','index.php?'+q.toString());}
+async function tlBox(el,q,reopen,phone){if(!el)return;el.innerHTML='<h3 class="sec" style="font-size:1rem;margin-top:14px">История</h3><p class="note">Собираю историю…</p>';
+  let R;try{R=(await api('crm_timeline',null,q)).rows;}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
+  let f='all',lim=60;const cnt=g=>g[2]?R.filter(r=>g[2].includes(r.kind)).length:R.length;
+  const draw=()=>{const G=TLG.find(g=>g[0]===f),L=G[2]?R.filter(r=>G[2].includes(r.kind)):R;
+    el.innerHTML=`<h3 class="sec" style="font-size:1rem;margin-top:14px">История — всё общение с клиентом</h3>
+    <div class="row tlchips" style="gap:6px;margin:0 0 8px">${TLG.filter(g=>g[0]==='all'||cnt(g)).map(g=>`<button type="button" class="fchip" data-tf="${g[0]}" aria-pressed="${g[0]===f}">${g[1]} <span class="tnum">${cnt(g)}</span></button>`).join('')}</div>
+    ${L.length?`<div class="tl">${L.slice(0,lim).map((r,i)=>`<div class="tlrow${r.warn?' warn':''}"><span class="tnum tld">${fmtDay(r.day)}</span><span class="tli k-${r.kind}" aria-hidden="true"></span>
+      <div class="tlb">${r.ref&&!r.ref.touch?`<button type="button" class="tlt" data-ti="${R.indexOf(r)}">${esc(r.title)}</button>`:`<b class="tlt0">${esc(r.title)}</b>`}${r.status?` <span class="tlst">${esc(r.status)}</span>`:''}${r.detail?`<div class="pay">${esc(r.detail)}</div>`:''}</div>
+      <span class="tnum tls">${r.sum?rub(r.sum):''}${r.ref&&r.ref.touch?`<button type="button" class="out" data-tdel="${r.ref.touch}" aria-label="Удалить отметку">×</button>`:''}</span></div>`).join('')}</div>
+      ${L.length>lim?`<button type="button" class="out" id="tlMore" style="margin-top:6px">Показать ещё ${L.length-lim}</button>`:''}`:'<p class="note">Пока ничего нет.</p>'}`;
+    el.querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{f=b.dataset.tf;lim=60;draw();});
+    const m=el.querySelector('#tlMore');if(m)m.onclick=()=>{lim+=100;draw();};
+    el.querySelectorAll('[data-ti]').forEach(b=>b.onclick=()=>tlOpen(R[+b.dataset.ti]));
+    el.querySelectorAll('[data-tdel]').forEach(b=>b.onclick=async()=>{try{await api('crm_touch',{phone,del:+b.dataset.tdel});reopen();}catch(e){toast('<b>Не удалилось</b>'+esc(e.message));}});};
+  draw();}
+function tlOpen(r){const x=r.ref||{};
+  if(r.kind==='mont'){setArea('m');openOrder(x);}
+  else if(x.doc){setArea('s');openDoc(x.doc);}
+  else if(x.zak){setArea('z');openZak(x.zak);}
+  else if(x.task){setArea('t');openTask(x.task);}
+  else if(x.hotel){closeSheet();openHotel('item.php?id='+x.hotel);}
+  else if(x.kp){closeSheet();setArea('k');openFrame('k','index.php?id='+encodeURIComponent(x.kp));}}
 /* подсказки «что предложить» в карточке */
 function crmTips(x,offers){const t=[];
   if(x.inv_n)t.push(`<b>Не оплачено по счетам: ${rub(x.inv_due)}.</b> ${(x.inv_list||[]).slice(0,4).map(i=>(i.no?'№ '+esc(i.no)+' ':'без № ')+'от '+fmtDay(i.day)+(i.org?' — '+esc(i.org):'')).join('; ')}`);

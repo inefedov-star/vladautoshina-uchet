@@ -131,7 +131,12 @@ if ($novoe) {
         'faksimile' => $PO_UMOLCHANIYU['faksimile'],
         'itog' => isset($PO_UMOLCHANIYU['itog']) ? $PO_UMOLCHANIYU['itog'] : true,
         'usloviya' => $PO_UMOLCHANIYU['usloviya'],
-        'client' => array('org' => '', 'person' => '', 'phone' => '', 'email' => ''),
+        // из пульта (карточка клиента → «+ КП») приходят организация, имя и телефон
+        'client' => array(
+            'org' => isset($_GET['org']) ? mb_substr(trim(strip_tags((string)$_GET['org'])), 0, 200) : '',
+            'person' => isset($_GET['person']) ? mb_substr(trim(strip_tags((string)$_GET['person'])), 0, 120) : '',
+            'phone' => isset($_GET['phone']) ? preg_replace('/[^0-9+() -]/', '', (string)$_GET['phone']) : '',
+            'email' => ''),
         'predmet' => '', 'comment' => '',
         'items' => array(), 'services' => array(),
     );
