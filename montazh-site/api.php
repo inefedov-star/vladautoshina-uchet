@@ -98,6 +98,9 @@ function db(array $cfg): PDO {
   // продажа, оформленная продавцом на витрине: кто оформил и что ждёт подтверждения собственника
   if (!in_array('seller', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN seller TEXT NOT NULL DEFAULT ''");
   if (!in_array('req', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN req INTEGER NOT NULL DEFAULT 0");
+  // резерв (черновик продажи, товар закреплён до даты) и счёт/УПД из Эльбы у продажи организации
+  foreach (['res_until' => "TEXT NOT NULL DEFAULT ''", 'inv_no' => "TEXT NOT NULL DEFAULT ''", 'upd_no' => "TEXT NOT NULL DEFAULT ''", 'inv_paid' => "TEXT NOT NULL DEFAULT ''"] as $c9 => $t9) if (!in_array($c9, $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN $c9 $t9");
+  $pdo->exec('CREATE TABLE IF NOT EXISTS pwcache (k TEXT PRIMARY KEY, ts INTEGER NOT NULL, body TEXT NOT NULL)');
   $mcols = array_column($pdo->query('PRAGMA table_info(moves)')->fetchAll(), 'name');
   // цена по прайсу на момент продажи — чтобы видеть скидку
   if (!in_array('list', $mcols, true)) $pdo->exec("ALTER TABLE moves ADD COLUMN list REAL");
@@ -274,6 +277,34 @@ function stockMap(array $cfg, string $wh = 'shop'): array {
   $st->execute([$wh]); $out = [];
   foreach ($st->fetchAll() as $r) $out[(int)$r['pid']] = ['q' => (float)$r['q'], 'c' => (float)$r['c']];
   return $out;
+}
+// сколько штук в резерве: черновики продаж с действующим сроком резерва
+function reservedMap(array $cfg): array { $o = [];
+  $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(ABS(m.qty)) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.type = 'sale' AND d.status = 'draft' AND d.res_until != '' AND d.res_until >= ? GROUP BY m.product_id");
+  $st->execute([date('Y-m-d')]); foreach ($st->fetchAll() as $r) $o[(int)$r['pid']] = (float)$r['q']; return $o; }
+// «2055516», «205/55R16», «205 55 16» → отдельные слова для поиска
+function sizeToks(string $q): string { return preg_replace_callback('/(?<!\d)(\d{3})[\/\s-]?(\d{2})[\/\s-]?[RР]?(\d{2})(?!\d)/u', fn($m) => " $m[1] $m[2] R$m[3] ", $q); }
+// розничная цена товара Пауэра: «интернет-цена» из кабинета, но не меньше закупки + 20 %, округление вверх до десятков
+function pwRetail(float $buy, float $inet, array $cfg): int { $min = $buy * (1 + (float)($cfg['pw_markup'] ?? 20) / 100); return (int)(ceil(max($inet, $min) / 10) * 10); }
+// разбор ответа GetFindTyre: товары с ценами и остатками по складам (названия полей — как в API 4tochki, с запасом на варианты)
+function pwItems($x, array &$out, int $depth = 0): void {
+  if ($depth > 9 || count($out) > 600) return; if (is_object($x)) $x = get_object_vars($x); if (!is_array($x)) return;
+  $lk = array_change_key_case($x, CASE_LOWER);
+  if (isset($lk['code']) && (isset($lk['whpr']) || isset($lk['name']))) {
+    $wh = []; $walk = function ($y) use (&$walk, &$wh) { if (is_object($y)) $y = get_object_vars($y); if (!is_array($y)) return; $l = array_change_key_case($y, CASE_LOWER);
+      if (isset($l['rest']) && (isset($l['price']) || isset($l['price_rozn']))) { $wh[] = ['wrh' => (string)($l['wrh'] ?? $l['wh'] ?? ''), 'rest' => (int)$l['rest'], 'buy' => (float)($l['price'] ?? 0), 'inet' => (float)($l['price_rozn'] ?? 0)]; return; }
+      foreach ($y as $v) if (is_array($v) || is_object($v)) $walk($v); };
+    $walk($lk['whpr'] ?? []);
+    $img = ''; foreach (['img_big_my', 'img_big_pish', 'img_small'] as $f) if (!empty($lk[$f]) && is_string($lk[$f])) { $img = $lk[$f]; break; } if (strpos($img, '//') === 0) $img = 'https:' . $img;
+    $out[] = ['code' => (string)$lk['code'], 'name' => (string)($lk['name'] ?? ''), 'brand' => (string)($lk['marka'] ?? $lk['brand'] ?? ''), 'model' => (string)($lk['model'] ?? ''), 'season' => (string)($lk['season'] ?? ''), 'thorn' => !empty($lk['thorn']) && $lk['thorn'] !== 'false', 'img' => $img, 'wh' => $wh];
+    return; }
+  foreach ($x as $v) if (is_array($v) || is_object($v)) pwItems($v, $out, $depth + 1);
+}
+// сроки доставки по складам из того же ответа (warehouseLogistics): склад → дней
+function pwDays($x, array &$out, int $depth = 0): void {
+  if ($depth > 9) return; if (is_object($x)) $x = get_object_vars($x); if (!is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER);
+  if ((isset($l['whid']) || isset($l['wrh'])) && (isset($l['logistdays']) || isset($l['days']))) { $out[(string)($l['whid'] ?? $l['wrh'])] = ['days' => (int)($l['logistdays'] ?? $l['days']), 'name' => (string)($l['description'] ?? $l['name'] ?? '')]; return; }
+  foreach ($x as $v) if (is_array($v) || is_object($v)) pwDays($v, $out, $depth + 1);
 }
 function docLabel(string $t): string { return ['open' => 'Ввод остатков', 'in' => 'Приход', 'iss' => 'Выдача с ответхранения', 'sale' => 'Продажа', 'ret' => 'Возврат', 'off' => 'Списание', 'inv' => 'Корректировка остатков', 'rin' => 'Возврат поставщику'][$t] ?? $t; }
 // последняя закупочная цена по товарам (для подсказки в приходе и как запасная себестоимость)
@@ -1191,6 +1222,7 @@ try {
     foreach ($P as $x) if (empty($x['ok'])) $noCheck[] = ['day' => $x['day'], 'sum' => $x['sum'], 'what' => $x['what'], 'pay' => $x['pay'], 'ref' => $x['ref']];
     // счета организаций: оплата из выписки ↔ счёт в пульте (шиномонтаж по счёту)
     $byNo = []; foreach ($p->query("SELECT id, day, body FROM orders WHERE body LIKE '%invoice%'")->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; if (($b['pay'] ?? '') !== 'invoice') continue; $no = ltrim(preg_replace('/\D/', '', (string)($b['invNo'] ?? '')), '0'); if ($no !== '') $byNo[$no][] = ['id' => (int)$r['id'], 'day' => $r['day'], 'sum' => (float)($b['paid'] ?? 0), 'org' => (string)($b['org'] ?? ''), 'paid' => (string)($b['invPaid'] ?? '')]; }
+    foreach ($p->query("SELECT d.id, d.day, d.partner, d.inv_no, d.inv_paid, SUM(ABS(m.qty) * IFNULL(m.price, 0)) s FROM docs d JOIN moves m ON m.doc_id = d.id WHERE d.type = 'sale' AND d.status = 'posted' AND d.inv_no != '' GROUP BY d.id")->fetchAll() as $r) { $no = ltrim(preg_replace('/\D/', '', $r['inv_no']), '0'); if ($no !== '') $byNo[$no][] = ['id' => 0, 'doc' => (int)$r['id'], 'day' => $r['day'], 'sum' => round((float)$r['s'], 2), 'org' => (string)$r['partner'], 'paid' => (string)$r['inv_paid']]; }
     $invRows = []; foreach ($INV as $r) { $c = $byNo[ltrim($r['inv_no'], '0')] ?? []; $tot = array_sum(array_column($c, 'sum')); $un = array_values(array_filter($c, fn($x) => $x['paid'] === ''));
       $stt = !$c ? 'none' : (!$un ? 'done' : (abs($tot - (float)$r['amount']) < 0.01 ? 'match' : 'diff'));
       $invRows[] = ['k' => $r['k'], 'day' => $r['day'], 'amount' => (float)$r['amount'], 'payer' => $r['payer'], 'inv_no' => $r['inv_no'], 'purpose' => $r['purpose'], 'st' => $stt, 'pult_sum' => $tot, 'orders' => array_column($c, 'id')]; }
@@ -1205,7 +1237,89 @@ try {
     $no = ltrim($r['inv_no'], '0'); $n = 0;
     foreach ($p->query("SELECT id, body FROM orders WHERE body LIKE '%invoice%'")->fetchAll() as $o) { $x = json_decode($o['body'], true) ?: []; if (($x['pay'] ?? '') !== 'invoice' || ($x['invPaid'] ?? '') !== '' || ltrim(preg_replace('/\D/', '', (string)($x['invNo'] ?? '')), '0') !== $no) continue;
       $x['invPaid'] = $r['day']; $x['paidOk'] = true; $x['paidAt'] = $x['paidAt'] ?? time(); $p->prepare('UPDATE orders SET body = ? WHERE id = ?')->execute([json_encode($x, JSON_UNESCAPED_UNICODE), (int)$o['id']]); $n++; }
+    foreach ($p->query("SELECT id, inv_no FROM docs WHERE type = 'sale' AND status = 'posted' AND inv_no != '' AND inv_paid = ''")->fetchAll() as $o) if (ltrim(preg_replace('/\D/', '', $o['inv_no']), '0') === $no) { $p->prepare('UPDATE docs SET inv_paid = ? WHERE id = ?')->execute([$r['day'], (int)$o['id']]); $n++; }
     logit($cfg, $role, 'sv_inv_apply', 'счёт ' . $r['inv_no'] . ': ' . $n); out(['ok' => true, 'n' => $n]);
+
+  case 'doc_reserve':
+    // резерв: черновик продажи закрепляет товар за клиентом на срок (по умолчанию 5 дней); days = 0 — снять резерв
+    post(); needRole($role, ['owner', 'cashier']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $days = max(0, min(60, (int)($b['days'] ?? 5))); $p = db($cfg);
+    $st = $p->prepare('SELECT type, status FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404);
+    if ($d['type'] !== 'sale' || $d['status'] !== 'draft') fail('В резерв ставится только непроведённая продажа');
+    $until = $days ? date('Y-m-d', strtotime("+$days days")) : ''; $p->prepare('UPDATE docs SET res_until = ? WHERE id = ?')->execute([$until, $id]);
+    logit($cfg, $role, 'doc_reserve', $id . ' ' . ($until ?: 'снят')); out(['ok' => true, 'until' => $until]);
+
+  case 'reserves':
+    // действующие и истёкшие резервы
+    needRole($role, ['owner', 'cashier']);
+    $rows = db($cfg)->query("SELECT d.id, d.day, d.partner, d.phone, d.res_until, d.note, SUM(ABS(m.qty)) qty, SUM(ABS(m.qty) * IFNULL(m.price, 0)) sum, GROUP_CONCAT(pr.name || ' ×' || CAST(ABS(m.qty) AS INTEGER), '; ') items FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products pr ON pr.id = m.product_id WHERE d.type = 'sale' AND d.status = 'draft' AND d.res_until != '' GROUP BY d.id ORDER BY d.res_until")->fetchAll();
+    out(['today' => date('Y-m-d'), 'rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'day' => $r['day'], 'partner' => $r['partner'], 'phone' => $r['phone'], 'until' => $r['res_until'], 'note' => $r['note'], 'qty' => (float)$r['qty'], 'sum' => round((float)$r['sum']), 'items' => $r['items']], $rows)]);
+
+  case 'doc_meta':
+    // счёт и УПД из Эльбы у продажи организации: номера и дата оплаты (можно и у проведённой — это пометки, остатки не меняются)
+    post(); needRole($role, ['owner']);
+    $b = body(); $id = (int)($b['id'] ?? 0); $p = db($cfg); $st = $p->prepare("SELECT id FROM docs WHERE id = ? AND type = 'sale'"); $st->execute([$id]); if (!$st->fetchColumn()) fail('Продажа не найдена', 404);
+    $paid = (string)($b['inv_paid'] ?? ''); if ($paid !== '' && !isDay($paid)) fail('Неверная дата оплаты');
+    $p->prepare('UPDATE docs SET inv_no = ?, upd_no = ?, inv_paid = ? WHERE id = ?')->execute([mb_substr(trim((string)($b['inv_no'] ?? '')), 0, 40), mb_substr(trim((string)($b['upd_no'] ?? '')), 0, 40), $paid, $id]);
+    logit($cfg, $role, 'doc_meta', (string)$id); out(['ok' => true]);
+
+  case 'pw_find':
+    // «на заказ»: что в этом размере есть на складах Пауэра с доставкой. Закупочная цена — только собственнику
+    needRole($role, ['owner', 'seller', 'cashier', 'master']);
+    $w = (int)($_GET['w'] ?? 0); $pr = (float)($_GET['p'] ?? 0); $d = (float)($_GET['d'] ?? 0); if ($w < 100 || $d < 10) fail('Укажите размер полностью: ширина, профиль и диаметр');
+    $season = (string)($_GET['s'] ?? ''); $key = "$w/$pr/$d"; $p = db($cfg); $owner = $role === 'owner';
+    $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$key]); $hit = $c->fetch(); $raw = null;
+    if ($hit && time() - (int)$hit['ts'] < 900 && ($_GET['fresh'] ?? '') !== '1') $raw = json_decode($hit['body'], true);
+    if ($raw === null) {
+      $cl = api4t($cfg); $items = []; $days = []; $err = null;
+      for ($page = 0; $page < 4; $page++) {
+        try { $r = $cl->GetFindTyre(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => ['width' => (float)$w, 'height' => $pr, 'diameter' => $d], 'page' => $page, 'pageSize' => 50]); }
+        catch (Throwable $e) { $err = $e->getMessage(); break; }
+        $n0 = count($items); pwItems($r, $items); pwDays($r, $days); if (count($items) - $n0 < 50) break; }
+      if ($err !== null && !$items) fail('Пауэр не ответил: ' . mb_substr($err, 0, 200), 502);
+      $raw = ['items' => $items, 'days' => $days]; $p->prepare('INSERT OR REPLACE INTO pwcache (k, ts, body) VALUES (?,?,?)')->execute([$key, time(), json_encode($raw, JSON_UNESCAPED_UNICODE)]);
+    }
+    $allow = array_map('strval', (array)($cfg['pw_wrh'] ?? [])); $skip = array_map('strval', (array)($cfg['pw_wrh_skip'] ?? [])); $out2 = []; $whSeen = [];
+    foreach ($raw['items'] as $it) { $best = null; $rest = 0; $minDays = null;
+      foreach ($it['wh'] as $x) { $id = (string)$x['wrh']; $whSeen[$id] = ($raw['days'][$id]['name'] ?? '') . (isset($raw['days'][$id]) ? ' · ' . $raw['days'][$id]['days'] . ' д.' : '');
+        if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true)) continue; if (!$allow && preg_match('/^\s*ОХ\b/u', (string)($raw['days'][$id]['name'] ?? ''))) continue; // наше ответхранение — это уже наш склад, не «на заказ» if (!$allow && !isset($raw['days'][$id])) continue; // без списка складов берём только те, по которым Пауэр даёт срок доставки
+        $rest += $x['rest']; $dd = $raw['days'][$id]['days'] ?? null; if ($dd !== null && ($minDays === null || $dd < $minDays)) $minDays = $dd;
+        if ($best === null || $x['buy'] < $best['buy']) $best = $x; }
+      if ($best === null || $rest <= 0) continue; $se = mb_strtolower($it['season']); $win = mb_strpos($se, 'w') === 0 || mb_strpos($se, 'зим') !== false; $sum = mb_strpos($se, 's') === 0 || mb_strpos($se, 'лет') !== false;
+      if ($season === 'winter' && !$win) continue; if ($season === 'summer' && !$sum) continue; if ($season === 'stud' && !($win && $it['thorn'])) continue; if ($season === 'fric' && !($win && !$it['thorn'])) continue;
+      $row = ['code' => $it['code'], 'name' => $it['name'], 'brand' => $it['brand'], 'model' => $it['model'], 'season' => $win ? 'winter' : ($sum ? 'summer' : 'all'), 'stud' => (bool)$it['thorn'], 'img' => $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
+      if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
+      $out2[] = $row; }
+    usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
+    out(['size' => "$w/" . rtrim(rtrim((string)$pr, '0'), '.') . ' R' . rtrim(rtrim((string)$d, '0'), '.'), 'rows' => array_slice($out2, 0, 120), 'found' => count($raw['items'])] + ($owner ? ['warehouses' => $whSeen, 'cached' => $hit && $raw !== null] : []));
+
+  case 'rep_cuts':
+    // продажи в разрезах: сезон и шипы, бренды, диаметры, аккумуляторы — период против того же периода год назад, остаток и прогноз на 4 недели
+    needRole($role, ['owner']);
+    $to = isDay($_GET['to'] ?? '') ? $_GET['to'] : date('Y-m-d'); $from = isDay($_GET['from'] ?? '') ? $_GET['from'] : date('Y-m-d', strtotime($to . ' -27 days'));
+    $pf = date('Y-m-d', strtotime($from . ' -1 year')); $pt = date('Y-m-d', strtotime($to . ' -1 year')); $nf = date('Y-m-d', strtotime($pt . ' +1 day')); $nt = date('Y-m-d', strtotime($pt . ' +28 days'));
+    $p = db($cfg); $P = []; foreach ($p->query("SELECT id, kind, attrs, name FROM products")->fetchAll() as $r) $P[(int)$r['id']] = [$r['kind'], json_decode($r['attrs'], true) ?: [], $r['name']];
+    $G = []; $add = function (string $dim, string $key, string $per, float $q, float $rev, float $cost) use (&$G) { if ($key === '') return; if (!isset($G[$dim][$key])) $G[$dim][$key] = ['k' => $key, 'q' => 0, 'rev' => 0, 'prof' => 0, 'pq' => 0, 'prev' => 0, 'nq' => 0, 'stock' => 0];
+      if ($per === 'cur') { $G[$dim][$key]['q'] += $q; $G[$dim][$key]['rev'] += $rev; $G[$dim][$key]['prof'] += $rev - $cost; } elseif ($per === 'prev') { $G[$dim][$key]['pq'] += $q; $G[$dim][$key]['prev'] += $rev; } elseif ($per === 'next') $G[$dim][$key]['nq'] += $q; else $G[$dim][$key]['stock'] += $q; };
+    $SE = ['winter' => 'Зима', 'summer' => 'Лето', 'all' => 'Всесезон'];
+    $dims = function (int $pid) use ($P, $SE): array { if (!isset($P[$pid])) return []; [$k, $a, $n] = $P[$pid]; $o = [];
+      if ($k === 'tire') { $s = $a['season'] ?? 'all'; $o['season'] = $s === 'winter' ? (!empty($a['stud']) ? 'Зима, шипы' : 'Зима, липучка') : ($SE[$s] ?? 'Всесезон'); $o['brand'] = (string)($a['brand'] ?? ''); if (!empty($a['d'])) $o['diam'] = 'R' . (int)$a['d']; if (!empty($a['w'])) $o['size'] = $a['w'] . '/' . $a['p'] . ' R' . (int)$a['d'] . ($s === 'winter' ? ' зима' : ($s === 'summer' ? ' лето' : '')); }
+      elseif ($k === 'akb') { $ah = (int)($a['ah'] ?? 0); if ($ah > 0) $o['akb'] = ($ah <= 30 ? 'Мото до 30' : ($ah < 55 ? '40–50' : ($ah < 63 ? '55–62' : ($ah < 72 ? '65–70' : ($ah < 82 ? '74–80' : ($ah < 110 ? '85–105' : '110 и больше')))))) . ' а/ч'; [$b] = akbModel($n, $a); if ($b !== '') $o['akbb'] = mb_convert_case($b, MB_CASE_TITLE); if ($ah > 0) $o['akbp'] = $ah . ' а/ч ' . (($a['std'] ?? '') === 'asia' ? 'Азия ' : '') . (($a['pol'] ?? '') === 'dir' ? 'прямая' : 'обратная'); }
+      $o['kind'] = ['tire' => 'Шины', 'tireo' => 'Шины (груз., спец.)', 'disk' => 'Диски', 'akb' => 'Аккумуляторы', 'fast' => 'Крепёж', 'acc' => 'Аксессуары', 'tube' => 'Камеры', 'tool' => 'Инструмент'][$k] ?? 'Прочее'; return $o; };
+    $feed = function (string $per, string $a, string $b) use ($p, $dims, $add) {
+      $st = $p->prepare("SELECT pid, type, qty, price, cost FROM arch WHERE type IN ('sale','ret') AND pid IS NOT NULL AND day >= ? AND day <= ?"); $st->execute([$a, $b]);
+      foreach ($st->fetchAll() as $r) { $sg = $r['type'] === 'ret' ? -1 : 1; $q = $sg * abs((float)$r['qty']); foreach ($dims((int)$r['pid']) as $d => $k) $add($d, $k, $per, $q, $q * (float)$r['price'], $q * (float)$r['cost']); }
+      $st = $p->prepare("SELECT m.product_id pid, d.type, m.qty, m.price, m.cost FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.day >= ? AND d.day <= ?"); $st->execute([$a, $b]);
+      foreach ($st->fetchAll() as $r) { $sg = $r['type'] === 'ret' ? -1 : 1; $q = $sg * abs((float)$r['qty']); foreach ($dims((int)$r['pid']) as $d => $k) $add($d, $k, $per, $q, $q * (float)$r['price'], $q * (float)$r['cost']); } };
+    $feed('cur', $from, $to); $feed('prev', $pf, $pt); $feed('next', $nf, $nt);
+    $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); foreach ($P as $pid => $_) { $q = max(0, $sm[$pid]['q'] ?? 0) + max(0, $smc[$pid]['q'] ?? 0); if ($q > 0) foreach ($dims($pid) as $d => $k) $add($d, $k, 'stock', $q, 0, 0); }
+    $days = max(1, (strtotime($to) - strtotime($from)) / 86400 + 1); $res = [];
+    foreach ($G as $d => $rows) { $L = array_values($rows);
+      foreach ($L as &$x) { // прогноз на 4 недели: прошлогодние следующие 4 недели × (этот год / прошлый за выбранный период, от 0,5 до 2); без прошлого года — текущий темп
+        $ratio = $x['pq'] > 0 ? max(0.5, min(2.0, $x['q'] / $x['pq'])) : 1; $fc = $x['nq'] > 0 ? $x['nq'] * $ratio : $x['q'] / $days * 28; $x['fc'] = (int)round(max(0, $fc)); $x['need'] = (int)max(0, round($fc - $x['stock']));
+        foreach (['q', 'pq', 'nq', 'stock'] as $f) $x[$f] = (int)round($x[$f]); foreach (['rev', 'prof', 'prev'] as $f) $x[$f] = (int)round($x[$f]); } unset($x);
+      usort($L, fn($a, $b) => $d === 'size' || $d === 'akbp' ? ($b['need'] <=> $a['need']) ?: ($b['q'] <=> $a['q']) : ($b['rev'] <=> $a['rev'])); $res[$d] = array_slice($L, 0, in_array($d, ['size', 'akbp'], true) ? 40 : 30); }
+    out(['from' => $from, 'to' => $to, 'pfrom' => $pf, 'pto' => $pt, 'cuts' => $res ?: new stdClass()]);
 
   case 'pay_stat':
     // чем платили за период: наличные, карта, QR, перевод, счёт организации — шиномонтаж и магазин (основа для сверки с кассой и банком)
@@ -1569,8 +1683,8 @@ try {
     // wh=all — общий каталог: наш склад и ответхранение вместе, ОХ показывается отдельной цифрой
     $wh = in_array($_GET['wh'] ?? 'shop', ['custody', 'all'], true) ? $_GET['wh'] : 'shop';
     $sm = stockMap($cfg, $wh === 'custody' ? 'custody' : 'shop'); $smc = $wh === 'all' ? stockMap($cfg, 'custody') : []; $owner = $role === 'owner';
-    $toks = array_values(array_filter(preg_split('/[\s\/]+/u', str_replace(['*', '×', 'х'], ' ', $q))));
-    $rows = []; $tot = ['n' => 0, 'qty' => 0, 'cost' => 0, 'retail' => 0];
+    $toks = array_values(array_filter(preg_split('/[\s\/]+/u', str_replace(['*', '×', 'х'], ' ', sizeToks($q)))));
+    $rows = []; $tot = ['n' => 0, 'qty' => 0, 'cost' => 0, 'retail' => 0]; $resv = reservedMap($cfg);
     // выбранные кнопки быстрого выбора: {"d":"16","s":"stud",...}
     $F = []; foreach ((array)json_decode((string)($_GET['f'] ?? ''), true) as $k => $v) if ($v !== null && $v !== '') $F[(string)$k] = (string)$v;
     $fAll = []; $fAvail = []; $pmap = photoMap($cfg);
@@ -1589,7 +1703,7 @@ try {
       if ($miss || !$tm) continue;
       $tot['n']++; $tot['qty'] += max(0, $s['q']); $tot['retail'] += max(0, $s['q']) * (float)$p['price']; if ($owner) $tot['cost'] += max(0, $s['c']);
       if ($qc > 0) { $tot['qc'] = ($tot['qc'] ?? 0) + $qc; $tot['retailc'] = ($tot['retailc'] ?? 0) + $qc * (float)$p['price']; }
-      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? photoUrl($pmap, $p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'qc' => $qc, 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'costc' => $owner && $qc > 0 ? round($cc / $qc, 2) : null];
+      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? photoUrl($pmap, $p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'qc' => $qc, 'res' => $resv[(int)$p['id']] ?? 0, 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'costc' => $owner && $qc > 0 ? round($cc / $qc, 2) : null];
     }
     if (!$owner) unset($tot['cost']);
     $facets = []; foreach ($fAll as $k => $vals) { $facets[$k] = []; foreach (array_keys($vals) as $v) $facets[$k][] = [(string)$v, $fAvail[$k][(string)$v] ?? 0]; }
@@ -1652,7 +1766,7 @@ try {
     $type = (string)($_GET['type'] ?? '');
     $sql = "SELECT d.*, COUNT(m.id) n, SUM(ABS(m.qty)) qty, SUM(ABS(m.qty) * m.cost) sum, SUM(ABS(m.qty) * COALESCE(m.price, 0)) rev, SUM(ABS(m.qty) * COALESCE(m.list, m.price, 0)) lst FROM docs d LEFT JOIN moves m ON m.doc_id = d.id WHERE d.day LIKE ?" . ($type !== '' ? ' AND d.type = ?' : '') . " GROUP BY d.id ORDER BY d.day DESC, d.id DESC";
     $st = db($cfg)->prepare($sql); $st->execute($type !== '' ? [$m . '-%', $type] : [$m . '-%']);
-    out(['docs' => array_map(fn($r) => ['id' => (int)$r['id'], 'type' => $r['type'], 'label' => docLabel($r['type']), 'day' => $r['day'], 'num' => $r['num'], 'partner' => $r['partner'], 'wh' => $r['wh'], 'status' => $r['status'], 'n' => (int)$r['n'], 'qty' => (float)$r['qty'], 'sum' => round((float)$r['sum'], 2), 'cost' => round((float)$r['sum'], 2), 'rev' => round((float)$r['rev'], 2), 'list' => round((float)$r['lst'], 2), 'fee' => (float)$r['fee'], 'bonus' => (float)$r['bonus'], 'phone' => $r['phone'], 'pay' => $r['pay'], 'base_id' => $r['base_id'] !== null ? (int)$r['base_id'] : null, 'note' => $r['note']], $st->fetchAll())]);
+    out(['docs' => array_map(fn($r) => ['id' => (int)$r['id'], 'res_until' => (string)($r['res_until'] ?? ''), 'inv_no' => (string)($r['inv_no'] ?? ''), 'upd_no' => (string)($r['upd_no'] ?? ''), 'inv_paid' => (string)($r['inv_paid'] ?? ''), 'type' => $r['type'], 'label' => docLabel($r['type']), 'day' => $r['day'], 'num' => $r['num'], 'partner' => $r['partner'], 'wh' => $r['wh'], 'status' => $r['status'], 'n' => (int)$r['n'], 'qty' => (float)$r['qty'], 'sum' => round((float)$r['sum'], 2), 'cost' => round((float)$r['sum'], 2), 'rev' => round((float)$r['rev'], 2), 'list' => round((float)$r['lst'], 2), 'fee' => (float)$r['fee'], 'bonus' => (float)$r['bonus'], 'phone' => $r['phone'], 'pay' => $r['pay'], 'base_id' => $r['base_id'] !== null ? (int)$r['base_id'] : null, 'note' => $r['note']], $st->fetchAll())]);
 
   case 'doc':
     needRole($role, ['owner']);
@@ -2264,9 +2378,9 @@ try {
   case 'vitrina':
     // для витрины: живое наличие (наш склад + ОХ) и розничные цены. Без себестоимости, поставщиков и закупок
     // наличие = наш склад + ответхранение: товар с ОХ тоже продаём, клиенту разница не важна
-    $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $tires = []; $other = [];
+    $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $tires = []; $other = []; $resv = reservedMap($cfg);
     foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs, price, country FROM products WHERE archived = 0 AND kind != 'svc' AND price > 0")->fetchAll() as $p) {
-      $q = (int)floor(max(0, $sm[(int)$p['id']]['q'] ?? 0) + max(0, $smc[(int)$p['id']]['q'] ?? 0)); if ($q <= 0) continue;
+      $q = (int)floor(max(0, $sm[(int)$p['id']]['q'] ?? 0) + max(0, $smc[(int)$p['id']]['q'] ?? 0) - ($resv[(int)$p['id']] ?? 0)); if ($q <= 0) continue;
       $a = json_decode($p['attrs'], true) ?: []; $id = $p['ext_id'] !== null && $p['ext_id'] !== '' ? (string)$p['ext_id'] : 'p' . $p['id'];
       $n = trim(preg_replace('/\s+/u', ' ', $p['name'])); $pr = (int)round((float)$p['price']);
       if ($p['kind'] === 'tire' && !empty($a['w'])) {

@@ -240,6 +240,7 @@ html.embed[data-theme="dark"] .ph{background:#2C3038;--ink:#0C0D10;--paper:#EDEF
 html.embed[data-theme="dark"] .mst.w{background:rgba(255,194,102,.15);color:#FFC266}html.embed[data-theme="dark"] .mst.ok{background:rgba(126,226,160,.14);color:#7EE2A0}
 @media(max-width:600px){#fs{display:none}.bar .logo i{display:none}}
 .csug{display:flex;flex-direction:column;gap:6px}.csb{display:block;text-align:left;border:1px solid var(--rule);background:var(--paper);border-radius:12px;padding:9px 12px;min-height:46px;font:inherit}.csb small{display:block;color:var(--ink-3);font-size:.8rem}.chint{margin:0;padding:8px 12px;border-radius:10px;background:var(--paper-2);font-size:.86rem;color:var(--ink-2)}
+.pwr{display:grid;grid-template-columns:72px 1fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule)}.pwr img,.pwi{width:72px;height:72px;object-fit:contain;background:#fff;border-radius:10px}.pwt b{display:block}.pwt small,.pwp small{display:block;color:var(--ink-3);font-size:.82rem}.pwp{text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end}.pwp b{font-size:1.25rem}
 </style>
 
 <header class="top">
@@ -263,6 +264,7 @@ html.embed[data-theme="dark"] .mst.w{background:rgba(255,194,102,.15);color:#FFC
   <section class="pickbox" id="pickbox"><div class="pick" id="pick"></div></section>
   <div class="res-hd">
     <h1 id="resTitle"></h1>
+    <button class="tool" type="button" id="pwBtn" hidden style="border-color:var(--signal);color:var(--signal-deep);font-weight:700">Посмотреть на заказ</button>
     <div class="sort" id="sort">
       <button class="tool" type="button" data-sort="price" aria-pressed="true">Сначала дешевле</button>
       <button class="tool" type="button" data-sort="desc" aria-pressed="false">Сначала дороже</button>
@@ -465,7 +467,7 @@ function listHtml(rows,fn){return `<div class="list">${rows.map(o=>{const[a,b]=f
 /* ---------- каркас ---------- */
 const TABS=[['tires','Шины',TIRES.length,TIRES_PICK,tiresOut],['disks','Диски',DISKS.length,DISKS_PICK,disksOut],['akb','Аккумуляторы',AKB.length,AKB_PICK,akbOut],
   ['fast','Крепёж',FAST.length,FAST_PICK,fastOut],['more','Ещё',MORE.length,MORE_PICK,moreOut]];
-function title(t){$('#resTitle').textContent=t||'Нет в наличии';}
+function title(t){$('#resTitle').textContent=t||'Нет в наличии';try{pwBtnUp();}catch(_){}}
 function empty(h,p){return [`<div class="empty"><b>${h}</b>${p}</div>`];}
 function renderTabs(){$('#tabs').innerHTML=TABS.map(([k,n,c])=>`<button class="tab" role="tab" type="button" data-k="${k}" aria-selected="${S.tab===k}">${n}<sup>${c}</sup></button>`).join('');
   $('#tabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{S.tab=b.dataset.k;S.q='';try{history.replaceState(null,'','#'+S.tab);}catch(_){location.hash=S.tab;}renderAll();window.scrollTo({top:0});});}
@@ -475,7 +477,15 @@ function renderOut(){const t=TABS.find(x=>x[0]===S.tab);const [html,bind]=t[4]()
   if(S.tab==='tires')renderPickLite();}
 function renderPickLite(){/* при поиске по шинам доступность фишек меняется — перерисуем без потери фокуса */
   if(document.activeElement&&document.activeElement.id==='q-tires'){renderPick();}}
-function renderAll(){renderTabs();renderPick();renderOut();psum();renderCartBtn();}
+function renderAll(){renderTabs();renderPick();renderOut();psum();renderCartBtn();pwBtnUp();}
+/* «на заказ»: что в выбранном размере есть на складах поставщика с доставкой — для продавца и собственника */
+function pwBtnUp(){const b=document.getElementById('pwBtn');if(!b)return;const f=S.tires,ok=!!SEL&&S.tab==='tires'&&f.d&&f.w&&f.p;b.hidden=!ok;if(ok)b.textContent=`Посмотреть на заказ ${f.w}/${f.p} R${f.d}`;}
+document.getElementById('pwBtn').onclick=async()=>{const f=S.tires;sheet(`<h2 class="model" id="shTitle" style="font-size:1.5rem;margin:0 0 6px">На заказ: ${f.w}/${f.p} R${f.d}</h2><p class="note" id="pwMsg" style="margin-top:0">Смотрю склады поставщика…</p><div id="pwOut"></div>`);
+  try{const j=await papi('pw_find&w='+f.w+'&p='+f.p+'&d='+f.d+(f.s?'&s='+f.s:''));const emb=document.documentElement.classList.contains('embed');
+    document.getElementById('pwMsg').textContent=j.rows.length?`Привезём под заказ: ${j.rows.length} ${plural(j.rows.length,'модель','модели','моделей')}. Срок — дни до нашего магазина.`:'У поставщика в этом размере сейчас ничего нет.';
+    document.getElementById('pwOut').innerHTML=j.rows.map((r,i)=>`<div class="pwr">${r.img?`<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer">`:'<span class="pwi"></span>'}<div class="pwt"><b>${esc(r.brand+' '+r.model||r.name)}</b><small>${esc(r.name)}</small><small>${r.season==='winter'?(r.stud?'зима, шипы':'зима, липучка'):r.season==='summer'?'лето':'всесезон'} · ${r.rest>=20?'20+':r.rest} шт${r.days!=null?' · '+r.days+' '+plural(r.days,'день','дня','дней'):''}</small></div><div class="pwp"><b class="tnum">${rub(r.price)}</b><small>за 4 шт. ${rub(r.price*4)}</small>${emb?`<button type="button" class="tool" data-pwz="${i}">Оформить заказ</button>`:''}</div></div>`).join('');
+    document.querySelectorAll('[data-pwz]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.pwz];try{parent.postMessage({ivanor:'zak',items:`${r.name||r.brand+' '+r.model}, 4 шт`,phone:CCL.phone,name:CCL.name,total:r.price*4,supplier:'Пауэр',note:'код Пауэра '+r.code+(r.days!=null?', доставка '+r.days+' д.':'')},location.origin);}catch(_){}closeSheet();});}
+  catch(e){document.getElementById('pwMsg').textContent='Не получилось: '+e.message;}};
 /* ===== режим продавца: показываем ассортимент и сразу оформляем продажу; собственник подтверждает в пульте ===== */
 var SEL=null,CART=[];try{CART=JSON.parse(localStorage.getItem('ivanor_cart')||'[]')||[];}catch(_){CART=[];}
 const saveCart=()=>{try{localStorage.setItem('ivanor_cart',JSON.stringify(CART));}catch(_){}renderCartBtn();};
