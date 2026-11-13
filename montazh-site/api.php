@@ -1148,6 +1148,8 @@ try {
         $dir = mb_strpos(mb_strtolower((string)($r['dir'] ?? '')), 'кредит') === 0 ? 'in' : 'out'; $t = trim((string)($r['purpose'] ?? '')); $payer = mb_substr(trim((string)($r['payer'] ?? '')), 0, 200);
         $k2 = 'other'; $ref = ''; $fee = 0.0; $inv = ''; $term = '';
         if (preg_match('/терминалам эквайринга от (\d\d)\.(\d\d)\.(\d{4})/u', $t, $m)) { $k2 = $dir === 'in' ? 'acq' : 'acq_fee'; $ref = "$m[3]-$m[2]-$m[1]"; }
+        elseif ($dir === 'in' && $t === '' && strpos((string)($r['corr'] ?? ''), '30233') === 0) { // Сбер: зачисление по терминалу приходит уже без комиссии, назначения в выписке нет
+          $k2 = 'acq'; $ref = $day; $rate = (float)($cfg['sber_acq_rate'] ?? 2.196) / 100; $gross = round($amt / (1 - $rate)); $fee = round($gross - $amt, 2); $t = 'Сбер: зачисление по терминалу (за вычетом комиссии)'; $payer = 'ПАО Сбербанк'; }
         elseif ($dir === 'in' && preg_match('/операциям эквайринга/u', $t)) { $k2 = 'acq'; $ref = $day; if (preg_match('/Комиссия\s+([\d.]+)/u', $t, $m)) $fee = (float)$m[1]; }
         elseif (preg_match('/операции СБП/u', $t)) { if (preg_match('/Терминал\s+([^.]+)/u', $t, $m)) $term = trim($m[1]); $mine = $term === '' || preg_match('/' . preg_quote((string)($cfg['sbp_terminal'] ?? 'Shinnyi'), '/') . '/iu', $term); $k2 = $dir === 'in' ? ($mine ? 'sbp' : 'other') : ($mine ? 'sbp_fee' : 'other'); $ref = $day; }
         elseif ($dir === 'in' && preg_match('/собственных средств|овердрафт|депозит/iu', $t)) $k2 = 'own';

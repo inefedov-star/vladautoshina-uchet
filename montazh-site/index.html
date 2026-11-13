@@ -2197,10 +2197,14 @@ function svParse(wb){const sh=wb.Sheets[wb.SheetNames[0]],A=XLSX.utils.sheet_to_
   if(hi>=0){const H=A[hi].map(norm),c=re=>H.findIndex(h=>re.test(h)),C={acc:c(/^номер сч[её]та/),dir:c(/^тип операции/),day:c(/дата проведения/),doc:c(/номер документа/),amount:c(/сумма в валюте сч[её]та/),purpose:c(/назначение платежа/),payer:c(/наименование плательщика/),inn:c(/инн плательщика/)};
     if(C.dir<0||C.amount<0||C.day<0)throw new Error('Это выписка, но не в формате Т-Банка (Excel). Пришлите файл — добавлю этот банк.');
     return{kind:'bank',rows:A.slice(hi+1).filter(r=>/^(кредит|дебет)/i.test(String(r[C.dir]))).map(r=>({acc:String(r[C.acc]),dir:String(r[C.dir]),day:svDate(r[C.day]),doc:String(r[C.doc]),amount:+r[C.amount]||0,purpose:String(r[C.purpose]),payer:String(r[C.payer]),inn:String(r[C.inn])}))};}
-  throw new Error('Не узнал файл: нужен отчёт «Сверка» из ОФД или выписка Т-Банка в Excel');}
+  hi=A.findIndex(r=>r.some(c=>/сумма по кредиту/.test(norm(c)))&&r.some(c=>/корреспондирующий сч/.test(norm(c))));
+  if(hi>=0){const H=A[hi].map(norm),c=re=>H.findIndex(h=>re.test(h)),C={day:c(/^дата$/),doc:c(/^номер документа$/),corr:c(/корреспондирующий сч/),deb:c(/сумма по дебету/),cre:c(/сумма по кредиту/)};
+    const ar=A.slice(0,hi).find(r=>r.some(x=>norm(x)==='счет'))||[],acc=String(ar.find(x=>/^\d{20}$/.test(String(x).trim()))||'sber');
+    return{kind:'bank',rows:A.slice(hi+1).filter(r=>/^\d\d\.\d\d\.\d{4}$/.test(String(r[C.day]).trim())).map(r=>{const cr=+r[C.cre]||0,db=+r[C.deb]||0;return{acc,dir:cr?'Кредит':'Дебет',day:String(r[C.day]).trim(),doc:String(r[C.doc]),amount:cr||db,purpose:'',payer:'',inn:'',corr:String(r[C.corr]).trim()};})};}
+  throw new Error('Не узнал файл: нужен отчёт «Сверка» из ОФД или выписка Т-Банка либо СберБизнеса в Excel');}
 $('#svUp').onclick=()=>$('#svF').click();
 $('#svF').onchange=async e=>{const F=[...e.target.files];e.target.value='';if(!F.length)return;const msg=[];let lastOfd=null;
-  try{await loadXlsxLib();for(const f of F){toast('<b>Читаю…</b>'+esc(f.name));const P=svParse(XLSX.read(await f.arrayBuffer(),{type:'array'}));if(!P.rows.length){msg.push(`${f.name}: пусто`);continue;}
+  try{await loadXlsxLib();for(const f of F){toast('<b>Читаю…</b>'+esc(f.name));const P=svParse(XLSX.read(await f.arrayBuffer(),{type:'array'}));if(!P.rows.length){msg.push(`${f.name.slice(0,40)}: операций нет`);continue;}
       let n=0,fr='',to='';for(let i=0;i<P.rows.length;i+=1500){const j=await api('sv_upload',{kind:P.kind,rows:P.rows.slice(i,i+1500)});n+=j.n;if(j.from&&(!fr||j.from<fr))fr=j.from;if(j.to>to)to=j.to;}
       msg.push(`${P.kind==='ofd'?'Чеки ОФД':'Выписка банка'}: ${n} ${P.kind==='ofd'?plural(n,'чек','чека','чеков'):plural(n,'операция','операции','операций')}, ${fmtDay(fr)} — ${fmtDay(to)}`);if(P.kind==='ofd')lastOfd=[fr,to];}
     if(lastOfd)[SV.from,SV.to]=lastOfd;toast('<b>Загружено</b>'+msg.map(esc).join('<br>'));loadSv();}
@@ -2209,7 +2213,7 @@ $('#svFrom').onchange=$('#svTo').onchange=()=>{SV.from=$('#svFrom').value;SV.to=
 async function loadSv(){const el=$('#svBody');el.innerHTML='<p class="note">Сверяю…</p>';let j;try{j=await api('sv_report',null,SV.from?{from:SV.from,to:SV.to}:{});}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
   SV.from=j.from;SV.to=j.to;$('#svFrom').value=j.from;$('#svTo').value=j.to;
   $('#svHave').innerHTML=`Загружено: чеки ОФД ${j.ofd.a?fmtDay(j.ofd.a)+' — '+fmtDay(j.ofd.b):'<b>нет</b>'} · банк ${j.bank.a?fmtDay(j.bank.a)+' — '+fmtDay(j.bank.b):'<b>нет</b>'}`;
-  if(!j.ofd.a&&!j.bank.a){el.innerHTML=`<div class="note"><b>Как сверить.</b> 1) В личном кабинете ОФД скачайте отчёт «Сверка» за период (Excel). 2) В Т-Банке скачайте выписку по счёту за тот же период (Excel). 3) Нажмите «Загрузить файлы» и выберите оба сразу. Повторная загрузка ничего не задвоит.</div>`;return;}
+  if(!j.ofd.a&&!j.bank.a){el.innerHTML=`<div class="note"><b>Как сверить.</b> 1) В личном кабинете ОФД скачайте отчёт «Сверка» за период (Excel). 2) В Т-Банке скачайте выписку по счёту за тот же период (Excel). Если есть терминал Сбера — и выписку СберБизнеса (можно все файлы по дням разом). 3) Нажмите «Загрузить файлы» и выберите все сразу. Повторная загрузка ничего не задвоит.</div>`;return;}
   const T=j.tot,dl=(a,b)=>{const d=Math.round(a-b);return d===0?'<span style="color:var(--moss)">сошлось</span>':`<b style="color:var(--signal-deep)">${d>0?'+':'−'}${rub(Math.abs(d))}</b>`;},bank=T.b_acq+T.b_sbp;
   const dc=(a,b)=>{const d=Math.round(a-b);return d===0?'<td style="color:var(--moss)">✓</td>':`<td><b style="color:var(--signal-deep)">${d>0?'+':'−'}${rub(Math.abs(d))}</b></td>`;};
   const IST={match:['пришла — отметить оплаченным','w'],done:['уже отмечен оплаченным','ok'],diff:['сумма не совпала','x'],none:['в пульте такого счёта нет','']};
