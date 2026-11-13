@@ -181,7 +181,23 @@ table{border-collapse:separate;border-spacing:0}
   nav.tabs a.add{color:var(--ink)}nav.tabs a.add span.b{display:none}
   nav.tabs a.add svg{width:48px;height:48px;padding:11px;border-radius:16px;background:var(--acc);color:#fff;margin-top:-20px;box-shadow:0 6px 14px rgba(0,0,0,.18)}
 }
+/* тёмная тема — та же, что выбрана в пульте кнопкой ◐ (на этом устройстве) */
+html[data-theme="dark"]{--paper:#121418;--paper2:#1B1E24;--paper3:#23262D;--ink:#EDEFF2;--ink2:#C8CCD3;--ink3:#9BA1AB;--rule:#2E323A;--rule2:#24272E;
+  --sig:#FF7A1A;--sig-t:rgba(255,122,26,.16);--cold:#6FA8FF;--cold-t:rgba(111,168,255,.16);--ok:#7EE2A0;--ok-t:rgba(126,226,160,.14);--warn:#FFC266;--acc:#E0A057;color-scheme:dark}
+html[data-theme="dark"] :is(.stat,.row,.card,.chip,nav.tabs,.top a,.search input,.f input,.f select,.f textarea,.login input,table.tbl th,table.tbl tbody tr){background:var(--paper2);color:var(--ink)}
+html[data-theme="dark"] :is(.stat,.row,.card){box-shadow:none}
+html[data-theme="dark"] .chip{color:var(--ink2)}
+html[data-theme="dark"] :is(.chip.on,.btn:not(.g):not(.s):not(.d)){background:var(--ink);border-color:var(--ink);color:#121418}
+html[data-theme="dark"] table.tbl th{color:var(--ink3)}
+html[data-theme="dark"] :is(.tag.due,.tbl .what.a){color:#FFA366}
+html[data-theme="dark"] :is(.tag.debt,.btn.d,.tbl .ov,.shead .sov){color:#FF8A8A;border-color:#FF8A8A}
+html[data-theme="dark"] .tbl .what.t{color:#8FC0FF}
+html[data-theme="dark"] :is(.tbl .what.p,.flash,table.pt td.ok,dl.chk dd.ok){color:#8FE0A8}
+html[data-theme="dark"] dl.chk dd.warn{color:#FFC266}
+html[data-theme="dark"] [style*="color:#8a1c1c"],html[data-theme="dark"] [style*="color:#8a2c06"]{color:#FF8A8A!important}
+html[data-theme="dark"] img{opacity:.92}
 </style>
+<script>(function(){function t(){var d=false;try{d=localStorage.getItem('ivanor_theme')==='dark';}catch(_){}if(d)document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}t();window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>

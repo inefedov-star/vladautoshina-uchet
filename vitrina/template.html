@@ -231,7 +231,13 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
 @media (max-width:640px){.cl{grid-template-columns:1fr auto;}.cl .cp{grid-column:1}.cl .cs{text-align:right}.cform{grid-template-columns:1fr}}
 /* внутри пульта: выход и «на весь экран» — у пульта свои; на телефоне шапка в одну строку */
 html.embed #selBtn{display:none}
-html.embed .bar .logo svg,html.embed .bar .logo i,html.embed #fs{display:none}html.embed .bar{padding-block:8px 2px}html.embed .top{position:static;border-bottom:0}html.embed body{background:#F4F5F7}
+html.embed .bar .logo svg,html.embed .bar .logo i,html.embed #fs{display:none}html.embed .bar{padding-block:8px 2px}html.embed .top{position:static;border-bottom:0}html.embed body{background:var(--bg)}
+/* внутри пульта: тёмная тема — та же, что выбрана в пульте кнопкой ◐ */
+html.embed[data-theme="dark"]{--bg:#121418;--paper:#1B1E24;--paper-2:#23262D;--paper-3:#2C3038;--ink:#EDEFF2;--ink-2:#C8CCD3;--ink-3:#9BA1AB;--rule:#2E323A;--rule-soft:#24272E;
+  --signal:#FF7A1A;--signal-deep:#FF9A4D;--signal-tint:rgba(255,122,26,.16);--cold:#6FA8FF;--cold-tint:rgba(111,168,255,.16);--moss:#7EE2A0;--moss-tint:rgba(126,226,160,.14);--on-ink:#121418;--scrim:rgba(0,0,0,.6);color-scheme:dark}
+html.embed[data-theme="dark"] .tool[aria-pressed="true"]{color:var(--on-ink)}
+html.embed[data-theme="dark"] .ph{background:#2C3038;--ink:#0C0D10;--paper:#EDEFF2;--paper-3:#9BA1AB}
+html.embed[data-theme="dark"] .mst.w{background:rgba(255,194,102,.15);color:#FFC266}html.embed[data-theme="dark"] .mst.ok{background:rgba(126,226,160,.14);color:#7EE2A0}
 @media(max-width:600px){#fs{display:none}.bar .logo i{display:none}}
 .csug{display:flex;flex-direction:column;gap:6px}.csb{display:block;text-align:left;border:1px solid var(--rule);background:var(--paper);border-radius:12px;padding:9px 12px;min-height:46px;font:inherit}.csb small{display:block;color:var(--ink-3);font-size:.8rem}.chint{margin:0;padding:8px 12px;border-radius:10px;background:var(--paper-2);font-size:.86rem;color:var(--ink-2)}
 </style>
@@ -277,6 +283,7 @@ html.embed .bar .logo svg,html.embed .bar .logo i,html.embed #fs{display:none}ht
 let PBASE='/pult/';function pfetch(path,opt){const b=PBASE;return fetch(b+path,opt).then(r=>{if(r.status!==404||b!=='/pult/')return r;PBASE='/montazh/';return fetch(PBASE+path,opt);});}
 
 try{if(window.self!==window.top)document.documentElement.classList.add('embed');}catch(_){document.documentElement.classList.add('embed');}
+(function(){function t(){var d=false;try{d=document.documentElement.classList.contains('embed')&&localStorage.getItem('ivanor_theme')==='dark';}catch(_){}if(d)document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}t();window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();
 
 let STAMP='__STAMP__';
 let TIRES=__TIRES__;

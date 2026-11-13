@@ -167,7 +167,7 @@ function v($f) {
 }
 ?>
 <link rel="stylesheet" href="<?= h(v('redaktor.css')) ?>">
-<?php if (!empty($GLOBALS['IVANOR_OWNER'])): ?><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/<?= is_file(dirname(__DIR__) . '/pult/kp-embed.css') ? 'pult' : 'montazh' ?>/kp-embed.css"><?php endif; ?>
+<?php if (!empty($GLOBALS['IVANOR_OWNER'])): ?><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/<?= is_file(dirname(__DIR__) . '/pult/kp-embed.css') ? 'pult' : 'montazh' ?>/kp-embed.css"><script>(function(){function t(){var d=false;try{d=localStorage.getItem('ivanor_theme')==='dark';}catch(_){}if(d)document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}t();window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();</script><?php endif; ?>
 </head>
 <body>
 

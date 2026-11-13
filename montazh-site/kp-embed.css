@@ -25,3 +25,11 @@ a.tihaya[href*="vyhod"]{display:none!important}
 .top .nom{color:var(--ink-3);letter-spacing:0;text-transform:none;font-family:var(--f-text);font-size:.85rem}
 .top button,.top a:not(.logo){background:#fff;border:1px solid var(--rule)}
 .top .sig{border-color:var(--signal)}
+/* тёмная тема — та же, что выбрана в пульте кнопкой ◐ (на этом устройстве) */
+html[data-theme="dark"]{--paper:#121418;--paper-2:#1B1E24;--paper-3:#23262D;--ink:#EDEFF2;--ink-2:#C8CCD3;--ink-3:#9BA1AB;--rule:#2E323A;--rule-soft:#24272E;
+  --signal:#FF7A1A;--signal-deep:#FF9A4D;--signal-tint:rgba(255,122,26,.16);--ok:#7EE2A0;--acc:#A996F5;color-scheme:dark}
+html[data-theme="dark"] :is(.main,.bok,.pos.tek){background:var(--paper-2);box-shadow:none}
+html[data-theme="dark"] :is(input,textarea,select,.top button,.top a:not(.logo),.podskazki,.redt tr.chuzhaya .t-p input,.redt tr.chuzhaya td.chislo input){background:var(--paper-3);color:var(--ink);border-color:var(--rule)}
+html[data-theme="dark"] .top .sig{background:var(--signal)!important;color:#fff!important;border-color:var(--signal)!important}
+html[data-theme="dark"] .svodka{background:var(--paper-3);color:var(--ink)}
+html[data-theme="dark"] .pos{background:var(--paper)}
