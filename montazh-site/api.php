@@ -305,10 +305,24 @@ function photoKey(string $kind, array $a, string $name, int $id): string {
   $U = fn($x) => trim(preg_replace('/\s+/u', ' ', mb_strtoupper((string)$x)));
   if ($kind === 'tire' && !empty($a['brand'])) return 'tire|' . $U($a['brand']) . '|' . $U($a['model'] ?? '') . '|' . (!empty($a['stud']) ? 'S' : '');
   if ($kind === 'disk' && !empty($a['model'])) return 'disk|' . $U(preg_replace('/\([^)]*\)/u', '', $a['model']));
-  if ($kind === 'akb') return 'akb|' . $U(preg_replace('/^Аккумулятор\s*|\b(о\/п|п\/п|обр\.?|прям\.?)\b/ui', ' ', $name));
+  if ($kind === 'akb') { [$b, $l, $body] = akbModel($name, $a); if ($b !== '') return 'akb|' . $b . '|' . $l . '|' . $body; return photoKeyOld($kind, $name); }
   return 'p|' . $id;
 }
+// прежний ключ фото АКБ (на каждую карточку) — чтобы уже загруженные фото не пропали
+function photoKeyOld(string $kind, string $name): string { return $kind === 'akb' ? 'akb|' . trim(preg_replace('/\s+/u', ' ', mb_strtoupper(preg_replace('/^Аккумулятор\s*|\b(о\/п|п\/п|обр\.?|прям\.?)\b/ui', ' ', $name)))) : ''; }
+// аккумулятор: бренд, линейка (EFB, AGM, Premium…) и корпус (евро, Азия, мото, грузовой) — у одной линейки фото одно на все ёмкости
+function akbModel(string $name, array $a): array {
+  $u = mb_strtoupper($name); $t = preg_replace('/^.*?\d\s*А[\/.]Ч\.?\s*/u', '', $u, 1, $c); if (!$c) $t = preg_replace('/^АККУМУЛЯТОР\s*/u', '', $u);
+  $t = preg_replace('/\([^)]*\)|\b(ЕВРО|КОНУС|ASIA|АЗИЯ|MOTO|МОТО|О\/П|П\/П|JIS)\b/u', ' ', $t); $w = preg_split('/[\s,]+/u', trim($t), -1, PREG_SPLIT_NO_EMPTY);
+  $brand = ''; foreach ($w as $x) { if (preg_match('/^\d/u', $x) || mb_strlen($x) < 2) continue; $brand = $x; break; }
+  $brand = ['HUSKI' => 'HUSKY', 'АКТЕХ' => 'ACTIVE', 'TESLA' => 'TESLA', 'ТЮМЕНЬ' => 'ТЮМЕНЬ'][$brand] ?? $brand; if (mb_strpos($u, 'АКТЕХ') !== false) $brand = 'АКТЕХ';
+  $line = ''; foreach (['AGM', 'EFB', 'GEL', 'SILVER', 'BLUE', 'BLACK', 'PROMOTIVE', 'PREMIUM', 'STANDAR', 'MAGIC', 'FROST', 'SMF'] as $k) if (mb_strpos($t, $k) !== false) { $line = $k === 'STANDAR' ? 'STANDARD' : $k; break; }
+  $ah = (float)($a['ah'] ?? 0); $body = mb_strpos($u, 'MOTO') !== false || ($ah > 0 && $ah <= 30) ? 'MOTO' : ($ah >= 140 ? 'TRUCK' : (($a['std'] ?? '') === 'asia' || mb_strpos($u, 'ASIA') !== false ? 'ASIA' : 'EURO'));
+  return [$brand, $line, $body]; }
+// фото товара: по новому ключу, а для АКБ ещё и по прежнему (фото на карточку важнее общего на линейку)
+function photoUrl(array $pm, string $kind, array $a, string $name, int $id): ?string { if ($kind === 'akb') { $o = photoKeyOld($kind, $name); if (isset($pm[$o])) return $pm[$o]['url']; } $k = photoKey($kind, $a, $name, $id); return $pm[$k]['url'] ?? null; }
 function photoLabel(string $kind, array $a, string $name): string {
+  if ($kind === 'akb') { [$b, $l, $body] = akbModel($name, $a); if ($b !== '') return 'АКБ ' . mb_convert_case($b, MB_CASE_TITLE) . ($l !== '' ? ' ' . $l : '') . ' · ' . ['MOTO' => 'мото', 'TRUCK' => 'грузовой', 'ASIA' => 'Азия', 'EURO' => 'евро'][$body]; }
   if ($kind === 'tire' && !empty($a['brand'])) return trim($a['brand'] . ' ' . ($a['model'] ?? '') . (!empty($a['stud']) ? ' (шип.)' : ''));
   if ($kind === 'disk' && !empty($a['model'])) return trim(preg_replace('/\([^)]*\)/u', '', $a['model']));
   return $name;
@@ -319,16 +333,19 @@ function photoDir(): string { $d = __DIR__ . '/photos'; if (!is_dir($d)) { @mkdi
   if (@file_get_contents($d . '/.htaccess') !== $ht) @file_put_contents($d . '/.htaccess', $ht);
   return $d; }
 function photoMap(array $cfg): array { $o = []; foreach (db($cfg)->query('SELECT k, file, source, updated FROM photos')->fetchAll() as $r) $o[$r['k']] = ['url' => 'photos/' . $r['file'] . '?v=' . $r['updated'], 'source' => $r['source']]; return $o; }
+// единый вид всех фото: прозрачность — на белое, белые поля обрезаем, товар по центру белого квадрата 900×900 с одинаковым отступом
+function photoSquare($im): string {
+  $w = imagesx($im); $h = imagesy($im); $flat = imagecreatetruecolor($w, $h); $white = imagecolorallocate($flat, 255, 255, 255); imagefill($flat, 0, 0, $white); imagecopy($flat, $im, 0, 0, 0, 0, $w, $h); imagedestroy($im);
+  if (function_exists('imagecropauto')) { $c = @imagecropauto($flat, IMG_CROP_THRESHOLD, 0.07, 0xFFFFFF); if ($c && imagesx($c) >= 40 && imagesy($c) >= 40) { imagedestroy($flat); $flat = $c; $w = imagesx($flat); $h = imagesy($flat); } }
+  $S = 900; $box = 800; $k = min($box / $w, $box / $h, 2.0); $nw = max(1, (int)round($w * $k)); $nh = max(1, (int)round($h * $k));
+  $dst = imagecreatetruecolor($S, $S); imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+  imagecopyresampled($dst, $flat, (int)(($S - $nw) / 2), (int)(($S - $nh) / 2), 0, 0, $nw, $nh, $w, $h); ob_start(); imagejpeg($dst, null, 86); $o = ob_get_clean(); imagedestroy($flat); imagedestroy($dst); return $o; }
 // принимает байты картинки, уменьшает до 900 px и сохраняет как jpg (если на хостинге есть GD), иначе — как есть
 function photoSave(array $cfg, string $key, string $bytes, string $source, string $srcUrl = ''): string {
   if (strlen($bytes) < 200) fail('Это не картинка'); if (strlen($bytes) > 12 * 1024 * 1024) fail('Файл больше 12 МБ');
   $info = @getimagesizefromstring($bytes); if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_WEBP, IMAGETYPE_GIF], true)) fail('Нужна картинка: jpg, png или webp');
   $name = substr(sha1($key), 0, 16); $dir = photoDir(); $ext = 'jpg'; $out = null;
-  if (function_exists('imagecreatefromstring') && ($im = @imagecreatefromstring($bytes))) {
-    $w = imagesx($im); $h = imagesy($im); $k = min(1, 900 / max($w, $h)); $nw = max(1, (int)round($w * $k)); $nh = max(1, (int)round($h * $k));
-    $dst = imagecreatetruecolor($nw, $nh); imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
-    imagecopyresampled($dst, $im, 0, 0, 0, 0, $nw, $nh, $w, $h); ob_start(); imagejpeg($dst, null, 84); $out = ob_get_clean(); imagedestroy($im); imagedestroy($dst);
-  }
+  if (function_exists('imagecreatefromstring') && ($im = @imagecreatefromstring($bytes))) { $out = photoSquare($im); }
   if ($out === null) { $out = $bytes; $ext = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp', IMAGETYPE_GIF => 'gif'][$info[2]]; }
   foreach (glob($dir . '/' . $name . '.*') ?: [] as $old) @unlink($old);
   if (@file_put_contents($dir . '/' . $name . '.' . $ext, $out) === false) fail('Не удалось сохранить файл — проверьте права на папку photos', 500);
@@ -1570,7 +1587,7 @@ try {
       if ($miss || !$tm) continue;
       $tot['n']++; $tot['qty'] += max(0, $s['q']); $tot['retail'] += max(0, $s['q']) * (float)$p['price']; if ($owner) $tot['cost'] += max(0, $s['c']);
       if ($qc > 0) { $tot['qc'] = ($tot['qc'] ?? 0) + $qc; $tot['retailc'] = ($tot['retailc'] ?? 0) + $qc * (float)$p['price']; }
-      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? ($pmap[photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id'])]['url'] ?? null) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'qc' => $qc, 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'costc' => $owner && $qc > 0 ? round($cc / $qc, 2) : null];
+      if (count($rows) < $lim) $rows[] = ['photo' => $pmap ? photoUrl($pmap, $p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']) : null, 'id' => (int)$p['id'], 'name' => $p['name'], 'kind' => $p['kind'], 'barcode' => $p['barcode'], 'article' => $p['article'], 'unit' => $p['unit'], 'price' => (float)$p['price'], 'qty' => $s['q'], 'qc' => $qc, 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'costc' => $owner && $qc > 0 ? round($cc / $qc, 2) : null];
     }
     if (!$owner) unset($tot['cost']);
     $facets = []; foreach ($fAll as $k => $vals) { $facets[$k] = []; foreach (array_keys($vals) as $v) $facets[$k][] = [(string)$v, $fAvail[$k][(string)$v] ?? 0]; }
@@ -1585,7 +1602,7 @@ try {
     $mv->execute([$id]); $moves = array_map(function ($r) use ($owner) { $r['label'] = docLabel($r['type']); if (!$owner) { unset($r['cost']); $r['partner'] = ''; } return $r; }, $mv->fetchAll());
     $s = stockMap($cfg)[$id] ?? ['q' => 0, 'c' => 0]; $cu = stockMap($cfg, 'custody')[$id] ?? ['q' => 0];
     $pk = photoKey($p['kind'], (array)$p['attrs'], $p['name'], (int)$p['id']); $pm = photoMap($cfg);
-    out(['photo' => $pm[$pk]['url'] ?? null, 'photo_key' => $pk, 'product' => $p, 'qty' => $s['q'], 'custody' => $cu['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'moves' => $moves]);
+    out(['photo' => photoUrl($pm, $p['kind'], (array)$p['attrs'], $p['name'], (int)$p['id']), 'photo_key' => $pk, 'product' => $p, 'qty' => $s['q'], 'custody' => $cu['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'moves' => $moves]);
 
   case 'prod_find':
     // поиск товара для строки документа: все карточки, и в наличии, и нет; штрихкод — точное совпадение первым
@@ -2065,6 +2082,7 @@ try {
       $id = (int)$p['id']; $q = ($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0); if (!$all && $q <= 0) continue;
       $a = json_decode($p['attrs'], true) ?: []; $k = photoKey($p['kind'], $a, $p['name'], $id);
       if (!isset($g[$k])) $g[$k] = ['k' => $k, 'kind' => $p['kind'], 'label' => photoLabel($p['kind'], $a, $p['name']), 'n' => 0, 'qty' => 0, 'names' => [], 'photo' => $pm[$k]['url'] ?? null, 'source' => $pm[$k]['source'] ?? null];
+      if ($g[$k]['photo'] === null && $p['kind'] === 'akb' && isset($pm[photoKeyOld('akb', $p['name'])])) { $g[$k]['photo'] = $pm[photoKeyOld('akb', $p['name'])]['url']; $g[$k]['source'] = 'old'; }
       $g[$k]['n']++; $g[$k]['qty'] += max(0, $q); if (count($g[$k]['names']) < 3) $g[$k]['names'][] = $p['name'];
     }
     $ord = ['tire' => 1, 'disk' => 2, 'akb' => 3, 'fast' => 4];
@@ -2086,6 +2104,17 @@ try {
     $url = photoSave($cfg, $k, fetchUrl($u), 'url', $u); logit($cfg, $role, 'photo_url', $k);
     out(['url' => $url]);
 
+  case 'photo_fix_all':
+    // все уже загруженные фото — к одному виду (белый квадрат, товар по центру)
+    post(); needRole($role, ['owner']);
+    if (!function_exists('imagecreatefromstring')) fail('На хостинге выключена обработка картинок (GD) — включите её в настройках PHP');
+    $dir = photoDir(); $n = 0; $bad = 0; $from = (int)(body()['from'] ?? 0); $rows = db($cfg)->query('SELECT k, file FROM photos ORDER BY k')->fetchAll(); $t0 = microtime(true);
+    for ($i = $from; $i < count($rows); $i++) { if (microtime(true) - $t0 > 12) out(['ok' => true, 'done' => $i, 'total' => count($rows), 'more' => true]);
+      $f = $dir . '/' . $rows[$i]['file']; $bytes = @file_get_contents($f); $im = $bytes ? @imagecreatefromstring($bytes) : false; if (!$im) { $bad++; continue; }
+      $nf = preg_replace('/\.[a-z]+$/i', '', $rows[$i]['file']) . '.jpg'; if (@file_put_contents($dir . '/' . $nf, photoSquare($im)) === false) { $bad++; continue; }
+      if ($nf !== $rows[$i]['file']) @unlink($f); db($cfg)->prepare('UPDATE photos SET file = ?, updated = ? WHERE k = ?')->execute([$nf, time(), $rows[$i]['k']]); $n++; }
+    logit($cfg, $role, 'photo_fix_all', (string)count($rows)); out(['ok' => true, 'done' => count($rows), 'total' => count($rows), 'more' => false]);
+
   case 'photo_del':
     post(); needRole($role, ['owner']);
     $k = (string)(body()['k'] ?? ''); $st = db($cfg)->prepare('SELECT file FROM photos WHERE k = ?'); $st->execute([$k]);
@@ -2097,7 +2126,7 @@ try {
     // для витрины: ID карточки CloudShop → адрес фото. Только картинки, без цен и остатков
     $pm = photoMap($cfg); $o = []; if ($pm) photoDir();
     if ($pm) foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs FROM products WHERE archived = 0 AND ext_id IS NOT NULL AND ext_id != ''")->fetchAll() as $p) {
-      $k = photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']); if (isset($pm[$k])) $o[$p['ext_id']] = $pm[$k]['url']; }
+      $u1 = photoUrl($pm, $p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']); if ($u1 !== null) $o[$p['ext_id']] = $u1; }
     header('Cache-Control: public, max-age=300'); header('Access-Control-Allow-Origin: *');
     out(['base' => basename(__DIR__) . '/', 'photos' => $o ?: new stdClass()]);
 

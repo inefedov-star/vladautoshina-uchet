@@ -167,7 +167,7 @@ function v($f) {
 }
 ?>
 <link rel="stylesheet" href="<?= h(v('redaktor.css')) ?>">
-<?php if (!empty($GLOBALS['IVANOR_OWNER'])): ?><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/<?= is_file(dirname(__DIR__) . '/pult/kp-embed.css') ? 'pult' : 'montazh' ?>/kp-embed.css"><script>(function(){function t(){var d=false;try{d=localStorage.getItem('ivanor_theme')==='dark';}catch(_){}if(d)document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}t();window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();</script><?php endif; ?>
+<?php if (!empty($GLOBALS['IVANOR_OWNER'])): ?><link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/<?php $pf = is_file(dirname(__DIR__) . '/pult/kp-embed.css') ? 'pult' : 'montazh'; echo $pf . '/kp-embed.css?v=' . (int)@filemtime(dirname(__DIR__) . '/' . $pf . '/kp-embed.css'); ?>"><script>(function(){function t(){var d=false;try{d=localStorage.getItem('ivanor_theme')==='dark';}catch(_){}var h=document.documentElement;if(d){h.setAttribute('data-theme','dark');h.style.backgroundColor='#121418';h.style.colorScheme='dark';}else{h.removeAttribute('data-theme');h.style.backgroundColor='';h.style.colorScheme='';}}t();window.__ivTheme=t;window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();</script><?php endif; ?>
 </head>
 <body>
 

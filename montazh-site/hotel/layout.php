@@ -6,6 +6,7 @@ function head(string $title, string $active = '', bool $wide = false): void { ?>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
+<script>(function(){function t(){var d=false;try{d=localStorage.getItem('ivanor_theme')==='dark';}catch(_){}var h=document.documentElement;if(d){h.setAttribute('data-theme','dark');h.style.backgroundColor='#121418';h.style.colorScheme='dark';}else{h.removeAttribute('data-theme');h.style.backgroundColor='';h.style.colorScheme='';}}t();window.__ivTheme=t;window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#16160F">
@@ -197,7 +198,6 @@ html[data-theme="dark"] dl.chk dd.warn{color:#FFC266}
 html[data-theme="dark"] [style*="color:#8a1c1c"],html[data-theme="dark"] [style*="color:#8a2c06"]{color:#FF8A8A!important}
 html[data-theme="dark"] img{opacity:.92}
 </style>
-<script>(function(){function t(){var d=false;try{d=localStorage.getItem('ivanor_theme')==='dark';}catch(_){}if(d)document.documentElement.setAttribute('data-theme','dark');else document.documentElement.removeAttribute('data-theme');}t();window.addEventListener('storage',function(e){if(e.key==='ivanor_theme'||e.key===null)t();});})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>

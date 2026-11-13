@@ -510,7 +510,7 @@ body.area-s .smenu{background:var(--paper);border-bottom:1px solid var(--rule)}
 .xlinks a:hover{color:var(--signal-deep)}.xlinks a span{font-size:.75em;opacity:.7}
 body.area-z .tabs,body.area-fr .tabs{display:none!important}
 #v-fr{position:fixed;left:0;right:0;top:var(--hdr,64px);bottom:0;z-index:5;background:var(--bg)}
-#v-fr .frm{width:100%;height:100%;border:0;display:block;background:#F2EFE8}
+#v-fr .frm{width:100%;height:100%;border:0;display:block;background:var(--bg)}body.t-dark #v-fr .frm{color-scheme:dark}
 body.area-fr{overflow:hidden}
 .badge.zcm{color:#fff;background:var(--signal)}
 .zhd{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 6px}.zh1{margin:0;font-size:1.5rem}
@@ -912,6 +912,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
       <div class="row" id="phShow"><button type="button" class="chip" data-s="miss" aria-pressed="true">Без фото</button><button type="button" class="chip" data-s="has" aria-pressed="false">С фото</button><button type="button" class="chip" data-s="all" aria-pressed="false">Все</button></div>
       <div class="row" id="phKinds"><button type="button" class="chip" data-k="tire">Шины</button><button type="button" class="chip" data-k="disk">Диски</button><button type="button" class="chip" data-k="akb">АКБ</button><button type="button" class="chip" data-k="other">Прочее</button></div>
       <input class="inp" type="search" id="phQ" placeholder="Поиск модели" autocomplete="off" style="flex:1;min-width:180px">
+      <button type="button" class="btn ghost" id="phFix" title="Обрезать поля и поставить товар по центру белого квадрата — у всех фото сразу">Привести фото к одному виду</button>
     </div>
     <div id="phOut" style="margin-bottom:40px"></div>
   </section>
@@ -2251,8 +2252,10 @@ async function loadPay(){if(!PY.from)[PY.from,PY.to]=pyRange('m');$('#pyFrom').v
 $('#pyFrom').onchange=$('#pyTo').onchange=()=>{PY.from=$('#pyFrom').value||PY.from;PY.to=$('#pyTo').value||PY.to;loadPay();};
 /* ---------- хранение (шинный отель) и КП — внутри пульта, в той же вкладке ---------- */
 const FR={h:'hotel/index.php',k:'/kp/',v:'/vitrina/'};
+/* тема раздела внутри рамки — та же, что у пульта (и без вспышки при переходах) */
+function frmTheme(f){try{const w=f.contentWindow;if(w&&w.__ivTheme)w.__ivTheme();}catch(_){}}
 function openFrame(a,path){const box=$('#v-fr');let f=document.getElementById('fr-'+a);
-  if(!f){f=document.createElement('iframe');f.id='fr-'+a;f.allow='fullscreen';f.setAttribute('allowfullscreen','');f.className='frm';f.title={h:'Шинный отель',k:'Коммерческие предложения',v:'Витрина'}[a];f.src=path?(a==='h'?'hotel/':FR[a])+path:FR[a];box.appendChild(f);}
+  if(!f){f=document.createElement('iframe');f.id='fr-'+a;f.allow='fullscreen';f.setAttribute('allowfullscreen','');f.className='frm';f.addEventListener('load',()=>frmTheme(f));f.title={h:'Шинный отель',k:'Коммерческие предложения',v:'Витрина'}[a];f.src=path?(a==='h'?'hotel/':FR[a])+path:FR[a];box.appendChild(f);}
   else if(path)f.src=(a==='h'?'hotel/':FR[a])+path;
   box.querySelectorAll('.frm').forEach(x=>x.hidden=x!==f);show('fr');setHdr();}
 function openHotel(path){setArea('h');openFrame('h',path);}
@@ -2884,6 +2887,7 @@ function applyTheme(){let area=S.area;if(!area){try{area=localStorage.getItem('i
   const p=themePref(),t=p==='dark'?'dark':'light';
   document.body.classList.toggle('t-dark',t==='dark');document.body.classList.toggle('t-light',t==='light');
   const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=t==='dark'?'#1B1E24':'#FFFFFF';
+  document.querySelectorAll('#v-fr .frm').forEach(frmTheme);
   const l=document.getElementById('thLbl');if(l)l.textContent=p==='dark'?'тёмная':'';}
 applyTheme();
 document.getElementById('thBtn').onclick=()=>{const n=themePref()==='dark'?'light':'dark';try{localStorage.setItem('ivanor_theme',n);}catch(_){}applyTheme();
@@ -3175,7 +3179,7 @@ function renderPho(){const M=S.ph.models,has=M.filter(m=>m.photo).length;
   if(!L.length){$('#phOut').innerHTML=`<div class="empty"><b>${S.ph.show==='miss'?'Все модели с фото':'Ничего не нашлось'}</b>${M.length?'Измените фильтр.':'Загрузите каталог из CloudShop — модели возьмутся из него.'}</div>`;return;}
   $('#phOut').innerHTML=`<div class="phgrid">${L.map((m,i)=>`<div class="phc" data-i="${i}"><div class="im">${m.photo?`<img src="${esc(m.photo)}" alt="" loading="lazy">`:'<span>нет фото</span>'}</div>
       <div class="tx"><b>${esc(m.label)}</b><small>${PH_KIND[m.kind]||'товар'} · ${m.n} ${plural(m.n,'карточка','карточки','карточек')} · ${fmtQty(m.qty)} шт.${m.source==='manual'?' · ваше фото':m.source==='url'?' · по ссылке':m.source?' · '+esc(m.source):''}</small></div>
-      <div class="ac"><label class="btn ghost" style="cursor:pointer">${m.photo?'Заменить':'Загрузить'}<input type="file" accept="image/*" data-up="${i}" hidden></label>${m.kind==='tire'?`<button type="button" class="btn ghost" data-sug="${i}">Подобрать</button>`:''}<button type="button" class="btn ghost" data-url="${i}">По ссылке</button>${m.photo?`<button type="button" class="btn ghost" data-del="${i}">Убрать</button>`:''}</div>
+      <div class="ac"><label class="btn ghost" style="cursor:pointer">${m.photo?'Заменить':'Загрузить'}<input type="file" accept="image/*" data-up="${i}" hidden></label>${m.kind==='tire'?`<button type="button" class="btn ghost" data-sug="${i}">Подобрать</button>`:''}${m.kind!=='tire'?`<a class="btn ghost" target="_blank" rel="noopener" href="https://yandex.ru/images/search?text=${encodeURIComponent((m.kind==='akb'?m.label.replace(/ · .*$/,'')+' аккумулятор':m.label)+' фото на белом фоне')}">Искать фото</a>`:''}<button type="button" class="btn ghost" data-url="${i}">По ссылке</button>${m.photo?`<button type="button" class="btn ghost" data-del="${i}">Убрать</button>`:''}</div>
       <div class="urlbox" id="pu${i}"></div></div>`).join('')}</div>${more?'<p class="note">Показаны первые 120 — уточните поиск или вид товара.</p>':''}`;
   const out=$('#phOut');
   out.querySelectorAll('[data-up]').forEach(inp=>inp.onchange=async()=>{const m=L[+inp.dataset.up],f=inp.files[0];if(!f)return;await uploadPhoto(m.k,f);loadPho();});
@@ -3207,6 +3211,7 @@ async function phAutoRun(redo){const b=redo?$('#phRedo'):$('#phAuto');const labe
   phRun=false;b.textContent=label;if(ok||miss)el.innerHTML=`<p class="note">Готово: фото нашлось у ${ok} моделей, у поставщика нет — ${miss}${errs?', ошибок '+errs:''}. Проверьте вкладку «С фото» — неподходящее можно заменить.</p>`;loadPho();}
 $('#phAuto').onclick=()=>phAutoRun(false);$('#phRedo').onclick=()=>phAutoRun(true);
 document.querySelectorAll('#phShow .chip').forEach(c=>c.onclick=()=>{S.ph.show=c.dataset.s;renderPho();});
+$('#phFix').onclick=async()=>{const b=$('#phFix');b.disabled=true;try{let from=0;for(;;){const j=await api('photo_fix_all',{from});toast(`<b>Привожу фото к одному виду</b>${j.done} из ${j.total}`);if(!j.more)break;from=j.done;}toast('<b>Готово</b>Все фото — на белом квадрате, товар по центру');loadPho();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}b.disabled=false;};
 document.querySelectorAll('#phKinds .chip').forEach(c=>c.onclick=()=>{S.ph.kind=S.ph.kind===c.dataset.k?'':c.dataset.k;renderPho();});
 $('#phQ').addEventListener('input',e=>{S.ph.q=e.target.value;renderPho();});
 
