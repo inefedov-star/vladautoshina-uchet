@@ -787,14 +787,14 @@ try {
       $o['coupon'] = (int)($prev['coupon'] ?? 0);
       $o['extra'] = 0; // по купону клиент не платит
       $o['paid'] = $mode === 'coupon' ? $o['coupon'] + $o['extra'] : ($mode === 'disc' ? (int)($prev['paid'] ?? 0) : $list);
-      if ($mode === 'full') $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','transfer','invoice'], true) ? $o['pay'] : 'card';
+      if ($mode === 'full') $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','qr','transfer','invoice'], true) ? $o['pay'] : 'card';
     } else {
       $o['mode'] = in_array($o['mode'] ?? '', ['full','disc','coupon'], true) ? $o['mode'] : 'full';
       // купон: производитель возмещает фиксированную сумму, клиент не платит; разница с прайсом — наш плюс или минус
       $o['coupon'] = $o['mode'] === 'coupon' ? max(0, (int)($o['coupon'] ?? couponValue($cfg))) : 0;
       $o['extra'] = 0;
       $o['paid'] = $o['mode'] === 'coupon' ? $o['coupon'] + $o['extra'] : ($o['mode'] === 'disc' ? max(0, (int)($o['paid'] ?? 0)) : $list);
-      $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','transfer','invoice'], true) ? $o['pay'] : 'card';
+      $o['pay'] = in_array($o['pay'] ?? '', ['cash','card','qr','transfer','invoice'], true) ? $o['pay'] : 'card';
     }
     // счёт организации: название и № счёта пишет кто оформляет; дату оплаты — только касса/собственник (inv_set)
     if (($o['pay'] ?? '') === 'invoice') { $o['org'] = mb_substr(trim((string)($o['org'] ?? '')), 0, 200); $o['invNo'] = mb_substr(trim((string)($o['invNo'] ?? ($prev['invNo'] ?? ''))), 0, 40);
@@ -871,7 +871,7 @@ try {
     if ($prev === false) fail('Запись уже удалена', 404);
     $o = json_decode($prev, true);
     $o['paidOk'] = !empty($b['paid']); $o['paidAt'] = $o['paidOk'] ? time() : null; $o['changedAfterPaid'] = false;
-    if (in_array($b['pay'] ?? '', ['cash', 'card', 'transfer', 'invoice'], true)) $o['pay'] = $b['pay'];
+    if (in_array($b['pay'] ?? '', ['cash', 'card', 'qr', 'transfer', 'invoice'], true)) $o['pay'] = $b['pay'];
     db($cfg)->prepare('UPDATE orders SET body = ?, updated = ? WHERE id = ?')->execute([json_encode($o, JSON_UNESCAPED_UNICODE), time(), $id]);
     logit($cfg, $role, 'paid', $id . '=' . ($o['paidOk'] ? 1 : 0));
     out(['ok' => true]);
@@ -1108,6 +1108,23 @@ try {
     $d = !empty($b['done']); db($cfg)->prepare('UPDATE tasks SET status = ?, done_at = ? WHERE id = ?')->execute([$d ? 'done' : 'open', $d ? time() : null, $id]);
     out(['ok' => true]);
 
+  case 'pay_stat':
+    // чем платили за период: наличные, карта, QR, перевод, счёт организации — шиномонтаж и магазин (основа для сверки с кассой и банком)
+    needRole($role, ['owner']);
+    $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from'] ?? '') ? $_GET['from'] : date('Y-m-01'); $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to'] ?? '') ? $_GET['to'] : date('Y-m-d');
+    $p = db($cfg); $K = ['cash', 'card', 'qr', 'transfer', 'invoice', 'coupon', 'none']; $R = []; foreach ($K as $k) $R[$k] = ['m' => 0.0, 'mn' => 0, 's' => 0.0, 'sn' => 0];
+    $days = []; $due = 0.0; $dueN = 0;
+    $st = $p->prepare('SELECT day, body FROM orders WHERE day >= ? AND day <= ?'); $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; $sum = (float)($b['paid'] ?? 0); if ($sum == 0) continue;
+      $k = ($b['mode'] ?? '') === 'coupon' ? 'coupon' : (in_array($b['pay'] ?? '', $K, true) ? $b['pay'] : 'none');
+      $R[$k]['m'] += $sum; $R[$k]['mn']++; $days[$r['day']][$k] = ($days[$r['day']][$k] ?? 0) + $sum;
+      if ($k === 'invoice' && ($b['invPaid'] ?? '') === '') { $due += $sum; $dueN++; } }
+    $st = $p->prepare("SELECT d.day, d.type, d.pay, SUM(ABS(m.qty) * IFNULL(m.price, 0)) s FROM docs d JOIN moves m ON m.doc_id = d.id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.day >= ? AND d.day <= ? GROUP BY d.id"); $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) { $k = ['cash' => 'cash', 'card' => 'card', 'qr' => 'qr', 'sbp' => 'transfer', 'bank' => 'invoice'][(string)$r['pay']] ?? 'none'; $sum = ($r['type'] === 'ret' ? -1 : 1) * round((float)$r['s'], 2);
+      $R[$k]['s'] += $sum; if ($r['type'] === 'sale') $R[$k]['sn']++; $days[$r['day']][$k] = ($days[$r['day']][$k] ?? 0) + $sum; }
+    ksort($days); $dl = []; foreach ($days as $d => $v) $dl[] = ['day' => $d] + array_map(fn($x) => round($x), $v);
+    out(['from' => $from, 'to' => $to, 'rows' => $R, 'days' => $dl, 'inv_due' => round($due), 'inv_due_n' => $dueN]);
+
   case 'crm_timeline':
     needRole($role, ['owner']);
     $k = phoneKey($_GET['phone'] ?? ''); $ok = orgKey($_GET['okey'] ?? ''); $p = db($cfg);
@@ -1232,7 +1249,7 @@ try {
 
   case 'client_suggest':
     // подсказка при вводе имени: клиенты и их организации (без денег — доступно и мастеру)
-    needRole($role, ['owner', 'master', 'cashier']);
+    needRole($role, ['owner', 'master', 'cashier', 'seller']);
     $q = mb_strtoupper(trim((string)($_GET['q'] ?? ''))); if (mb_strlen($q) < 2) out(['rows' => []]);
     $p = db($cfg); $cars = []; $orgs = [];
     foreach ($p->query('SELECT phone, car, plate FROM client_cars ORDER BY id')->fetchAll() as $c) $cars[$c['phone']][] = trim($c['car'] . ' ' . $c['plate']);
@@ -1559,7 +1576,7 @@ try {
     $b = body(); $type = (string)($b['type'] ?? ''); if (!in_array($type, ['in', 'sale', 'ret', 'iss'], true)) fail('Этот вид документа пока не поддерживается');
     if (!isDay($b['day'] ?? null)) fail('Укажите дату');
     $wh = docWh($type, ($b['wh'] ?? 'shop') === 'custody' ? 'custody' : 'shop'); $sign = docSign($type);
-    $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'sbp', 'bank'], true) ? $b['pay'] : '';
+    $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'qr', 'sbp', 'bank'], true) ? $b['pay'] : '';
     $base = (int)($b['base_id'] ?? 0) ?: null; $fee = 0; $bonus = 0; $zak = $type === 'sale' ? ((int)($b['zak_id'] ?? 0) ?: null) : null;
     $id = (int)($b['id'] ?? 0); $p = db($cfg);
     if ($id) { $st = $p->prepare('SELECT status FROM docs WHERE id = ?'); $st->execute([$id]); $stt = $st->fetchColumn(); if ($stt === false) fail('Документ не найден', 404); if ($stt !== 'draft') fail('Документ уже проведён — его можно отменить и создать исправленную копию', 409); }
@@ -1660,7 +1677,7 @@ try {
     $b = body(); $p = db($cfg); $L = (array)($b['lines'] ?? []); if (!$L) fail('Добавьте товары');
     $byExt = []; foreach ($p->query("SELECT id, ext_id, price FROM products WHERE archived = 0")->fetchAll() as $r) { if ($r['ext_id'] !== null && $r['ext_id'] !== '') $byExt[(string)$r['ext_id']] = $r; $byExt['p' . $r['id']] = $r; }
     $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody');
-    $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'sbp', 'bank'], true) ? $b['pay'] : '';
+    $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'qr', 'sbp', 'bank'], true) ? $b['pay'] : '';
     $who = (string)($_SESSION['seller'] ?? '') ?: 'Продавец';
     $p->beginTransaction();
     $p->prepare("INSERT INTO docs (type, day, partner, num, note, wh, phone, pay, status, author, created, seller, req) VALUES ('sale', ?, ?, '', ?, 'shop', ?, ?, 'draft', ?, ?, ?, 1)")
@@ -2002,7 +2019,7 @@ try {
     if ($pm) foreach (db($cfg)->query("SELECT id, ext_id, name, kind, attrs FROM products WHERE archived = 0 AND ext_id IS NOT NULL AND ext_id != ''")->fetchAll() as $p) {
       $k = photoKey($p['kind'], json_decode($p['attrs'], true) ?: [], $p['name'], (int)$p['id']); if (isset($pm[$k])) $o[$p['ext_id']] = $pm[$k]['url']; }
     header('Cache-Control: public, max-age=300'); header('Access-Control-Allow-Origin: *');
-    out(['base' => 'montazh/', 'photos' => $o ?: new stdClass()]);
+    out(['base' => basename(__DIR__) . '/', 'photos' => $o ?: new stdClass()]);
 
   case 'api4t_test':
     // проверка связи с API поставщика: какие методы и типы он описывает (без паролей)

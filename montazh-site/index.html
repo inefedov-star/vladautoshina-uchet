@@ -653,8 +653,9 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 .tlchips .fchip{min-height:36px}
 @media(max-width:560px){.tlrow{grid-template-columns:6px 1fr auto;row-gap:2px}.tld{grid-column:2/4;grid-row:1;padding:0}.tli{grid-column:1;grid-row:1/3}.tlb{grid-column:2;grid-row:2}.tls{grid-column:3;grid-row:2}}
 @media(max-width:760px){#crElba{display:none}}
-@media(max-width:560px){#crAct{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}#crAct .btn{padding-inline:4px;font-size:.88rem;justify-content:center;text-align:center}}
+@media(max-width:560px){#crAct{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}#crVit{grid-column:1/-1}#crAct .btn{padding-inline:4px;font-size:.88rem;justify-content:center;text-align:center}}
 @media(max-width:560px){.doclist th:nth-child(4),.doclist td:nth-child(4){display:none}.doclist td,.doclist th{padding-left:6px;padding-right:6px}.doclist td:first-child{font-size:.85rem}}
+.pybar{display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;margin:4px 0 14px}.pydot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px}
 </style>
 </head>
 <body>
@@ -698,7 +699,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
   <div class="sg owner-only"><span class="sgh">Закупки</span><button type="button" data-p="in">Закупки</button><button type="button" data-p="iss">Выдача с ответхранения</button></div>
   <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
-  <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="month">Все документы</button></div>
+  <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="pay">Чем платили</button><button type="button" data-p="month">Все документы</button></div>
   <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" id="sgStart">Переход с CloudShop</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button><button type="button" data-p="arch">Архив CloudShop</button></div>
 </aside>
 <main class="wrap">
@@ -877,6 +878,12 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
     <div id="advOut" style="margin-bottom:40px"></div>
   </section>
 
+  <section id="v-pay" hidden>
+    <div class="calbar"><h1>Чем платили</h1></div>
+    <div class="row" style="align-items:center;gap:8px;margin-bottom:12px"><div class="row" id="pyQuick" style="gap:6px"></div>
+      <label class="pay">с <input class="inp" type="date" id="pyFrom" style="width:auto;min-height:40px"></label><label class="pay">по <input class="inp" type="date" id="pyTo" style="width:auto;min-height:40px"></label></div>
+    <div id="pyBody"></div>
+  </section>
   <section id="v-rep" hidden>
     <div class="calbar"><h1>Продажи по товарам</h1></div>
     <div class="row" style="align-items:center;margin-bottom:10px">
@@ -929,7 +936,7 @@ const MONTHS=['январь','февраль','март','апрель','май'
 const MONTHS_G=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 const WD=['вс','пн','вт','ср','чт','пт','сб'];
 const CAR={car:'Легковой',suv:'Внедорожник',com:'Коммерческий'};
-const PAY={cash:'Наличные',card:'Карта',transfer:'Перевод',invoice:'Счёт организации'};
+const PAY={cash:'Наличные',card:'Карта',qr:'QR-код',transfer:'Перевод',invoice:'Счёт организации'};
 const EXP_CATS={cur:['Расходники (вентили, грузики, жгуты)','Электричество','Аренда','Ремонт оборудования','Инструмент мелкий','Прочее'],cap:['Оборудование','Ремонт помещения','Прочее капитальное']};
 
 /* ---------- телефон: основа клиента ---------- */
@@ -1454,7 +1461,7 @@ document.querySelectorAll('#stSubs .chip').forEach(c=>c.onclick=()=>stSub(c.data
 
 /* ---------- виды документов ---------- */
 const DT={in:{t:'Приход',n:'Новый приход'},sale:{t:'Продажа',n:'Новая продажа'},ret:{t:'Возврат от покупателя',n:'Новый возврат'},iss:{t:'Выдача с ответхранения',n:'Новая выдача'},open:{t:'Ввод остатков',n:''},inv:{t:'Корректировка остатков',n:''}};
-const DPAY={cash:'Наличные',card:'Карта',sbp:'Перевод',bank:'Безнал'};
+const DPAY={cash:'Наличные',card:'Карта',qr:'QR-код',sbp:'Перевод',bank:'Счёт организации'};
 const DOC_ST={draft:['черновик','ds'],posted:['проведён','cp'],cancelled:['отменён','ds']};
 const stLbl=(t,st)=>t==='sale'||t==='iss'||t==='inv'?{draft:'черновик',posted:'проведена',cancelled:'отменена'}[st]:DOC_ST[st][0];
 const isMoney=t=>t==='sale'||t==='ret'||t==='iss';
@@ -2003,7 +2010,7 @@ function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;c
     else if(k==='c:calls'){CRS.mode='calls';loadCrm();}else if(k.startsWith('c:')){CRS.mode='list';CRS.seg=k==='c:list'?'all':k.slice(2);loadCrm();}else if(k==='cn')openCrm(null);
     else if(k==='t:open'||k==='t:done'){TK.st=k.slice(2);loadTasks();}else if(k==='t:pr')printTasks();else if(k==='tn')openTask(null);renderBnav();});}
 function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['p:iss','Выдачи с ОХ','list']]],
-    ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:month','Все документы','docs']]],
+    ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:pay','Чем платили','chart'],['p:month','Все документы','docs']]],
     ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up'],['p:arch','Архив CloudShop','chart']]]];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
   $('#close').onclick=closeSheet;
@@ -2170,6 +2177,26 @@ async function loadAdv(){const box=$('#advArch'),out=$('#advOut');
     ${T.brands.length?`<div class="tw"><table class="antab"><thead><tr><th style="text-align:left">Бренд</th><th>Шт</th><th>Выручка</th><th>Маржа</th></tr></thead><tbody>${T.brands.map(b=>`<tr><td style="text-align:left">${esc(b.k)}</td><td>${b.q}</td><td>${rub(b.rev)}</td><td class="${b.margin<18?'neg':''}">${String(b.margin).replace('.',',')}%</td></tr>`).join('')}</tbody></table></div><p class="note">Маржа без бонусов поставщика (например, Ikon 4% к закупке).</p>`:''}</div>`;
   out.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
 
+/* ---------- чем платили: наличные, карта, QR, перевод, счёт организации — шиномонтаж и магазин вместе ---------- */
+const PYK=[['cash','Наличные','#2e9d5b'],['card','Карта','#1f6feb'],['qr','QR-код','#7c3aed'],['transfer','Перевод на карту','#b7791f'],['invoice','Счёт организации','#c2185b'],['coupon','Купон производителя','#64748b'],['none','Способ не указан','#9aa3ad']];
+const PY={from:'',to:''};
+function pyRange(k){const d=new Date(),y=d.getFullYear(),m=d.getMonth();if(k==='m')return[iso(new Date(y,m,1)),iso(d)];if(k==='pm')return[iso(new Date(y,m-1,1)),iso(new Date(y,m,0))];
+  if(k==='q'){const q=Math.floor(m/3)*3;return[iso(new Date(y,q,1)),iso(d)];}if(k==='pq'){const q=Math.floor(m/3)*3;return[iso(new Date(y,q-3,1)),iso(new Date(y,q,0))];}return[iso(new Date(y,0,1)),iso(d)];}
+async function loadPay(){if(!PY.from)[PY.from,PY.to]=pyRange('m');$('#pyFrom').value=PY.from;$('#pyTo').value=PY.to;
+  $('#pyQuick').innerHTML=[['m','Этот месяц'],['pm','Прошлый месяц'],['q','Квартал'],['pq','Прошлый квартал'],['y','Год']].map(([k,l])=>{const r=pyRange(k);return `<button type="button" class="fchip" data-pq="${k}" aria-pressed="${r[0]===PY.from&&r[1]===PY.to}">${l}</button>`;}).join('');
+  $('#pyQuick').querySelectorAll('[data-pq]').forEach(b=>b.onclick=()=>{[PY.from,PY.to]=pyRange(b.dataset.pq);loadPay();});
+  const el=$('#pyBody');el.innerHTML='<p class="note">Считаю…</p>';let j;try{j=await api('pay_stat',null,{from:PY.from,to:PY.to});}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
+  const R=PYK.map(([k,l,c])=>({k,l,c,...j.rows[k],t:j.rows[k].m+j.rows[k].s})).filter(r=>r.t||r.mn||r.sn),T=R.reduce((a,r)=>a+r.t,0),TM=R.reduce((a,r)=>a+r.m,0),TS=R.reduce((a,r)=>a+r.s,0);
+  if(!R.length){el.innerHTML='<p class="note">За этот период оплат нет.</p>';return;}
+  const kassa=R.filter(r=>['cash','card','qr'].includes(r.k)).reduce((a,r)=>a+r.t,0);
+  el.innerHTML=`<div class="tiles">${R.slice(0,5).map(r=>`<div class="tile"><span class="mono">${r.l}</span><b class="tnum">${rub(r.t)}</b><small class="pay">${T?Math.round(r.t/T*100):0}% · ${r.mn+r.sn} ${plural(r.mn+r.sn,'оплата','оплаты','оплат')}</small></div>`).join('')}</div>
+  <div class="pybar" role="img" aria-label="Доли способов оплаты">${R.filter(r=>r.t>0).map(r=>`<span style="flex:${r.t};background:${r.c}" title="${r.l}: ${rub(r.t)}"></span>`).join('')}</div>
+  <div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Способ оплаты</th><th>Шиномонтаж</th><th>Магазин</th><th>Всего</th><th>Доля</th></tr></thead><tbody>
+  ${R.map(r=>`<tr><td style="text-align:left"><span class="pydot" style="background:${r.c}"></span>${r.l}</td><td>${r.m?rub(r.m):'—'}</td><td>${r.s?rub(r.s):'—'}</td><td><b>${rub(r.t)}</b></td><td>${T?Math.round(r.t/T*100):0}%</td></tr>`).join('')}
+  <tr><td style="text-align:left"><b>Итого</b></td><td><b>${rub(TM)}</b></td><td><b>${rub(TS)}</b></td><td><b>${rub(T)}</b></td><td></td></tr></tbody></table></div>
+  <p class="note" style="margin-top:12px"><b>Для сверки.</b> Через кассу (наличные + карта + QR) должно пройти <b class="tnum">${rub(kassa)}</b> — столько же должно быть в чеках Эвотора за этот период. Карта и QR — на расчётный счёт от банка (за вычетом комиссии), счета организаций — отдельными платежами.${j.inv_due?` Счетов шиномонтажа ещё не оплачено: <b style="color:var(--signal)">${rub(j.inv_due)}</b> (${j.inv_due_n}).`:''}</p>
+  ${j.days.length>1?`<h3 class="anh3">По дням</h3><div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">День</th>${R.map(r=>`<th>${r.l.split(' ')[0]}</th>`).join('')}<th>Всего</th></tr></thead><tbody>${j.days.slice().reverse().map(d=>`<tr><td style="text-align:left">${fmtDay(d.day)}</td>${R.map(r=>`<td>${d[r.k]?rub(d[r.k]):'—'}</td>`).join('')}<td><b>${rub(R.reduce((a,r)=>a+(d[r.k]||0),0))}</b></td></tr>`).join('')}</tbody></table></div>`:''}`;}
+$('#pyFrom').onchange=$('#pyTo').onchange=()=>{PY.from=$('#pyFrom').value||PY.from;PY.to=$('#pyTo').value||PY.to;loadPay();};
 /* ---------- хранение (шинный отель) и КП — внутри пульта, в той же вкладке ---------- */
 const FR={h:'hotel/index.php',k:'/kp/',v:'/vitrina/'};
 function openFrame(a,path){const box=$('#v-fr');let f=document.getElementById('fr-'+a);
@@ -2177,6 +2204,8 @@ function openFrame(a,path){const box=$('#v-fr');let f=document.getElementById('f
   else if(path)f.src=(a==='h'?'hotel/':FR[a])+path;
   box.querySelectorAll('.frm').forEach(x=>x.hidden=x!==f);show('fr');setHdr();}
 function openHotel(path){setArea('h');openFrame('h',path);}
+/* с витрины: нужного размера нет — заказ клиенту открывается здесь же, уже заполненный */
+window.addEventListener('message',e=>{if(e.origin!==location.origin||!e.data||e.data.ivanor!=='zak')return;setArea('z');openZak({id:0,day:iso(new Date()),phone:String(e.data.phone||'').replace(/\D/g,''),name:String(e.data.name||'').slice(0,80),items:String(e.data.items||'').slice(0,200),total:'',prepay:'',supplier:'',promo:'',note:'с витрины',status:'wait'});});
 const SKIND={assembled:'колёса в сборе',tires:'шины без дисков',preseason:'новые шины до сезона'};
 function storLine(x){return `${x.qty} ${plural(x.qty,'колесо','колеса','колёс')} · ${SKIND[x.kind]||x.kind}${x.size?' '+x.size:''}${x.cell?' · ячейка '+x.cell:' · без ячейки'}${x.num?' · № '+x.num:''}`;}
 /* ---------- заказы клиентов (раньше — листок) ---------- */
@@ -2451,7 +2480,7 @@ async function openCrm(phone){let j=null;
   const offers=(j&&j.offer)||[];
   const carRow=(c,i)=>`<div class="carrow" data-car="${i}"><input class="inp" data-f="car" value="${esc(c.car||'')}" placeholder="Марка, модель" autocomplete="off"><input class="inp" data-f="plate" value="${esc(c.plate||'')}" placeholder="Госномер" autocomplete="off" style="text-transform:uppercase"><input class="inp" data-f="size" value="${esc(c.size||'')}" placeholder="Шины: 205/55 R16" autocomplete="off"><input class="inp" data-f="year" value="${esc(c.year||'')}" placeholder="Год" inputmode="numeric" autocomplete="off"><button type="button" class="out" data-cdel="${i}" aria-label="Убрать машину">×</button></div>`;
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">${esc(x.name||(phone?fmtPhone(phone):'Новый клиент'))}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  ${phone?`<div class="row" style="margin:-4px 0 10px;gap:6px">${segBadges(x)}</div><div class="row" id="crAct" style="margin:0 0 12px"><a class="btn ghost" href="${telHref(phone)}">Позвонить</a><a class="btn ghost" href="${waHref(phone)}" target="_blank" rel="noopener">WhatsApp</a><button type="button" class="btn ghost" id="crT">Отметить звонок</button><button type="button" class="btn ghost" id="crZ">+ Заказ</button><button type="button" class="btn ghost" id="crTk">+ Задача</button><button type="button" class="btn ghost" id="crKp">+ КП</button></div>
+  ${phone?`<div class="row" style="margin:-4px 0 10px;gap:6px">${segBadges(x)}</div><div class="row" id="crAct" style="margin:0 0 12px"><a class="btn ghost" href="${telHref(phone)}">Позвонить</a><a class="btn ghost" href="${waHref(phone)}" target="_blank" rel="noopener">WhatsApp</a><button type="button" class="btn ghost" id="crT">Отметить звонок</button><button type="button" class="btn ghost" id="crZ">+ Заказ</button><button type="button" class="btn ghost" id="crTk">+ Задача</button><button type="button" class="btn ghost" id="crKp">+ КП</button><button type="button" class="btn ghost" id="crVit">Подбор на витрине</button></div>
   <div class="tiles" style="margin:0 0 12px"><div class="tile"><span class="mono">Шиномонтаж</span><b class="tnum">${x.m_n} ${plural(x.m_n,'визит','визита','визитов')}</b><small class="pay">${rub(x.m_sum)}${x.nseas?' · сезонов: '+x.nseas:''}</small></div>
     <div class="tile"><span class="mono">Магазин</span><b class="tnum">${x.s_n} ${plural(x.s_n,'покупка','покупки','покупок')}</b><small class="pay">${rub(x.s_sum)} · наценка ${rub(x.s_prof)}${x.s_org?' · на организацию: '+x.s_org:''}</small></div>
     <div class="tile"><span class="mono">Хранение</span><b class="tnum">${x.h_now?x.h_now+' сейчас':x.h_n?x.h_n+' раз':'нет'}</b><small class="pay">${x.h_sum?rub(x.h_sum):''}${x.h_due?' · до '+fmtDay(x.h_due):''}</small></div>
@@ -2492,6 +2521,9 @@ async function openCrm(phone){let j=null;
   const tb=document.getElementById('crT');if(tb)tb.onclick=()=>touchSheet({phone,name:x.name,why:(offers[0]||{}).why||''},()=>openCrm(phone));
   const tkb=document.getElementById('crTk');if(tkb)tkb.onclick=()=>openTask({id:0,title:'',note:'',who:'',due:iso(new Date()),prio:0,phone,status:'open',_name:x.name});
   const zb=document.getElementById('crZ');if(zb)zb.onclick=()=>openZak({id:0,day:iso(new Date()),phone,name:x.name||'',items:'',total:'',prepay:'',supplier:'',promo:'',note:'',status:'wait'});
+  const vb=document.getElementById('crVit');if(vb)vb.onclick=()=>{const src=[...cars.map(c=>c.size||''),x.tire_size||''].find(v=>/\d{3}\D+\d{2}\D+\d{2}/.test(v))||'';const m=src.match(/(\d{3})\D+(\d{2})\D+(\d{2})/);
+    try{localStorage.setItem('ivanor_vpick',JSON.stringify({phone:fmtPhone(phone),name:x.name||'',w:m?m[1]:'',p:m?m[2]:'',d:m?m[3]:'',t:Date.now()}));}catch(_){}
+    closeSheet();setArea('v');openFrame('v','index.html?pick='+Date.now());};
   const kb=document.getElementById('crKp');if(kb)kb.onclick=()=>newKp(((orgs.find(o=>o.role==='owner')||orgs[0]||{}).org)||'',x.name||'',phone);
   if(phone)tlBox($('#tlBox'),{phone},()=>openCrm(phone),phone);}
 /* карточка организации: обезличенная фирма-клиент или фирма нашего клиента (владелец) */
@@ -2794,16 +2826,16 @@ $('#y-prev').onclick=()=>{S.pa=perShift(S.pm,S.pa,-1);renderSum();};$('#y-next')
 document.querySelectorAll('#pmMode [data-pm]').forEach(b=>b.onclick=()=>{S.pm=b.dataset.pm;renderSum();});
 
 /* ---------- разделы: шиномонтаж и магазин (одна база, общие клиенты) ---------- */
-/* тема: магазин — светлая, шиномонтаж — тёмная; на устройстве можно закрепить вручную */
+/* тема: один вид во всех разделах — светлый; тёмный включается кнопкой на этом устройстве */
 function themePref(){try{return localStorage.getItem('ivanor_theme')||'auto';}catch(_){return 'auto';}}
 function applyTheme(){let area=S.area;if(!area){try{area=localStorage.getItem('ivanor_area')||'m';}catch(_){area='m';}if(/shop|magazin/.test(location.search))area='s';}
-  const p=themePref(),t=p==='light'||p==='dark'?p:(area==='m'?'dark':'light');
+  const p=themePref(),t=p==='dark'?'dark':'light';
   document.body.classList.toggle('t-dark',t==='dark');document.body.classList.toggle('t-light',t==='light');
   const mt=document.querySelector('meta[name="theme-color"]');if(mt)mt.content=t==='dark'?'#1B1E24':'#FFFFFF';
-  const l=document.getElementById('thLbl');if(l)l.textContent=p==='auto'?'':p==='light'?'светлая':'тёмная';}
+  const l=document.getElementById('thLbl');if(l)l.textContent=p==='dark'?'тёмная':'';}
 applyTheme();
-document.getElementById('thBtn').onclick=()=>{const n={auto:'light',light:'dark',dark:'auto'}[themePref()];try{localStorage.setItem('ivanor_theme',n);}catch(_){}applyTheme();
-  toast('<b>Тема: '+(n==='auto'?'по разделу':n==='light'?'всегда светлая':'всегда тёмная')+'</b>'+(n==='auto'?'Магазин светлый, шиномонтаж тёмный':'Только на этом устройстве'));};
+document.getElementById('thBtn').onclick=()=>{const n=themePref()==='dark'?'light':'dark';try{localStorage.setItem('ivanor_theme',n);}catch(_){}applyTheme();
+  toast('<b>Тема: '+(n==='light'?'светлая':'тёмная')+'</b>Во всех разделах, только на этом устройстве');};
 function setArea(a,first){if(first)setTimeout(tkBadge,900);if((a==='z'||a==='k'||a==='c'||a==='t')&&S.role!=='owner')a='m';if(!['m','s','z','h','k','v','c','t'].includes(a))a='m';S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}['m','s','h','z','k','v','c','t'].forEach(x=>document.body.classList.toggle('ar-'+x,x===a));document.body.classList.toggle('area-s',a==='s');document.body.classList.toggle('area-z',a==='z'||a==='c'||a==='t');document.body.classList.toggle('area-fr',a==='h'||a==='k'||a==='v');applyTheme();
   document.querySelectorAll('[data-area]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.area===a));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('off-area',!t.dataset.a.includes(a)));
@@ -2819,12 +2851,12 @@ function setArea(a,first){if(first)setTimeout(tkBadge,900);if((a==='z'||a==='k'|
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
-const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',month:'Все документы'};
+const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',month:'Все документы'};
 function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
-  if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pho'){show('pho');loadPho();return;}
+  if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pay'){show('pay');loadPay();window.scrollTo(0,0);return;}if(p==='pho'){show('pho');loadPho();return;}
   $('#stH1').textContent=PAGES[p];
   if(p==='goods'){S.st.wh='all';show('stock');stSub('goods');}
   else{if(S.dl.type!==(p==='month'?'':p))S.dl.partner='';S.dl.type=p==='month'?'':p;show('stock');stSub('docs');}
@@ -3154,7 +3186,7 @@ async function loadSup(){let L=[];try{L=(await api('suppliers')).suppliers;}catc
 
 /* ---------- вкладки ---------- */
 function show(v){if(v==='cli'&&S.role==='owner'){setArea('c');return;}S.view=v;['an','adv'].forEach(x=>{const e=document.getElementById('v-'+x);if(e)e.hidden=v!==x;});{const vf=document.getElementById('v-fr');if(vf)vf.hidden=v!=='fr';}{const vz=document.getElementById('v-zak');if(vz)vz.hidden=v!=='zak';if(v==='zak')loadZak();}{const vc=document.getElementById('v-crm');if(vc)vc.hidden=v!=='crm';if(v==='crm')loadCrm();}{const vt=document.getElementById('v-task');if(vt)vt.hidden=v!=='task';if(v==='task')loadTasks();}document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);{const vp=document.getElementById('v-pay');if(vp)vp.hidden=v!=='pay';}$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}

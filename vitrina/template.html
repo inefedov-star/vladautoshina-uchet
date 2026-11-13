@@ -231,7 +231,9 @@ td{border-bottom:1px solid var(--rule-soft)}td.sz2{font-family:var(--f-text)}
 @media (max-width:640px){.cl{grid-template-columns:1fr auto;}.cl .cp{grid-column:1}.cl .cs{text-align:right}.cform{grid-template-columns:1fr}}
 /* внутри пульта: выход и «на весь экран» — у пульта свои; на телефоне шапка в одну строку */
 html.embed #selBtn{display:none}
+html.embed .bar .logo svg,html.embed .bar .logo i,html.embed #fs{display:none}html.embed .bar{padding-block:8px 2px}html.embed .top{position:static;border-bottom:0}html.embed body{background:#F4F5F7}
 @media(max-width:600px){#fs{display:none}.bar .logo i{display:none}}
+.csug{display:flex;flex-direction:column;gap:6px}.csb{display:block;text-align:left;border:1px solid var(--rule);background:var(--paper);border-radius:12px;padding:9px 12px;min-height:46px;font:inherit}.csb small{display:block;color:var(--ink-3);font-size:.8rem}.chint{margin:0;padding:8px 12px;border-radius:10px;background:var(--paper-2);font-size:.86rem;color:var(--ink-2)}
 </style>
 
 <header class="top">
@@ -271,14 +273,17 @@ html.embed #selBtn{display:none}
 </section>
 
 <script>
+/* пульт живёт в /pult/; пока папку на сайте не переименовали — в /montazh/ */
+let PBASE='/pult/';function pfetch(path,opt){const b=PBASE;return fetch(b+path,opt).then(r=>{if(r.status!==404||b!=='/pult/')return r;PBASE='/montazh/';return fetch(PBASE+path,opt);});}
+
 try{if(window.self!==window.top)document.documentElement.classList.add('embed');}catch(_){document.documentElement.classList.add('embed');}
 
 let STAMP='__STAMP__';
 let TIRES=__TIRES__;
 let OTHER=__OTHER__;
-/* фото моделей — из учёта на этом же сайте (vladautoshina.ru/montazh); если недоступно — остаются схемы */
+/* фото моделей — из учёта на этом же сайте (vladautoshina.ru/pult); если недоступно — остаются схемы */
 let PH={};
-fetch('/montazh/api.php?a=photos_public',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{const b='/montazh/';PH={};Object.entries(j.photos||{}).forEach(([k,v])=>PH[k]=b+v);if(Object.keys(PH).length&&typeof renderOut==='function')renderOut();}).catch(()=>{});
+pfetch('api.php?a=photos_public',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{const b='/'+(j.base||'pult/');PH={};Object.entries(j.photos||{}).forEach(([k,v])=>PH[k]=b+v);if(Object.keys(PH).length&&typeof renderOut==='function')renderOut();}).catch(()=>{});
 const phImg=(list,svg)=>{const o=list.find(x=>PH[x.id]);return o?`<img class="pimg" src="${PH[o.id]}" alt="" loading="lazy">`:svg;};
 (function(){
 'use strict';
@@ -351,7 +356,7 @@ function tiresOut(){
   g=sortList(g,x=>S.sort==='desc'?x.max:x.min,x=>x.o.b+' '+x.o.m);
   const f=S.tires,full=f.d&&f.w&&f.p;
   title(rows.length?(full?`${f.w}/${f.p} R${f.d}: `:'')+`${g.length} ${plural(g.length,'модель','модели','моделей')} шин`:'');
-  if(!rows.length)return empty('Такого размера сейчас нет','Привезём под заказ — уточните у продавца. Или уберите один из фильтров.');
+  if(!rows.length)return empty('Такого размера сейчас нет','Привезём под заказ — уточните у продавца. Или уберите один из фильтров.'+(SEL&&full&&document.documentElement.classList.contains('embed')?`<p style="margin-top:14px"><button class="tool" type="button" id="toZak" style="background:var(--signal);border-color:var(--signal);color:#fff">Оформить заказ на ${f.w}/${f.p} R${f.d}</button></p>`:''));
   const html=`<div class="grid">${g.map((x,i)=>{const o=x.o,one=x.list.length===1;
     const szs=one?'':`<div class="sizes">${x.list.slice(0,6).map(s=>`<span class="sz">${tSize(s)}</span>`).join('')}${x.list.length>6?`<span class="sz">+${x.list.length-6}</span>`:''}</div>`;
     return `<button class="card" type="button" data-i="${i}"><div class="ph">${phImg(x.list,tireSvg(o))}<div class="tags">${tTags(o)}</div></div>
@@ -467,8 +472,8 @@ function renderAll(){renderTabs();renderPick();renderOut();psum();renderCartBtn(
 /* ===== режим продавца: показываем ассортимент и сразу оформляем продажу; собственник подтверждает в пульте ===== */
 var SEL=null,CART=[];try{CART=JSON.parse(localStorage.getItem('ivanor_cart')||'[]')||[];}catch(_){CART=[];}
 const saveCart=()=>{try{localStorage.setItem('ivanor_cart',JSON.stringify(CART));}catch(_){}renderCartBtn();};
-const PAPI='/montazh/api.php?a=';
-async function papi(a,b){const r=await fetch(PAPI+a,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),credentials:'same-origin'}:{credentials:'same-origin',cache:'no-cache'});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||'Нет связи с пультом');return j;}
+const PAPI='api.php?a=';
+async function papi(a,b){const r=await pfetch(PAPI+a,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),credentials:'same-origin'}:{credentials:'same-origin',cache:'no-cache'});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||'Нет связи с пультом');return j;}
 const findItem=id=>TIRES.find(x=>x.id===id)||OTHER.find(x=>x.id===id);
 function itName(o){if(o.b!==undefined&&o.w&&o.s!==undefined)return `${o.w}/${o.p} R${o.d} ${o.b} ${o.m}${o.i?' '+o.i:''}${o.xl?' XL':''}`;if(o.n)return o.n;if(o.pcd)return `Диск ${o.w}×${o.d} ${o.pcd} ${o.m}`;return o.m||'Товар';}
 function addBtn(o){return SEL?`<button class="addb" type="button" data-add="${esc(o.id)}" aria-label="В продажу">＋</button>`:'';}
@@ -485,30 +490,45 @@ function pinPad(){sheet(`<h2 class="model" id="shTitle" style="font-size:1.6rem;
   document.querySelectorAll('.pinpad [data-k]').forEach(b=>b.onclick=async()=>{const k=b.dataset.k;if(k==='⌫')pin=pin.slice(0,-1);else if(k==='Войти'){try{await papi('login',{pin});await whoAmI();closeSheet();vtoast('<b>Режим продавца</b> Нажимайте «＋» у товара');}catch(e){const er=document.getElementById('pinE');er.textContent=e.message;er.hidden=false;pin='';}}else if(pin.length<8)pin+=k;show();});}
 async function whoAmI(){try{const j=await papi('me');SEL=j.role&&['seller','cashier','owner'].includes(j.role)?{name:j.seller||'Продавец',role:j.role}:null;}catch(_){SEL=null;}renderAll();}
 document.getElementById('selBtn').onclick=async()=>{if(SEL){if(!confirm('Выйти из режима продавца?'))return;try{await papi('logout',{});}catch(_){}SEL=null;renderAll();return;}pinPad();};
-var PAYS=[["card","Карта"],["cash","Наличные"],["sbp","Перевод"],["bank","Безнал"]],CPAY="card";
+var PAYS=[["card","Карта"],["cash","Наличные"],["qr","QR-код"],["sbp","Перевод"],["bank","Счёт"]],CPAY="card";
+/* покупатель: общий с клиентской базой пульта — подсказка по телефону или имени, история попадёт в его карточку */
+let CCL={phone:'',name:'',hint:''};
+function cclBind(){const ph=document.getElementById('cPh'),nm=document.getElementById('cNm'),box=document.getElementById('cSug');if(!ph||!nm||!box)return;let tm=null;
+  const ask=el=>{CCL.phone=ph.value;CCL.name=nm.value;CCL.hint='';clearTimeout(tm);const q=el.value.trim();if((el===ph?q.replace(/\D/g,'').length<4:q.length<2)){box.innerHTML='';return;}
+    tm=setTimeout(async()=>{try{const j=await papi('client_suggest&q='+encodeURIComponent(q));if(el.value.trim()!==q)return;
+      box.innerHTML=j.rows.slice(0,5).map((r,i)=>`<button type="button" class="csb" data-ci="${i}"><b>${esc(r.type==='org'?r.org:(r.name||'Без имени'))}</b>${r.phone?` <span class="tnum">${esc(r.phone.replace(/^7(\d{3})(\d{3})(\d{2})(\d{2})$/,'+7 $1 $2-$3-$4'))}</span>`:''}<small>${esc([r.type!=='org'&&r.org?r.org:'',...(r.cars||[]),r.sub||''].filter(Boolean).join(' · '))}</small></button>`).join('');
+      box.querySelectorAll('[data-ci]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.ci];CCL={phone:r.phone?'+'+r.phone:'',name:r.type==='org'?r.org:(r.name||r.org||''),hint:['Наш клиент',r.type!=='org'&&r.org?r.org:'',...(r.cars||[])].filter(Boolean).join(' · ')};ph.value=CCL.phone;nm.value=CCL.name;box.innerHTML=`<p class="chint">${esc(CCL.hint)}</p>`;});}catch(_){}} ,280);};
+  ph.oninput=()=>ask(ph);nm.oninput=()=>ask(nm);}
+/* из карточки клиента в пульте: «Подбор на витрине» — размер его шин и он сам уже в продаже */
+function pickFromPult(){let v=null;try{v=JSON.parse(localStorage.getItem('ivanor_vpick')||'null');localStorage.removeItem('ivanor_vpick');}catch(_){}
+  if(!v||Date.now()-(v.t||0)>600000)return;CCL={phone:v.phone||'',name:v.name||'',hint:'Подбор для клиента из пульта'};
+  if(v.w&&v.d){S.tab='tires';S.tires.w=+v.w;S.tires.p=+v.p||null;S.tires.d=+v.d;}
+  setTimeout(()=>vtoast(`<b>Подбор для: ${esc(v.name||v.phone||'клиента')}</b>${v.w?' размер '+v.w+'/'+(v.p||'')+' R'+v.d:''}`),600);}
 async function openCart(){const sum=()=>CART.reduce((a,x)=>a+x.q*x.price,0);
   sheet(`<h2 class="model" id="shTitle" style="font-size:1.6rem;margin:0 0 10px">Продажа</h2>
   ${CART.length?`<div class="cart">${CART.map((x,i)=>`<div class="cl"><div class="cn">${esc(x.name)}${x.price<x.list?`<small>по прайсу ${rub(x.list)} · скидка ${Math.round((1-x.price/x.list)*100)}%</small>`:''}${x.q>x.stock?'<small style="color:var(--signal-deep)">в наличии '+x.stock+' шт</small>':''}</div>
     <div class="cq"><button type="button" data-cq="${i}" data-d="-1">−</button><b>${x.q}</b><button type="button" data-cq="${i}" data-d="1">+</button></div>
     <input class="cp" type="number" inputmode="decimal" min="0" value="${x.price}" data-cp="${i}" aria-label="Цена за штуку"><b class="cs tnum">${rub(x.q*x.price)}</b><button type="button" class="cx" data-cx="${i}" aria-label="Убрать">×</button></div>`).join('')}</div>
     <div class="ctot">Итого: <b class="tnum" id="ctot">${rub(sum())}</b></div>
-    <div class="cform"><label>Телефон покупателя<input id="cPh" type="tel" inputmode="tel" placeholder="+7 900 000-00-00"></label><label>Имя<input id="cNm" placeholder="Как зовут"></label>
+    <div class="cform"><label>Телефон покупателя<input id="cPh" type="tel" inputmode="tel" placeholder="+7 900 000-00-00" value="${esc(CCL.phone)}" autocomplete="off"></label><label>Имя или организация<input id="cNm" placeholder="Начните вводить — найдём в клиентах" value="${esc(CCL.name)}" autocomplete="off"></label><div class="csug" id="cSug" style="grid-column:1/-1">${CCL.hint?`<p class="chint">${esc(CCL.hint)}</p>`:''}</div>
       <div class="cpay">${PAYS.map(([k,t])=>`<button type="button" data-pay="${k}" aria-pressed="${CPAY===k}">${t}</button>`).join('')}</div>
       <label style="grid-column:1/-1">Комментарий<input id="cNo" placeholder="Например: с монтажом, приедет в 15:00"></label></div>
     <button type="button" class="csend" id="cSend">Отправить собственнику на подтверждение</button>
     <p class="note">Чек пробивается на Эвоторе как обычно. Собственник проверит продажу и проведёт её в пульте.</p>`:'<p class="note">Пока пусто. Нажимайте «＋» у товара на витрине.</p>'}
   <h3 class="mysh">Мои продажи сегодня</h3><div id="myS"><p class="note">Загружаю…</p></div>`);
+  cclBind();
   document.querySelectorAll('[data-cq]').forEach(b=>b.onclick=()=>{const x=CART[+b.dataset.cq];x.q=Math.max(1,x.q+ +b.dataset.d);saveCart();openCart();});
   document.querySelectorAll('[data-cx]').forEach(b=>b.onclick=()=>{CART.splice(+b.dataset.cx,1);saveCart();openCart();});
   document.querySelectorAll('[data-cp]').forEach(inp=>inp.onchange=()=>{const x=CART[+inp.dataset.cp];x.price=Math.max(0,+inp.value||x.list);saveCart();openCart();});
   document.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{CPAY=b.dataset.pay;document.querySelectorAll('[data-pay]').forEach(x=>x.setAttribute('aria-pressed',x===b));});
   const sd=document.getElementById('cSend');if(sd)sd.onclick=async()=>{sd.disabled=true;try{const j=await papi('sale_request',{lines:CART.map(x=>({id:x.id,q:x.q,price:x.price})),phone:document.getElementById('cPh').value,name:document.getElementById('cNm').value,pay:CPAY,note:document.getElementById('cNo').value});
-      CART=[];saveCart();vtoast(`<b>Продажа № ${j.id} отправлена</b> собственник подтвердит в пульте`);openCart();}catch(e){sd.disabled=false;vtoast('<b>Не отправилось</b> '+esc(e.message));}};
+      CART=[];CCL={phone:'',name:'',hint:''};saveCart();vtoast(`<b>Продажа № ${j.id} отправлена</b> собственник подтвердит в пульте`);openCart();}catch(e){sd.disabled=false;vtoast('<b>Не отправилось</b> '+esc(e.message));}};
   try{const j=await papi('my_sales');const ST={draft:['ждёт подтверждения','w'],posted:['проведена','ok'],cancelled:['отклонена','x']};
     const tot=j.rows.filter(r=>r.status==='posted').reduce((a,r)=>a+r.sum,0);
     document.getElementById('myS').innerHTML=j.rows.length?`<p class="note" style="margin-top:0">Проведено на ${rub(tot)}</p>${j.rows.map(r=>`<div class="ms"><span class="tnum">${r.time}</span><span>№ ${r.id} · ${esc(r.items)}${r.reason?`<small>причина: ${esc(r.reason)}</small>`:''}</span><b class="tnum">${rub(r.sum)}</b><span class="mst ${ST[r.status][1]}">${ST[r.status][0]}</span></div>`).join('')}`:'<p class="note" style="margin-top:0">Сегодня продаж ещё не было.</p>';}
   catch(e){document.getElementById('myS').innerHTML=`<p class="note">${esc(e.message)}</p>`;}}
-whoAmI();
+document.addEventListener('click',e=>{if(e.target&&e.target.id==='toZak'){const f=S.tires,se={winter:'зима',stud:'шипы',fric:'липучка',summer:'лето',all:'всесезон'}[f.s]||'';try{parent.postMessage({ivanor:'zak',items:`Шины ${f.w}/${f.p} R${f.d}${se?' '+se:''}, 4 шт`,phone:CCL.phone,name:CCL.name},location.origin);}catch(_){}}});
+pickFromPult();whoAmI();
 /* без интернета витрина открывается с последним сохранённым наличием */
 if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 window.addEventListener('offline',()=>vtoast('<b>Нет интернета</b> показываю последнее сохранённое наличие'));
@@ -535,9 +555,9 @@ $('#fs').onclick=async()=>{try{if(document.fullscreenElement)await document.exit
 const fromHash=()=>{const h=location.hash.slice(1);if(TABS.some(t=>t[0]===h))S.tab=h;};
 addEventListener('hashchange',()=>{fromHash();renderAll();});
 fromHash();renderAll();
-/* живое наличие из учёта (vladautoshina.ru/montazh): цены и остатки нашего склада, без себестоимости.
+/* живое наличие из учёта (vladautoshina.ru/pult): цены и остатки нашего склада, без себестоимости.
    Нет связи — остаётся встроенная выгрузка каталога. Обновляется раз в 10 минут, пока витрина открыта. */
-function loadLive(){fetch('/montazh/api.php?a=vitrina',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{
+function loadLive(){pfetch('api.php?a=vitrina',{credentials:'omit',cache:'no-cache'}).then(r=>r.json()).then(j=>{
   if(!j||!j.live||(!(j.tires||[]).length&&!(j.other||[]).length))return;
   if(!$('#sheet').hidden)return;
   TIRES=j.tires;OTHER=j.other;DISKS=by('disk');AKB=by('akb');FAST=by('fast');

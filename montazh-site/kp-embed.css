@@ -1,7 +1,7 @@
-/* КП внутри пульта IVANOR: те же шрифты, белые карточки, фон раздела — светло-сиреневый.
+/* КП внутри пульта IVANOR: те же шрифты, белые карточки, фон раздела — общий с пультом.
    Подключается в kp/index.php только для собственника, вошедшего через пульт. */
-:root{--paper:#F3F1F9;--paper-2:#FFFFFF;--paper-3:#EEEBF6;--ink:#1B1D21;--ink-2:#4A4F57;--ink-3:#6B7079;
-  --rule:#E3DFEE;--rule-soft:#EEEBF5;--signal:#FF6600;--signal-deep:#B34700;--signal-tint:#FFF1E8;--ok:#1E7A44;
+:root{--paper:#F4F5F7;--paper-2:#FFFFFF;--paper-3:#F1F2F4;--ink:#1B1D21;--ink-2:#4A4F57;--ink-3:#6B7079;
+  --rule:#E1E4E8;--rule-soft:#EEF0F2;--signal:#FF6600;--signal-deep:#B34700;--signal-tint:#FFF1E8;--ok:#1E7A44;
   --f-display:'Montserrat','Golos Text',system-ui,sans-serif;--f-text:'Golos Text',system-ui,sans-serif;--f-mono:'Golos Text',system-ui,sans-serif;--acc:#6B4FD0}
 body{background:var(--paper)}
 .mono,.hint,.schet,.metka,.redt thead th,.pro-zakladku{letter-spacing:0;text-transform:none;font-size:.76rem}
@@ -18,3 +18,10 @@ input,select,textarea{border-radius:10px!important}
 .knopki button,.ssylka button,.ubrat{border-radius:9px}
 .pod img,.mini{border-radius:6px}
 a.tihaya[href*="vyhod"]{display:none!important}
+/* один вид с пультом: без второго логотипа, заголовок раздела как в остальных вкладках */
+.top{background:none;border:0;position:static;padding:8px 14px}
+.logo svg,.logo i{display:none}
+.logo span{color:var(--ink);font-size:1.25rem;font-weight:700;font-family:var(--f-display)}
+.top .nom{color:var(--ink-3);letter-spacing:0;text-transform:none;font-family:var(--f-text);font-size:.85rem}
+.top button,.top a:not(.logo){background:#fff;border:1px solid var(--rule)}
+.top .sig{border-color:var(--signal)}

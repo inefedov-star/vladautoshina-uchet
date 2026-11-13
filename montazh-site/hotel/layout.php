@@ -169,6 +169,18 @@ nav.tabs{background:#fff;border-top:1px solid var(--rule)}
 nav.tabs a.on{color:var(--acc)}
 nav.tabs a.add span.b{border-radius:12px}
 table{border-collapse:separate;border-spacing:0}
+/* один вид с остальными разделами пульта: нейтральный фон, акцент только цветом раздела, нижнее меню как в Магазине */
+:root{--paper:#F4F5F7;--paper3:#F1F2F4;--rule:#E1E4E8;--rule2:#EEF0F2}
+.top{padding:6px 14px;background:none;border:0;position:static}
+.top b{font-size:1.25rem;color:var(--ink)}
+.top a{background:#fff;border:1px solid var(--rule)}
+@media(max-width:899px){
+  nav.tabs{padding:4px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+  nav.tabs a{font:600 .7rem/1.1 'Golos Text',sans-serif;letter-spacing:0;min-height:54px;justify-content:center;padding:4px 2px;gap:2px}
+  nav.tabs a svg{width:23px;height:23px}
+  nav.tabs a.add{color:var(--ink)}nav.tabs a.add span.b{display:none}
+  nav.tabs a.add svg{width:48px;height:48px;padding:11px;border-radius:16px;background:var(--acc);color:#fff;margin-top:-20px;box-shadow:0 6px 14px rgba(0,0,0,.18)}
+}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&display=swap" rel="stylesheet">
