@@ -295,11 +295,25 @@ function pwItems($x, array &$out, int $depth = 0): void {
       if (isset($l['rest']) && (isset($l['price']) || isset($l['price_rozn']))) { $wh[] = ['wrh' => (string)($l['wrh'] ?? $l['wh'] ?? ''), 'rest' => (int)$l['rest'], 'buy' => (float)($l['price'] ?? 0), 'inet' => (float)($l['price_rozn'] ?? 0)]; return; }
       foreach ($y as $v) if (is_array($v) || is_object($v)) $walk($v); };
     $walk($lk['whpr'] ?? []);
-    $img = ''; foreach (['img_big_my', 'img_big_pish', 'img_small'] as $f) if (!empty($lk[$f]) && is_string($lk[$f])) { $img = $lk[$f]; break; } if (strpos($img, '//') === 0) $img = 'https:' . $img;
-    $out[] = ['code' => (string)$lk['code'], 'name' => (string)($lk['name'] ?? ''), 'brand' => (string)($lk['marka'] ?? $lk['brand'] ?? ''), 'model' => (string)($lk['model'] ?? ''), 'season' => (string)($lk['season'] ?? ''), 'thorn' => !empty($lk['thorn']) && $lk['thorn'] !== 'false', 'img' => $img, 'wh' => $wh];
+    $imgs = []; foreach ($lk as $f => $v) if (is_string($v) && strpos($f, 'img') === 0 && trim($v) !== '') $imgs[$f] = strpos($v, '//') === 0 ? 'https:' . $v : $v;
+    // img_big_my — с водяным знаком клиента (нашим): его берём в последнюю очередь
+    $ord = array_merge(array_values(array_filter(array_keys($imgs), fn($f) => strpos($f, 'big') !== false && strpos($f, '_my') === false)), array_values(array_filter(array_keys($imgs), fn($f) => strpos($f, 'big') === false && strpos($f, '_my') === false)), array_values(array_filter(array_keys($imgs), fn($f) => strpos($f, '_my') !== false)));
+    $img = $ord ? $imgs[$ord[0]] : ''; $small = $imgs['img_small'] ?? $img;
+    $out[] = ['code' => (string)$lk['code'], 'name' => (string)($lk['name'] ?? ''), 'brand' => (string)($lk['marka'] ?? $lk['brand'] ?? ''), 'model' => (string)($lk['model'] ?? ''), 'season' => (string)($lk['season'] ?? ''), 'thorn' => !empty($lk['thorn']) && $lk['thorn'] !== 'false', 'img' => $img, 'small' => $small, 'imgs' => $imgs, 'wh' => $wh];
     return; }
   foreach ($x as $v) if (is_array($v) || is_object($v)) pwItems($v, $out, $depth + 1);
 }
+// фильтр поиска шин: названия полей берём из описания API (в разных версиях width / width_min+width_max и т.п.)
+function pwFilter(SoapClient $c, int $w, float $p, float $d): array {
+  try { foreach ($c->__getTypes() as $t) { if (!preg_match('/^struct\s+(\w*Filter\w*)\s*\{(.*)\}/su', $t, $m) || !preg_match('/tyre|tire/i', $m[1]) || !preg_match('/width/i', $m[2])) continue;
+      $g = []; foreach (preg_split('/;\s*/', trim($m[2])) as $line) { if (!preg_match('/(\w+)\s+(\w+)$/', trim($line), $x)) continue; $n = $x[2]; $ln = strtolower($n); $arr = stripos($x[1], 'ArrayOf') === 0;
+        $val = null; if (strpos($ln, 'width') !== false) $val = (float)$w; elseif (strpos($ln, 'height') !== false || strpos($ln, 'profile') !== false) $val = $p; elseif (strpos($ln, 'diam') !== false) $val = $d;
+        if ($val === null) continue; $g[$n] = $arr ? [$val] : $val; }
+      if (count($g) >= 3) return $g; } } catch (Throwable $e) {}
+  return ['width' => (float)$w, 'height' => $p, 'diameter' => $d, 'width_min' => (float)$w, 'width_max' => (float)$w, 'height_min' => $p, 'height_max' => $p, 'diameter_min' => $d, 'diameter_max' => $d];
+}
+// размер из названия шины Пауэра: «205/55R16», «205/55 R16C»
+function pwSize(string $name): ?array { return preg_match('/(\d{3})\s*\/\s*(\d{2,3}(?:[.,]\d)?)\s*Z?R\s*(\d{2}(?:[.,]\d)?)/iu', $name, $m) ? [(int)$m[1], (float)str_replace(',', '.', $m[2]), (float)str_replace(',', '.', $m[3])] : null; }
 // сроки доставки по складам из того же ответа (warehouseLogistics): склад → дней
 function pwDays($x, array &$out, int $depth = 0): void {
   if ($depth > 9) return; if (is_object($x)) $x = get_object_vars($x); if (!is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER);
@@ -1267,31 +1281,40 @@ try {
     // «на заказ»: что в этом размере есть на складах Пауэра с доставкой. Закупочная цена — только собственнику
     needRole($role, ['owner', 'seller', 'cashier', 'master']);
     $w = (int)($_GET['w'] ?? 0); $pr = (float)($_GET['p'] ?? 0); $d = (float)($_GET['d'] ?? 0); if ($w < 100 || $d < 10) fail('Укажите размер полностью: ширина, профиль и диаметр');
-    $season = (string)($_GET['s'] ?? ''); $key = "$w/$pr/$d"; $p = db($cfg); $owner = $role === 'owner';
+    $season = (string)($_GET['s'] ?? ''); $key = "v2|$w/$pr/$d"; $p = db($cfg); $owner = $role === 'owner';
     $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$key]); $hit = $c->fetch(); $raw = null;
     if ($hit && time() - (int)$hit['ts'] < 900 && ($_GET['fresh'] ?? '') !== '1') $raw = json_decode($hit['body'], true);
     if ($raw === null) {
-      $cl = api4t($cfg); $items = []; $days = []; $err = null;
-      for ($page = 0; $page < 4; $page++) {
-        try { $r = $cl->GetFindTyre(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => ['width' => (float)$w, 'height' => $pr, 'diameter' => $d], 'page' => $page, 'pageSize' => 50]); }
+      $cl = api4t($cfg); $items = []; $days = []; $err = null; $flt = pwFilter($cl, $w, $pr, $d);
+      for ($page = 0; $page < 6; $page++) {
+        try { $r = $cl->GetFindTyre(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => $flt, 'page' => $page, 'pageSize' => 50]); }
         catch (Throwable $e) { $err = $e->getMessage(); break; }
-        $n0 = count($items); pwItems($r, $items); pwDays($r, $days); if (count($items) - $n0 < 50) break; }
+        $n0 = count($items); pwItems($r, $items); pwDays($r, $days); $got = count($items) - $n0;
+        // оставляем только нужный размер (если API вернул больше, чем просили)
+        $items = array_values(array_filter($items, function ($it) use ($w, $pr, $d) { $sz = pwSize($it['name']); return $sz === null || ($sz[0] === $w && abs($sz[1] - $pr) < 0.01 && abs($sz[2] - $d) < 0.01); }));
+        if ($got < 50) break; }
       if ($err !== null && !$items) fail('Пауэр не ответил: ' . mb_substr($err, 0, 200), 502);
       $raw = ['items' => $items, 'days' => $days]; $p->prepare('INSERT OR REPLACE INTO pwcache (k, ts, body) VALUES (?,?,?)')->execute([$key, time(), json_encode($raw, JSON_UNESCAPED_UNICODE)]);
     }
+    // своё фото модели (без водяных знаков), если мы его уже загрузили в «Фото товаров»
+    $ownPh = []; foreach (photoMap($cfg) as $k9 => $v9) if (strpos($k9, 'tire|') === 0) { $pp = explode('|', $k9); $ownPh[normModel($pp[1] ?? '') . '|' . normModel($pp[2] ?? '') . '|' . ($pp[3] ?? '')] = '/' . basename(__DIR__) . '/' . $v9['url']; }
     $allow = array_map('strval', (array)($cfg['pw_wrh'] ?? [])); $skip = array_map('strval', (array)($cfg['pw_wrh_skip'] ?? [])); $out2 = []; $whSeen = [];
     foreach ($raw['items'] as $it) { $best = null; $rest = 0; $minDays = null;
       foreach ($it['wh'] as $x) { $id = (string)$x['wrh']; $whSeen[$id] = ($raw['days'][$id]['name'] ?? '') . (isset($raw['days'][$id]) ? ' · ' . $raw['days'][$id]['days'] . ' д.' : '');
         if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true)) continue; if (!$allow && preg_match('/^\s*ОХ\b/u', (string)($raw['days'][$id]['name'] ?? ''))) continue; // наше ответхранение — это уже наш склад, не «на заказ» if (!$allow && !isset($raw['days'][$id])) continue; // без списка складов берём только те, по которым Пауэр даёт срок доставки
         $rest += $x['rest']; $dd = $raw['days'][$id]['days'] ?? null; if ($dd !== null && ($minDays === null || $dd < $minDays)) $minDays = $dd;
         if ($best === null || $x['buy'] < $best['buy']) $best = $x; }
-      if ($best === null || $rest <= 0) continue; $se = mb_strtolower($it['season']); $win = mb_strpos($se, 'w') === 0 || mb_strpos($se, 'зим') !== false; $sum = mb_strpos($se, 's') === 0 || mb_strpos($se, 'лет') !== false;
-      if ($season === 'winter' && !$win) continue; if ($season === 'summer' && !$sum) continue; if ($season === 'stud' && !($win && $it['thorn'])) continue; if ($season === 'fric' && !($win && !$it['thorn'])) continue;
-      $row = ['code' => $it['code'], 'name' => $it['name'], 'brand' => $it['brand'], 'model' => $it['model'], 'season' => $win ? 'winter' : ($sum ? 'summer' : 'all'), 'stud' => (bool)$it['thorn'], 'img' => $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
+      if ($best === null || $rest <= 0) continue; $se = mb_strtolower(trim($it['season'])); $nmU = mb_strtoupper($it['name'] . ' ' . $it['model']);
+      $stud = (bool)$it['thorn'] || (bool)preg_match('/ШИП|\(Ш\)|STUD/u', $nmU);
+      $win = $stud || $se === 'w' || mb_strpos($se, 'wint') === 0 || mb_strpos($se, 'зим') !== false; $sum = !$win && ($se === 's' || mb_strpos($se, 'sum') === 0 || mb_strpos($se, 'лет') !== false);
+      if (!$win && !$sum && $se === '' && preg_match('/(ICE|SNOW|WINTER|NORD|FROST|ЗИМ)/u', $nmU)) $win = true;
+      $sz = pwSize($it['name']); if ($sz !== null && ($sz[0] !== $w || abs($sz[1] - $pr) > 0.01 || abs($sz[2] - $d) > 0.01)) continue;
+      if ($season === 'winter' && !$win) continue; if ($season === 'summer' && !$sum) continue; if ($season === 'stud' && !($win && $stud)) continue; if ($season === 'fric' && !($win && !$stud)) continue; if ($season === 'all' && ($win || $sum)) continue;
+      $row = ['code' => $it['code'], 'name' => $it['name'], 'brand' => $it['brand'], 'model' => $it['model'], 'season' => $win ? 'winter' : ($sum ? 'summer' : 'all'), 'stud' => $stud, 'img' => $ownPh[normModel($it['brand']) . '|' . normModel($it['model']) . '|' . ($stud ? 'S' : '')] ?? $it['img'], 'small' => $it['small'] ?? $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
       if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
       $out2[] = $row; }
     usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
-    out(['size' => "$w/" . rtrim(rtrim((string)$pr, '0'), '.') . ' R' . rtrim(rtrim((string)$d, '0'), '.'), 'rows' => array_slice($out2, 0, 120), 'found' => count($raw['items'])] + ($owner ? ['warehouses' => $whSeen, 'cached' => $hit && $raw !== null] : []));
+    out(['size' => "$w/" . rtrim(rtrim((string)$pr, '0'), '.') . ' R' . rtrim(rtrim((string)$d, '0'), '.'), 'rows' => array_slice($out2, 0, 120), 'found' => count($raw['items'])] + ($owner ? ['warehouses' => $whSeen, 'cached' => $hit && $raw !== null, 'sample' => isset($raw['items'][0]) ? ['season' => $raw['items'][0]['season'], 'thorn' => $raw['items'][0]['thorn'], 'imgs' => $raw['items'][0]['imgs'] ?? []] : null] : []));
 
   case 'rep_cuts':
     // продажи в разрезах: сезон и шипы, бренды, диаметры, аккумуляторы — период против того же периода год назад, остаток и прогноз на 4 недели
