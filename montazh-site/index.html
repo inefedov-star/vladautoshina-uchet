@@ -699,7 +699,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
   <div class="sg owner-only"><span class="sgh">Закупки</span><button type="button" data-p="in">Закупки</button><button type="button" data-p="iss">Выдача с ответхранения</button></div>
   <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
-  <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="pay">Чем платили</button><button type="button" data-p="month">Все документы</button></div>
+  <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="pay">Чем платили</button><button type="button" data-p="sv">Сверка кассы и банка</button><button type="button" data-p="month">Все документы</button></div>
   <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" id="sgStart">Переход с CloudShop</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button><button type="button" data-p="arch">Архив CloudShop</button></div>
 </aside>
 <main class="wrap">
@@ -878,6 +878,14 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
     <div id="advOut" style="margin-bottom:40px"></div>
   </section>
 
+  <section id="v-sv" hidden>
+    <div class="calbar"><h1>Сверка кассы и банка</h1></div>
+    <div class="row" style="align-items:center;gap:8px;margin-bottom:10px">
+      <button class="btn sig" type="button" id="svUp">Загрузить файлы: чеки ОФД, выписка банка</button><input type="file" id="svF" accept=".xlsx,.xls" multiple hidden>
+      <label class="pay">с <input class="inp" type="date" id="svFrom" style="width:auto;min-height:40px"></label><label class="pay">по <input class="inp" type="date" id="svTo" style="width:auto;min-height:40px"></label></div>
+    <p class="pay" id="svHave" style="margin:0 0 12px"></p>
+    <div id="svBody"></div>
+  </section>
   <section id="v-pay" hidden>
     <div class="calbar"><h1>Чем платили</h1></div>
     <div class="row" style="align-items:center;gap:8px;margin-bottom:12px"><div class="row" id="pyQuick" style="gap:6px"></div>
@@ -2010,7 +2018,7 @@ function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;c
     else if(k==='c:calls'){CRS.mode='calls';loadCrm();}else if(k.startsWith('c:')){CRS.mode='list';CRS.seg=k==='c:list'?'all':k.slice(2);loadCrm();}else if(k==='cn')openCrm(null);
     else if(k==='t:open'||k==='t:done'){TK.st=k.slice(2);loadTasks();}else if(k==='t:pr')printTasks();else if(k==='tn')openTask(null);renderBnav();});}
 function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['p:iss','Выдачи с ОХ','list']]],
-    ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:pay','Чем платили','chart'],['p:month','Все документы','docs']]],
+    ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:rep','Продажи по товарам','list'],['p:pay','Чем платили','chart'],['p:sv','Сверка кассы и банка','docs'],['p:month','Все документы','docs']]],
     ['Каталог и люди',[['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up'],['p:arch','Архив CloudShop','chart']]]];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
   $('#close').onclick=closeSheet;
@@ -2177,6 +2185,50 @@ async function loadAdv(){const box=$('#advArch'),out=$('#advOut');
     ${T.brands.length?`<div class="tw"><table class="antab"><thead><tr><th style="text-align:left">Бренд</th><th>Шт</th><th>Выручка</th><th>Маржа</th></tr></thead><tbody>${T.brands.map(b=>`<tr><td style="text-align:left">${esc(b.k)}</td><td>${b.q}</td><td>${rub(b.rev)}</td><td class="${b.margin<18?'neg':''}">${String(b.margin).replace('.',',')}%</td></tr>`).join('')}</tbody></table></div><p class="note">Маржа без бонусов поставщика (например, Ikon 4% к закупке).</p>`:''}</div>`;
   out.querySelectorAll('tr[data-p]').forEach(tr=>tr.onclick=()=>openProduct(+tr.dataset.p));}
 
+/* ---------- сверка: пульт ↔ чеки ОФД ↔ банк. Файлы: отчёт «Сверка» из ОФД и выписка Т-Банка (Excel) ---------- */
+const SV={from:'',to:''};
+function svDate(v){if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);return d?`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')} ${String(d.H).padStart(2,'0')}:${String(d.M).padStart(2,'0')}`:'';}return String(v||'');}
+function svParse(wb){const sh=wb.Sheets[wb.SheetNames[0]],A=XLSX.utils.sheet_to_json(sh,{header:1,raw:true,defval:''});const norm=c=>String(c).replace(/\s+/g,' ').trim().toLowerCase();
+  let hi=A.findIndex(r=>r.some(c=>/номер фискального/.test(norm(c))));
+  if(hi>=0){const H=A[hi].map(norm),c=re=>H.findIndex(h=>re.test(h)),C={kkt:c(/заводской номер ккт/),fd:c(/номер фискального/),day:c(/дата создания/),tm:c(/время создания/),type:c(/тип документа/),op:c(/тип операции/),total:c(/сумма документа/),cash:c(/сумма наличными/),cashless:c(/сумма безналичными/),shift:c(/номер смены/)};
+    return{kind:'ofd',rows:A.slice(hi+1).filter(r=>/кассовый чек/i.test(String(r[C.type]))).map(r=>({kkt:String(r[C.kkt]),fd:String(r[C.fd]),day:svDate(r[C.day]),tm:svDate(r[C.tm]),op:String(r[C.op]),total:+r[C.total]||0,cash:+r[C.cash]||0,cashless:+r[C.cashless]||0,shift:String(r[C.shift])}))};}
+  hi=A.findIndex(r=>r.some(c=>/назначение платежа/.test(norm(c))));
+  if(hi>=0){const H=A[hi].map(norm),c=re=>H.findIndex(h=>re.test(h)),C={acc:c(/^номер сч[её]та/),dir:c(/^тип операции/),day:c(/дата проведения/),doc:c(/номер документа/),amount:c(/сумма в валюте сч[её]та/),purpose:c(/назначение платежа/),payer:c(/наименование плательщика/),inn:c(/инн плательщика/)};
+    if(C.dir<0||C.amount<0||C.day<0)throw new Error('Это выписка, но не в формате Т-Банка (Excel). Пришлите файл — добавлю этот банк.');
+    return{kind:'bank',rows:A.slice(hi+1).filter(r=>/^(кредит|дебет)/i.test(String(r[C.dir]))).map(r=>({acc:String(r[C.acc]),dir:String(r[C.dir]),day:svDate(r[C.day]),doc:String(r[C.doc]),amount:+r[C.amount]||0,purpose:String(r[C.purpose]),payer:String(r[C.payer]),inn:String(r[C.inn])}))};}
+  throw new Error('Не узнал файл: нужен отчёт «Сверка» из ОФД или выписка Т-Банка в Excel');}
+$('#svUp').onclick=()=>$('#svF').click();
+$('#svF').onchange=async e=>{const F=[...e.target.files];e.target.value='';if(!F.length)return;const msg=[];let lastOfd=null;
+  try{await loadXlsxLib();for(const f of F){toast('<b>Читаю…</b>'+esc(f.name));const P=svParse(XLSX.read(await f.arrayBuffer(),{type:'array'}));if(!P.rows.length){msg.push(`${f.name}: пусто`);continue;}
+      let n=0,fr='',to='';for(let i=0;i<P.rows.length;i+=1500){const j=await api('sv_upload',{kind:P.kind,rows:P.rows.slice(i,i+1500)});n+=j.n;if(j.from&&(!fr||j.from<fr))fr=j.from;if(j.to>to)to=j.to;}
+      msg.push(`${P.kind==='ofd'?'Чеки ОФД':'Выписка банка'}: ${n} ${P.kind==='ofd'?plural(n,'чек','чека','чеков'):plural(n,'операция','операции','операций')}, ${fmtDay(fr)} — ${fmtDay(to)}`);if(P.kind==='ofd')lastOfd=[fr,to];}
+    if(lastOfd)[SV.from,SV.to]=lastOfd;toast('<b>Загружено</b>'+msg.map(esc).join('<br>'));loadSv();}
+  catch(er){toast('<b>Не загрузилось</b>'+esc(er.message));}};
+$('#svFrom').onchange=$('#svTo').onchange=()=>{SV.from=$('#svFrom').value;SV.to=$('#svTo').value;loadSv();};
+async function loadSv(){const el=$('#svBody');el.innerHTML='<p class="note">Сверяю…</p>';let j;try{j=await api('sv_report',null,SV.from?{from:SV.from,to:SV.to}:{});}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
+  SV.from=j.from;SV.to=j.to;$('#svFrom').value=j.from;$('#svTo').value=j.to;
+  $('#svHave').innerHTML=`Загружено: чеки ОФД ${j.ofd.a?fmtDay(j.ofd.a)+' — '+fmtDay(j.ofd.b):'<b>нет</b>'} · банк ${j.bank.a?fmtDay(j.bank.a)+' — '+fmtDay(j.bank.b):'<b>нет</b>'}`;
+  if(!j.ofd.a&&!j.bank.a){el.innerHTML=`<div class="note"><b>Как сверить.</b> 1) В личном кабинете ОФД скачайте отчёт «Сверка» за период (Excel). 2) В Т-Банке скачайте выписку по счёту за тот же период (Excel). 3) Нажмите «Загрузить файлы» и выберите оба сразу. Повторная загрузка ничего не задвоит.</div>`;return;}
+  const T=j.tot,dl=(a,b)=>{const d=Math.round(a-b);return d===0?'<span style="color:var(--moss)">сошлось</span>':`<b style="color:var(--signal-deep)">${d>0?'+':'−'}${rub(Math.abs(d))}</b>`;},bank=T.b_acq+T.b_sbp;
+  const dc=(a,b)=>{const d=Math.round(a-b);return d===0?'<td style="color:var(--moss)">✓</td>':`<td><b style="color:var(--signal-deep)">${d>0?'+':'−'}${rub(Math.abs(d))}</b></td>`;};
+  const IST={match:['пришла — отметить оплаченным','w'],done:['уже отмечен оплаченным','ok'],diff:['сумма не совпала','x'],none:['в пульте такого счёта нет','']};
+  el.innerHTML=`<div class="tiles">
+    <div class="tile"><span class="mono">В пульте через кассу</span><b class="tnum">${rub(T.p_cash+T.p_nc)}</b><small class="pay">наличные ${rub(T.p_cash)} · карта и QR ${rub(T.p_nc)}</small></div>
+    <div class="tile"><span class="mono">Чеки ОФД</span><b class="tnum">${rub(T.o_cash+T.o_nc)}</b><small class="pay">${T.o_n} ${plural(T.o_n,'чек','чека','чеков')} · наличные ${rub(T.o_cash)} · безнал ${rub(T.o_nc)}</small></div>
+    <div class="tile"><span class="mono">Банк: карта + QR</span><b class="tnum">${rub(bank)}</b><small class="pay">эквайринг ${rub(T.b_acq)} · СБП ${rub(T.b_sbp)} · комиссия ${rub(T.b_fee)}</small></div>
+    <div class="tile${j.inv.some(r=>r.st==='match')?' acc':''}"><span class="mono">Оплаты по счетам</span><b class="tnum">${rub(j.inv_in)}</b><small class="pay">${j.inv.length} ${plural(j.inv.length,'платёж','платежа','платежей')} от организаций</small></div></div>
+  <div class="note" style="margin:0 0 14px"><b>Итог за период.</b> Пульт и касса: ${dl(T.p_cash+T.p_nc,T.o_cash+T.o_nc)} (пульт минус чеки). Безнал в чеках и банк: ${dl(T.o_nc,bank)} (чеки минус банк).
+    ${j.no_check.length?` Записей пульта без чека: <b>${j.no_check.length}</b>.`:''}${j.no_pult.length?` Чеков без записи в пульте: <b>${j.no_pult.length}</b>.`:''}${j.pay_diff?` Способ оплаты отличается в ${j.pay_diff}.`:''}
+    <br><span class="pay">Банк зачисляет карты пачкой и может сдвинуть на соседний день — смотрите итог за неделю или месяц, а не один день.</span></div>
+  <h3 class="anh3">По дням</h3><div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">День</th><th>Пульт нал</th><th>Чеки нал</th><th></th><th>Пульт карта+QR</th><th>Чеки безнал</th><th></th><th>Банк карта+QR</th><th>Чеков</th></tr></thead><tbody>
+  ${j.days.map(d=>`<tr><td style="text-align:left">${fmtDay(d.day)}</td><td>${rub(d.p_cash)}</td><td>${rub(d.o_cash)}</td>${dc(d.p_cash,d.o_cash)}<td>${rub(d.p_nc)}</td><td>${rub(d.o_nc)}</td>${dc(d.p_nc,d.o_nc)}<td>${rub(d.b_acq+d.b_sbp)}</td><td>${d.o_n}</td></tr>`).join('')}
+  <tr><td style="text-align:left"><b>Итого</b></td><td><b>${rub(T.p_cash)}</b></td><td><b>${rub(T.o_cash)}</b></td>${dc(T.p_cash,T.o_cash)}<td><b>${rub(T.p_nc)}</b></td><td><b>${rub(T.o_nc)}</b></td>${dc(T.p_nc,T.o_nc)}<td><b>${rub(bank)}</b></td><td><b>${T.o_n}</b></td></tr></tbody></table></div>
+  ${j.no_check.length?`<h3 class="anh3">В пульте есть, чека нет — ${j.no_check.length}</h3><div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">День</th><th style="text-align:left">Что</th><th>Оплата</th><th>Сумма</th></tr></thead><tbody>${j.no_check.slice(0,200).map((r,i)=>`<tr data-svp="${i}" style="cursor:pointer"><td style="text-align:left">${fmtDay(r.day)}</td><td style="text-align:left">${esc(r.what)}</td><td>${{cash:'наличные',card:'карта',qr:'QR'}[r.pay]||'не указана'}</td><td><b>${rub(r.sum)}</b></td></tr>`).join('')}</tbody></table></div>`:''}
+  ${j.no_pult.length?`<h3 class="anh3">Чек пробит, в пульте записи нет — ${j.no_pult.length}</h3><div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">День</th><th>Время</th><th>№ чека</th><th>Оплата</th><th>Сумма</th></tr></thead><tbody>${j.no_pult.slice(0,300).map(r=>`<tr><td style="text-align:left">${fmtDay(r.day)}</td><td>${esc(r.tm)}</td><td>${esc(r.fd)}</td><td>${{cash:'наличные',nc:'безнал',mix:'нал + безнал'}[r.cls]}</td><td><b>${rub(r.sum)}</b></td></tr>`).join('')}</tbody></table></div>`:''}
+  ${j.inv.length?`<h3 class="anh3">Оплаты счетов от организаций — ${j.inv.length}</h3><div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Пришло</th><th style="text-align:left">Плательщик</th><th>Счёт №</th><th>Сумма</th><th style="text-align:left">В пульте</th></tr></thead><tbody>${j.inv.map((r,i)=>`<tr><td style="text-align:left">${fmtDay(r.day)}</td><td style="text-align:left">${esc(r.payer)}<small class="pay" style="display:block">${esc(r.purpose.slice(0,90))}</small></td><td>${esc(r.inv_no)}</td><td><b>${rub(r.amount)}</b></td><td style="text-align:left">${r.st==='match'?`<button type="button" class="out" data-sva="${i}">Отметить оплаченным</button>`:`<span class="pay">${IST[r.st][0]}${r.st==='diff'?' (в пульте '+rub(r.pult_sum)+')':''}</span>`}</td></tr>`).join('')}</tbody></table></div>`:''}
+  ${j.other.length?`<details style="margin-top:14px"><summary class="pay">Прочие поступления на счёт — ${j.other.length}</summary><div class="tw"><table class="sttab"><tbody>${j.other.map(r=>`<tr><td style="text-align:left">${fmtDay(r.day)}</td><td style="text-align:left">${esc(r.payer)}<small class="pay" style="display:block">${esc(r.purpose.slice(0,110))}</small></td><td><b>${rub(r.amount)}</b></td></tr>`).join('')}</tbody></table></div></details>`:''}`;
+  el.querySelectorAll('[data-svp]').forEach(tr=>tr.onclick=()=>{const x=j.no_check[+tr.dataset.svp].ref;if(x.order){setArea('m');openOrder(x.order);}else if(x.doc)openDoc(x.doc);});
+  el.querySelectorAll('[data-sva]').forEach(b=>b.onclick=async()=>{try{const r=await api('sv_inv_apply',{k:j.inv[+b.dataset.sva].k});toast(`<b>Счёт № ${esc(j.inv[+b.dataset.sva].inv_no)} оплачен</b>отмечено визитов: ${r.n}`);loadSv();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}});}
 /* ---------- чем платили: наличные, карта, QR, перевод, счёт организации — шиномонтаж и магазин вместе ---------- */
 const PYK=[['cash','Наличные','#2e9d5b'],['card','Карта','#1f6feb'],['qr','QR-код','#7c3aed'],['transfer','Перевод на карту','#b7791f'],['invoice','Счёт организации','#c2185b'],['coupon','Купон производителя','#64748b'],['none','Способ не указан','#9aa3ad']];
 const PY={from:'',to:''};
@@ -2851,12 +2903,12 @@ function setArea(a,first){if(first)setTimeout(tkBadge,900);if((a==='z'||a==='k'|
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
-const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',month:'Все документы'};
+const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',sv:'Сверка кассы и банка',month:'Все документы'};
 function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
-  if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pay'){show('pay');loadPay();window.scrollTo(0,0);return;}if(p==='pho'){show('pho');loadPho();return;}
+  if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pay'){show('pay');loadPay();window.scrollTo(0,0);return;}if(p==='sv'){show('sv');loadSv();window.scrollTo(0,0);return;}if(p==='pho'){show('pho');loadPho();return;}
   $('#stH1').textContent=PAGES[p];
   if(p==='goods'){S.st.wh='all';show('stock');stSub('goods');}
   else{if(S.dl.type!==(p==='month'?'':p))S.dl.partner='';S.dl.type=p==='month'?'':p;show('stock');stSub('docs');}
@@ -3186,7 +3238,7 @@ async function loadSup(){let L=[];try{L=(await api('suppliers')).suppliers;}catc
 
 /* ---------- вкладки ---------- */
 function show(v){if(v==='cli'&&S.role==='owner'){setArea('c');return;}S.view=v;['an','adv'].forEach(x=>{const e=document.getElementById('v-'+x);if(e)e.hidden=v!==x;});{const vf=document.getElementById('v-fr');if(vf)vf.hidden=v!=='fr';}{const vz=document.getElementById('v-zak');if(vz)vz.hidden=v!=='zak';if(v==='zak')loadZak();}{const vc=document.getElementById('v-crm');if(vc)vc.hidden=v!=='crm';if(v==='crm')loadCrm();}{const vt=document.getElementById('v-task');if(vt)vt.hidden=v!=='task';if(v==='task')loadTasks();}document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);{const vp=document.getElementById('v-pay');if(vp)vp.hidden=v!=='pay';}$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);{const vp=document.getElementById('v-pay');if(vp)vp.hidden=v!=='pay';const vs=document.getElementById('v-sv');if(vs)vs.hidden=v!=='sv';}$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}

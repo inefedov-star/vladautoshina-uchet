@@ -146,6 +146,11 @@ function db(array $cfg): PDO {
   // все известные организации — чтобы «АДМИНИСТРАЦИЯ …», «АНО …» и т.п. узнавались как организации
   $GLOBALS['ORGK'] = array_flip(array_filter($pdo->query('SELECT okey FROM orgs')->fetchAll(PDO::FETCH_COLUMN), fn($k) => !preg_match('/^\d+$/', (string)$k)));
   // планировщик задач: кому поручено и к какому дню
+  // сверка: чеки из ОФД и операции из выписки банка (загружаются файлами)
+  $pdo->exec("CREATE TABLE IF NOT EXISTS ofd (fd TEXT PRIMARY KEY, day TEXT NOT NULL, tm TEXT NOT NULL DEFAULT '', type TEXT NOT NULL DEFAULT 'sale', total REAL NOT NULL DEFAULT 0, cash REAL NOT NULL DEFAULT 0, cashless REAL NOT NULL DEFAULT 0, shift TEXT NOT NULL DEFAULT '')");
+  $pdo->exec('CREATE INDEX IF NOT EXISTS ofd_day ON ofd(day)');
+  $pdo->exec("CREATE TABLE IF NOT EXISTS bank (k TEXT PRIMARY KEY, acc TEXT NOT NULL DEFAULT '', day TEXT NOT NULL, dir TEXT NOT NULL, amount REAL NOT NULL, kind TEXT NOT NULL, ref_day TEXT NOT NULL DEFAULT '', fee REAL NOT NULL DEFAULT 0, payer TEXT NOT NULL DEFAULT '', inn TEXT NOT NULL DEFAULT '', purpose TEXT NOT NULL DEFAULT '', inv_no TEXT NOT NULL DEFAULT '', term TEXT NOT NULL DEFAULT '')");
+  $pdo->exec('CREATE INDEX IF NOT EXISTS bank_day ON bank(day)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, note TEXT NOT NULL DEFAULT \'\', who TEXT NOT NULL DEFAULT \'\', due TEXT NOT NULL DEFAULT \'\', prio INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT \'open\', phone TEXT NOT NULL DEFAULT \'\', created INTEGER, done_at INTEGER, author TEXT)');
   return $pdo;
 }
@@ -1107,6 +1112,81 @@ try {
     if (!empty($b['del'])) { db($cfg)->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]); out(['ok' => true]); }
     $d = !empty($b['done']); db($cfg)->prepare('UPDATE tasks SET status = ?, done_at = ? WHERE id = ?')->execute([$d ? 'done' : 'open', $d ? time() : null, $id]);
     out(['ok' => true]);
+
+  case 'sv_upload':
+    // сверка: загрузка чеков ОФД (отчёт «Сверка») или выписки банка; повторная загрузка того же периода ничего не дублирует
+    post(); needRole($role, ['owner']);
+    $b = body(); $p = db($cfg); $kind = (string)($b['kind'] ?? ''); $rows = array_slice((array)($b['rows'] ?? []), 0, 20000); $n = 0; $days = [];
+    $rd = function ($v) { $v = trim((string)$v); if (preg_match('/^(\d{4})-(\d\d)-(\d\d)/', $v, $m)) return "$m[1]-$m[2]-$m[3]"; if (preg_match('/^(\d\d)\.(\d\d)\.(\d{4})/', $v, $m)) return "$m[3]-$m[2]-$m[1]"; return ''; };
+    $p->beginTransaction();
+    if ($kind === 'ofd') {
+      $ins = $p->prepare('INSERT OR REPLACE INTO ofd (fd, day, tm, type, total, cash, cashless, shift) VALUES (?,?,?,?,?,?,?,?)');
+      foreach ($rows as $r) { $day = $rd($r['day'] ?? ''); $fd = preg_replace('/\D/', '', (string)($r['fd'] ?? '')); if ($day === '' || $fd === '') continue;
+        $op = mb_strtolower((string)($r['op'] ?? '')); $type = mb_strpos($op, 'возврат прихода') !== false ? 'ret' : (mb_strpos($op, 'приход') === 0 ? 'sale' : ''); if ($type === '') continue;
+        $tm = preg_match('/(\d\d:\d\d)/', (string)($r['tm'] ?? ''), $m) ? $m[1] : '';
+        $ins->execute([mb_substr((string)($r['kkt'] ?? ''), -8) . '-' . $fd, $day, $tm, $type, (float)($r['total'] ?? 0), (float)($r['cash'] ?? 0), (float)($r['cashless'] ?? 0), mb_substr((string)($r['shift'] ?? ''), 0, 10)]); $n++; $days[$day] = 1; }
+    } elseif ($kind === 'bank') {
+      $ins = $p->prepare('INSERT OR REPLACE INTO bank (k, acc, day, dir, amount, kind, ref_day, fee, payer, inn, purpose, inv_no, term) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
+      foreach ($rows as $r) { $day = $rd($r['day'] ?? ''); $amt = round((float)($r['amount'] ?? 0), 2); if ($day === '' || $amt == 0) continue;
+        $dir = mb_strpos(mb_strtolower((string)($r['dir'] ?? '')), 'кредит') === 0 ? 'in' : 'out'; $t = trim((string)($r['purpose'] ?? '')); $payer = mb_substr(trim((string)($r['payer'] ?? '')), 0, 200);
+        $k2 = 'other'; $ref = ''; $fee = 0.0; $inv = ''; $term = '';
+        if (preg_match('/терминалам эквайринга от (\d\d)\.(\d\d)\.(\d{4})/u', $t, $m)) { $k2 = $dir === 'in' ? 'acq' : 'acq_fee'; $ref = "$m[3]-$m[2]-$m[1]"; }
+        elseif ($dir === 'in' && preg_match('/операциям эквайринга/u', $t)) { $k2 = 'acq'; $ref = $day; if (preg_match('/Комиссия\s+([\d.]+)/u', $t, $m)) $fee = (float)$m[1]; }
+        elseif (preg_match('/операции СБП/u', $t)) { if (preg_match('/Терминал\s+([^.]+)/u', $t, $m)) $term = trim($m[1]); $mine = $term === '' || preg_match('/' . preg_quote((string)($cfg['sbp_terminal'] ?? 'Shinnyi'), '/') . '/iu', $term); $k2 = $dir === 'in' ? ($mine ? 'sbp' : 'other') : ($mine ? 'sbp_fee' : 'other'); $ref = $day; }
+        elseif ($dir === 'in' && preg_match('/собственных средств|овердрафт|депозит/iu', $t)) $k2 = 'own';
+        elseif ($dir === 'in' && preg_match('/сч[её]т\S*(?:\s*\([^)]*\))?(?:\s+на\s+оплату)?\s*(?:№|N|#)?\s*№?\s*(\d{1,6})\b/iu', $t, $m)) { $k2 = 'invoice'; $inv = $m[1]; }
+        elseif ($dir === 'in' && preg_match('/сч\.\s*(?:оферта)?(?:\s*\([^)]*\))?\s*№\s*(\d{1,6})\b/iu', $t, $m)) { $k2 = 'invoice'; $inv = $m[1]; }
+        elseif ($dir === 'in') $k2 = 'in_other';
+        $ins->execute([mb_substr((string)($r['acc'] ?? ''), -6) . '|' . $day . '|' . (string)($r['doc'] ?? '') . '|' . $amt . '|' . $dir, mb_substr((string)($r['acc'] ?? ''), 0, 24), $day, $dir, $amt, $k2, $ref, $fee, $payer, mb_substr(preg_replace('/\D/', '', (string)($r['inn'] ?? '')), 0, 12), mb_substr($t, 0, 400), $inv, mb_substr($term, 0, 60)]); $n++; $days[$day] = 1; }
+    } else { $p->rollBack(); fail('Не понял, что за файл'); }
+    $p->commit(); ksort($days); $dk = array_keys($days); logit($cfg, $role, 'sv_upload', $kind . ' ' . $n);
+    out(['ok' => true, 'n' => $n, 'from' => $dk[0] ?? '', 'to' => $dk ? end($dk) : '']);
+
+  case 'sv_report':
+    // сверка за период: пульт ↔ чеки ОФД ↔ банк; счета организаций из выписки ↔ счета в пульте
+    needRole($role, ['owner']);
+    $p = db($cfg); $lim = $p->query('SELECT MIN(day) a, MAX(day) b FROM ofd')->fetch(); $bl = $p->query('SELECT MIN(day) a, MAX(day) b FROM bank')->fetch();
+    $from = isDay($_GET['from'] ?? '') ? $_GET['from'] : ($lim['b'] ? date('Y-m-d', strtotime($lim['b'] . ' -6 days')) : date('Y-m-01')); $to = isDay($_GET['to'] ?? '') ? $_GET['to'] : ($lim['b'] ?: date('Y-m-d'));
+    $D = []; $day = function ($d) use (&$D) { if (!isset($D[$d])) $D[$d] = ['day' => $d, 'p_cash' => 0.0, 'p_nc' => 0.0, 'o_cash' => 0.0, 'o_nc' => 0.0, 'o_n' => 0, 'b_acq' => 0.0, 'b_sbp' => 0.0, 'b_fee' => 0.0]; };
+    // пульт: всё, что должно пройти через кассу
+    $P = []; $st = $p->prepare('SELECT id, day, body FROM orders WHERE day >= ? AND day <= ?'); $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; $sum = (float)($b['paid'] ?? 0); $pay = (string)($b['pay'] ?? ''); if ($sum <= 0 || ($b['mode'] ?? '') === 'coupon' || !in_array($pay, ['cash', 'card', 'qr'], true)) continue;
+      $P[] = ['day' => $r['day'], 'sum' => round($sum, 2), 'cls' => $pay === 'cash' ? 'cash' : 'nc', 'what' => 'Шиномонтаж: ' . trim(($b['name'] ?? '') . ' ' . ($b['model'] ?? '') . ' ' . ($b['plate'] ?? '')), 'pay' => $pay, 'ref' => ['order' => ['id' => (int)$r['id'], 'day' => $r['day']] + $b]]; }
+    $st = $p->prepare("SELECT d.id, d.day, d.type, d.pay, d.partner, SUM(ABS(m.qty) * IFNULL(m.price, 0)) s FROM docs d JOIN moves m ON m.doc_id = d.id WHERE d.type IN ('sale','ret') AND d.status = 'posted' AND d.day >= ? AND d.day <= ? GROUP BY d.id"); $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) { if (!in_array($r['pay'], ['cash', 'card', 'qr', ''], true)) continue; $sum = round((float)$r['s'], 2); if ($sum <= 0) continue;
+      $P[] = ['day' => $r['day'], 'sum' => ($r['type'] === 'ret' ? -1 : 1) * $sum, 'cls' => $r['pay'] === 'cash' ? 'cash' : 'nc', 'what' => ($r['type'] === 'ret' ? 'Возврат' : 'Продажа') . ' № ' . $r['id'] . ($r['partner'] !== '' ? ' · ' . $r['partner'] : ''), 'pay' => (string)$r['pay'], 'ref' => ['doc' => (int)$r['id']]]; }
+    foreach ($P as $x) { $day($x['day']); $D[$x['day']][$x['cls'] === 'cash' ? 'p_cash' : 'p_nc'] += $x['sum']; }
+    $O = []; $st = $p->prepare('SELECT * FROM ofd WHERE day >= ? AND day <= ? ORDER BY day, tm'); $st->execute([$from, $to]);
+    foreach ($st->fetchAll() as $r) { $sg = $r['type'] === 'ret' ? -1 : 1; $day($r['day']); $D[$r['day']]['o_cash'] += $sg * (float)$r['cash']; $D[$r['day']]['o_nc'] += $sg * (float)$r['cashless']; $D[$r['day']]['o_n']++;
+      $O[] = ['day' => $r['day'], 'tm' => $r['tm'], 'sum' => $sg * round((float)$r['total'], 2), 'cls' => (float)$r['cash'] > 0 && (float)$r['cashless'] == 0 ? 'cash' : ((float)$r['cash'] > 0 ? 'mix' : 'nc'), 'fd' => substr($r['fd'], strpos($r['fd'], '-') + 1)]; }
+    $st = $p->prepare("SELECT * FROM bank WHERE (day >= ? AND day <= ?) OR (ref_day >= ? AND ref_day <= ?) ORDER BY day"); $st->execute([$from, date('Y-m-d', strtotime($to . ' +6 days')), $from, $to]); $INV = []; $OTH = []; $invIn = 0.0;
+    foreach ($st->fetchAll() as $r) { $rd2 = $r['ref_day'] !== '' ? $r['ref_day'] : $r['day']; $in = $rd2 >= $from && $rd2 <= $to;
+      if ($r['kind'] === 'acq' && $in) { $day($rd2); $D[$rd2]['b_acq'] += (float)$r['amount'] + (float)$r['fee']; $D[$rd2]['b_fee'] += (float)$r['fee']; }
+      elseif ($r['kind'] === 'sbp' && $in) { $day($rd2); $D[$rd2]['b_sbp'] += (float)$r['amount']; }
+      elseif (in_array($r['kind'], ['acq_fee', 'sbp_fee'], true) && $in) { $day($rd2); $D[$rd2]['b_fee'] += (float)$r['amount']; }
+      elseif ($r['kind'] === 'invoice' && $r['day'] >= $from && $r['day'] <= $to) { $INV[] = $r; $invIn += (float)$r['amount']; }
+      elseif ($r['kind'] === 'in_other' && $r['day'] >= $from && $r['day'] <= $to) $OTH[] = ['day' => $r['day'], 'amount' => (float)$r['amount'], 'payer' => $r['payer'], 'purpose' => $r['purpose']]; }
+    // чек ↔ запись пульта: тот же день и сумма (сначала с тем же способом оплаты, потом с любым)
+    $free = $O; $noCheck = []; $payDiff = 0;
+    foreach ([true, false] as $strict) { foreach ($P as $i => $x) { if (!empty($x['ok'])) continue; foreach ($free as $j => $o) { if ($o['day'] === $x['day'] && abs($o['sum'] - $x['sum']) < 0.01 && (!$strict || $o['cls'] === $x['cls'] || $o['cls'] === 'mix')) { $P[$i]['ok'] = true; if (!$strict) $payDiff++; unset($free[$j]); break; } } } }
+    foreach ($P as $x) if (empty($x['ok'])) $noCheck[] = ['day' => $x['day'], 'sum' => $x['sum'], 'what' => $x['what'], 'pay' => $x['pay'], 'ref' => $x['ref']];
+    // счета организаций: оплата из выписки ↔ счёт в пульте (шиномонтаж по счёту)
+    $byNo = []; foreach ($p->query("SELECT id, day, body FROM orders WHERE body LIKE '%invoice%'")->fetchAll() as $r) { $b = json_decode($r['body'], true) ?: []; if (($b['pay'] ?? '') !== 'invoice') continue; $no = ltrim(preg_replace('/\D/', '', (string)($b['invNo'] ?? '')), '0'); if ($no !== '') $byNo[$no][] = ['id' => (int)$r['id'], 'day' => $r['day'], 'sum' => (float)($b['paid'] ?? 0), 'org' => (string)($b['org'] ?? ''), 'paid' => (string)($b['invPaid'] ?? '')]; }
+    $invRows = []; foreach ($INV as $r) { $c = $byNo[ltrim($r['inv_no'], '0')] ?? []; $tot = array_sum(array_column($c, 'sum')); $un = array_values(array_filter($c, fn($x) => $x['paid'] === ''));
+      $stt = !$c ? 'none' : (!$un ? 'done' : (abs($tot - (float)$r['amount']) < 0.01 ? 'match' : 'diff'));
+      $invRows[] = ['k' => $r['k'], 'day' => $r['day'], 'amount' => (float)$r['amount'], 'payer' => $r['payer'], 'inv_no' => $r['inv_no'], 'purpose' => $r['purpose'], 'st' => $stt, 'pult_sum' => $tot, 'orders' => array_column($c, 'id')]; }
+    ksort($D); $T = ['p_cash' => 0, 'p_nc' => 0, 'o_cash' => 0, 'o_nc' => 0, 'o_n' => 0, 'b_acq' => 0, 'b_sbp' => 0, 'b_fee' => 0]; foreach ($D as $d) foreach ($T as $k => $v) $T[$k] += $d[$k];
+    out(['from' => $from, 'to' => $to, 'ofd' => $lim, 'bank' => $bl, 'days' => array_values(array_map(fn($d) => array_map(fn($v) => is_float($v) ? round($v, 2) : $v, $d), $D)), 'tot' => array_map(fn($v) => round($v, 2), $T),
+      'no_check' => $noCheck, 'no_pult' => array_values($free), 'pay_diff' => $payDiff, 'inv' => $invRows, 'inv_in' => round($invIn, 2), 'other' => array_slice($OTH, 0, 200)]);
+
+  case 'sv_inv_apply':
+    // оплата счёта пришла на расчётный счёт — отмечаем визиты по этому счёту оплаченными (дата — день поступления)
+    post(); needRole($role, ['owner']);
+    $b = body(); $p = db($cfg); $st = $p->prepare("SELECT * FROM bank WHERE k = ? AND kind = 'invoice'"); $st->execute([(string)($b['k'] ?? '')]); $r = $st->fetch(); if (!$r) fail('Платёж не найден', 404);
+    $no = ltrim($r['inv_no'], '0'); $n = 0;
+    foreach ($p->query("SELECT id, body FROM orders WHERE body LIKE '%invoice%'")->fetchAll() as $o) { $x = json_decode($o['body'], true) ?: []; if (($x['pay'] ?? '') !== 'invoice' || ($x['invPaid'] ?? '') !== '' || ltrim(preg_replace('/\D/', '', (string)($x['invNo'] ?? '')), '0') !== $no) continue;
+      $x['invPaid'] = $r['day']; $x['paidOk'] = true; $x['paidAt'] = $x['paidAt'] ?? time(); $p->prepare('UPDATE orders SET body = ? WHERE id = ?')->execute([json_encode($x, JSON_UNESCAPED_UNICODE), (int)$o['id']]); $n++; }
+    logit($cfg, $role, 'sv_inv_apply', 'счёт ' . $r['inv_no'] . ': ' . $n); out(['ok' => true, 'n' => $n]);
 
   case 'pay_stat':
     // чем платили за период: наличные, карта, QR, перевод, счёт организации — шиномонтаж и магазин (основа для сверки с кассой и банком)
