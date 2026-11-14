@@ -1870,6 +1870,55 @@ try {
       foreach ($lines as $i => $x) $lines[$i]['stock'] = ($smc[$x['product_id']]['q'] ?? 0) - ($HL[$x['product_id']] ?? 0); }
     out(['doc' => $d, 'returns' => $rets, 'lines' => $lines]);
 
+  case 'pw_orders':
+    // заказы у Пауэра, которые к нам ещё едут: «Подтвержден», «В логистике / на планировании», «На перемещении», «На перемещении / в пути»
+    needRole($role, ['owner']); @set_time_limit(120);
+    $p = db($cfg); $fresh = ($_GET['fresh'] ?? '') === '1'; $diag = [];
+    $cget = function (string $k, int $ttl) use ($p, $fresh) { $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$k]); $h = $c->fetch(); return $h && !$fresh && time() - (int)$h['ts'] < $ttl ? json_decode($h['body'], true) : null; };
+    $cput = function (string $k, $v) use ($p) { $p->prepare('INSERT OR REPLACE INTO pwcache (k, ts, body) VALUES (?,?,?)')->execute([$k, time(), json_encode($v, JSON_UNESCAPED_UNICODE)]); };
+    $obj = function ($x) use (&$obj) { if (is_object($x)) $x = get_object_vars($x); if (is_array($x)) foreach ($x as $k => $v) $x[$k] = (is_object($v) || is_array($v)) ? $obj($v) : $v; return $x; };
+    // все вложенные объекты, у которых есть ключ $key (без учёта регистра)
+    $find = function ($x, string $key, array &$out, int $dep = 0) use (&$find) { if ($dep > 9 || !is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER); if (array_key_exists($key, $l)) { $out[] = $l; return; } foreach ($x as $v) if (is_array($v)) $find($v, $key, $out, $dep + 1); };
+    $nst = fn(string $s) => mb_strtolower(trim(preg_replace('/\s*\/\s*/u', ' / ', preg_replace('/\s+/u', ' ', $s))));
+    $WANT = ['подтвержден', 'в логистике / на планировании', 'на перемещении', 'на перемещении / в пути'];
+    $cl = api4t($cfg); $auth = ['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password']];
+    // справочник статусов (раз в сутки)
+    $ST = $cget('pwst', 86400);
+    if ($ST === null) { $ST = []; try { $r = $obj($cl->GetStatusList()); $o = []; $find($r, 'name', $o); foreach ($o as $x) if (isset($x['id'])) $ST[(string)(int)$x['id']] = (string)$x['name']; if ($ST) $cput('pwst', $ST); } catch (Throwable $e) { $diag[] = 'GetStatusList: ' . mb_substr($e->getMessage(), 0, 200); } }
+    $ids = []; foreach ($ST as $id => $nm) if (in_array($nst($nm), $WANT, true)) $ids[] = (int)$id;
+    // список заказов за 90 дней
+    $L = $cget('pwol', 300);
+    if ($L === null) { $L = [];
+      $flt = ['dStart' => date('Y-m-d\T00:00:00', time() - 90 * 86400), 'dEnd' => date('Y-m-d\T23:59:59', time() + 86400), 'viewArchive' => false];
+      if ($ids) $flt['statusList'] = $ids;
+      try { $r = $obj($cl->GetOrderList($auth + ['filter' => $flt])); $o = []; $find($r, 'orderid', $o);
+        foreach ($o as $x) $L[] = ['id' => (int)$x['orderid'], 'num' => (string)($x['ordernumber'] ?? ''), 'created' => (string)($x['createddate'] ?? ''), 'st' => (int)($x['statusid'] ?? 0), 'sum' => (float)($x['price'] ?? 0), 'parent' => (string)($x['parent'] ?? ''), 'delivery' => (string)($x['deliverystate'] ?? '')];
+        if (!$o) { $e0 = []; $find($r, 'error', $e0); $diag[] = 'GetOrderList: заказов нет' . ($e0 ? ' (' . mb_substr(json_encode($e0[0]['error'], JSON_UNESCAPED_UNICODE), 0, 200) . ')' : '') . '; ключи ответа: ' . implode(',', array_keys(is_array($r) ? $r : [])); }
+        $cput('pwol', $L);
+      } catch (Throwable $e) { $diag[] = 'GetOrderList: ' . mb_substr($e->getMessage(), 0, 300); } }
+    // если справочник статусов не пришёл — отбираем по названию статуса из подробностей заказа
+    if ($ids) $L = array_values(array_filter($L, fn($x) => in_array($x['st'], $ids, true)));
+    usort($L, fn($a, $b) => strcmp($b['created'], $a['created'])); $L = array_slice($L, 0, 60);
+    // карточки: CAE и запомненные коды поставщика (Пауэр и ОХ Пауэр)
+    $byCae = []; foreach ($p->query("SELECT id, cae FROM products WHERE cae != '' AND archived = 0")->fetchAll() as $r) $byCae[codeNorm((string)$r['cae'])] = (int)$r['id'];
+    $sup = []; $pks = []; foreach ($p->query("SELECT DISTINCT pk FROM supcodes")->fetchAll(PDO::FETCH_COLUMN) as $pk) if (mb_strpos((string)$pk, 'ПАУЭР') !== false) $pks[] = $pk;
+    if ($pks) { $st = $p->query('SELECT pk, code, product_id FROM supcodes WHERE pk IN (' . implode(',', array_map([$p, 'quote'], $pks)) . ')'); foreach ($st->fetchAll() as $r) $sup[(string)$r['code']] = (int)$r['product_id']; }
+    $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $pn = []; foreach ($p->query('SELECT id, name FROM products')->fetchAll() as $r) $pn[(int)$r['id']] = $r['name'];
+    $out = []; $t0 = time();
+    foreach ($L as $o) {
+      $I = $cget('pwoi|' . $o['id'], 600);
+      if ($I === null && time() - $t0 < 90) { try { $r = $obj($cl->GetOrderInfo2($auth + ['orderId' => $o['id']])); $g = []; $find($r, 'product_name', $g); $h = []; $find($r, 'statusname', $h); $h = $h[0] ?? [];
+          $I = ['status' => (string)($h['statusname'] ?? ''), 'from' => (string)($h['deliveryintervalstart'] ?? ''), 'to' => (string)($h['deliveryintervalend'] ?? ''), 'ship' => (string)($h['shipmenttype'] ?? ''), 'shipdate' => (string)($h['shipmentdate'] ?? ''), 'pickup' => (string)($h['pickupwarehousename'] ?? ''), 'customer' => (string)($h['customername'] ?? ''), 'rtu' => (string)($h['rtu'] ?? ''),
+            'goods' => array_map(fn($x) => ['code' => (string)($x['code'] ?? ''), 'name' => trim((string)($x['product_brand'] ?? '') . ' ' . (string)($x['product_name'] ?? '')), 'qty' => (int)($x['quantity'] ?? 0), 'wrh' => (string)($x['wrh_short_name'] ?? ''), 'price' => (float)($x['price'] ?? 0), 'inet' => (float)($x['price_rozn'] ?? 0), 'type' => (int)($x['product_type'] ?? 0)], $g)];
+          $cput('pwoi|' . $o['id'], $I); } catch (Throwable $e) { $diag[] = 'GetOrderInfo2 ' . $o['num'] . ': ' . mb_substr($e->getMessage(), 0, 200); } }
+      if ($I === null) $I = ['status' => '', 'goods' => []];
+      $stn = $I['status'] !== '' ? $I['status'] : ($ST[(string)$o['st']] ?? ('статус ' . $o['st']));
+      if (!$ids && $stn !== '' && !in_array($nst($stn), $WANT, true)) continue;
+      foreach ($I['goods'] as &$g) { $pid = $sup[codeNorm($g['code'])] ?? ($byCae[codeNorm($g['code'])] ?? null); $g['pid'] = $pid; if ($pid) { $g['our'] = $pn[$pid] ?? ''; $g['q'] = $sm[$pid]['q'] ?? 0; $g['qc'] = $smc[$pid]['q'] ?? 0; } } unset($g);
+      $out[] = $o + ['status' => $stn, 'from' => $I['from'] ?? '', 'to' => $I['to'] ?? '', 'ship' => $I['ship'] ?? '', 'shipdate' => $I['shipdate'] ?? '', 'pickup' => $I['pickup'] ?? '', 'customer' => $I['customer'] ?? '', 'goods' => $I['goods']];
+    }
+    out(['orders' => $out, 'statuses' => array_values(array_filter($ST, fn($n) => in_array($nst($n), $WANT, true))), 'diag' => $diag, 'at' => date('H:i')]);
+
   case 'wait_list':
     // «ждут выдачи»: забронированные на ОХ заказы партнёров поставщика
     needRole($role, ['owner', 'master', 'cashier']);

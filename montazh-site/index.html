@@ -530,6 +530,9 @@ body.area-fr{overflow:hidden}
 body.t-dark .ohb{background:#1F3554;color:#A9CBFF}body.t-dark .ourb{background:#1E3A27;color:#9FE0B4}
 .holdb{display:inline-block;margin-left:4px;padding:1px 7px;border-radius:6px;font-weight:700;font-size:.74rem;vertical-align:1px;white-space:nowrap;background:#FFEBC7;color:#8A4B00}body.t-dark .holdb{background:#4A3410;color:#FFD08A}.wdays{display:inline-block;min-width:44px;text-align:center;padding:2px 8px;border-radius:999px;font-weight:700;font-size:.8rem;background:var(--rule-soft);color:var(--ink-2)}.wdays.w2{background:#FFEBC7;color:#8A4B00}.wdays.w3{background:var(--signal-tint);color:var(--signal-deep)}body.t-dark .wdays.w2{background:#4A3410;color:#FFD08A}
 .wlist{display:grid;gap:10px}.wcard{background:var(--paper);border-radius:var(--r);padding:12px 14px;box-shadow:var(--shadow)}.wtop{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.witems{margin:8px 0 10px;font-size:.95rem}
+.pwst{display:inline-block;padding:2px 9px;border-radius:999px;font-weight:700;font-size:.78rem;white-space:nowrap;background:var(--rule-soft);color:var(--ink-2)}.pwst.s1{background:#FFEBC7;color:#8A4B00}.pwst.s2{background:#DCEBFF;color:#1D4FA8}.pwst.s3{background:#E3F4E8;color:#1E6B39}
+body.t-dark .pwst.s1{background:#4A3410;color:#FFD08A}body.t-dark .pwst.s2{background:#1F3554;color:#A9CBFF}body.t-dark .pwst.s3{background:#1E3A27;color:#9FE0B4}
+.pwg{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:7px 0;border-top:1px solid var(--rule-soft);font-size:.92rem}.pwg:first-of-type{border-top:0}.pwg small{grid-column:1/-1}
 .plates{display:inline-flex;gap:4px;margin-left:2px}.plates .ohb,.plates .ourb{margin-left:4px}
 .whsel button[data-wh2="custody"][aria-pressed="true"]{background:#1D4FA8;border-color:#1D4FA8;color:#fff}
 .whsel{display:inline-flex;gap:4px;margin-top:6px}.whsel button{min-height:30px;padding:0 10px;border:1px solid var(--rule);border-radius:8px;background:var(--paper);font-weight:600;font-size:.8rem;color:var(--ink-2)}
@@ -734,7 +737,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 <div class="shell">
 <aside id="side" class="smenu" aria-label="Меню магазина">
   <div class="sg owner-only"><span class="sgh">Продажи</span><button type="button" data-p="sale">Продажи</button></div>
-  <div class="sg owner-only"><span class="sgh">Закупки</span><button type="button" data-p="in">Закупки</button><button type="button" data-p="iss">Выдача с ответхранения</button><button type="button" data-p="buy">Выкуп с ОХ</button></div>
+  <div class="sg owner-only"><span class="sgh">Закупки</span><button type="button" data-p="in">Закупки</button><button type="button" data-p="iss">Выдача с ответхранения</button><button type="button" data-p="buy">Выкуп с ОХ</button><button type="button" data-p="pwo">Заказы Пауэра</button></div>
   <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" class="owner-only" data-p="lbl">Этикетки</button><button type="button" class="owner-only" data-p="res">Резервы</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
   <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="cuts">Сезоны, бренды, АКБ</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="pay">Чем платили</button><button type="button" data-p="sv">Сверка кассы и банка</button><button type="button" data-p="month">Все документы</button></div>
@@ -935,6 +938,11 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
       <button class="btn ghost" type="button" id="lbAllStock">Добавить все найденные</button></div>
     <div id="lbFound"></div><div id="lbList"></div>
     <div class="row" style="margin:14px 0 40px"><button class="btn sig" type="button" id="lbPrint">Печать</button><button class="btn ghost" type="button" id="lbByQty">По одной на каждую штуку</button><button class="btn ghost" type="button" id="lbClear">Очистить</button></div>
+  </section>
+  <section id="v-pwo" hidden>
+    <div class="calbar"><h1>Заказы Пауэра</h1><div class="spacer"></div><button class="btn ghost" type="button" id="pwoR">Обновить</button></div>
+    <p class="note" style="margin-top:0">Что к нам едет от Пауэра: заказы со статусами «Подтвержден», «В логистике / на планировании», «На перемещении», «На перемещении / в пути». Данные из кабинета, обновляются раз в 5 минут.</p>
+    <div id="pwoBody"></div>
   </section>
   <section id="v-res" hidden>
     <div class="calbar"><h1>Резервы</h1></div>
@@ -2112,7 +2120,7 @@ function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;c
     else if(k.startsWith('z:')){ZS.st=k.slice(2);loadZak();}else if(k==='zn')openZak(null);
     else if(k==='c:calls'){CRS.mode='calls';loadCrm();}else if(k.startsWith('c:')){CRS.mode='list';CRS.seg=k==='c:list'?'all':k.slice(2);loadCrm();}else if(k==='cn')openCrm(null);
     else if(k==='t:open'||k==='t:done'){TK.st=k.slice(2);loadTasks();}else if(k==='t:pr')printTasks();else if(k==='tn')openTask(null);renderBnav();});}
-function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['n:buy','+ Выкуп с ОХ','box'],['p:iss','Выдачи с ОХ','list']]],
+function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['n:buy','+ Выкуп с ОХ','box'],['p:pwo','Заказы Пауэра','box'],['p:iss','Выдачи с ОХ','list']]],
     ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:cuts','Сезоны, бренды, АКБ','chart'],['p:rep','Продажи по товарам','list'],['p:pay','Чем платили','chart'],['p:sv','Сверка кассы и банка','docs'],['p:month','Все документы','docs']]],
     ['Каталог и люди',[['p:lbl','Этикетки','list'],['p:res','Резервы','box'],['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up'],['p:arch','Архив CloudShop','chart']]]];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
@@ -2311,6 +2319,29 @@ async function openPw(w,p,d){$('#shIn').innerHTML=`<div class="sh-hd"><h2 id="sh
     $('#pwOut').querySelectorAll('[data-pwz]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.pwz];openZak({id:0,day:iso(new Date()),phone:'',name:'',items:`${r.name||r.brand+' '+r.model}, 4 шт`,total:r.price*4,prepay:'',supplier:'Пауэр',promo:'',note:`код Пауэра ${r.code}${r.days!=null?', доставка '+r.days+' д.':''}`,status:'wait'});});}
   catch(e){$('#pwMsg').innerHTML=`<b>Не получилось.</b> ${esc(e.message)}`;}}
 /* ---------- резервы ---------- */
+/* заказы у Пауэра, которые к нам едут */
+const PWO_ORD=['подтвержден','в логистике / на планировании','на перемещении','на перемещении / в пути'];
+const pwoN=s=>String(s||'').toLowerCase().replace(/\s*\/\s*/g,' / ').replace(/\s+/g,' ').trim();
+const pwoDt=v=>{if(!v)return '';const d=new Date(v);return isNaN(d)||d.getFullYear()<2000?'':d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});};
+async function loadPwo(fresh){const el=$('#pwoBody');if(!el.innerHTML||fresh)el.innerHTML='<p class="note">Спрашиваю кабинет Пауэра… (до минуты при первом открытии)</p>';
+  $('#pwoR').onclick=()=>loadPwo(true);
+  let j;try{j=await api('pw_orders',null,fresh?{fresh:'1'}:{});}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
+  const O=j.orders||[],gq=o=>o.goods.filter(g=>g.type!==9).reduce((a,g)=>a+g.qty,0),here=g=>/ОХВЛАДН|ПВВЛАДН/i.test(g.wrh);
+  const coming=O.reduce((a,o)=>a+o.goods.filter(g=>g.type!==9&&!here(g)).reduce((b,g)=>b+g.qty,0),0),sum=O.reduce((a,o)=>a+(+o.sum||0),0);
+  const grp=PWO_ORD.map(k=>[k,O.filter(o=>pwoN(o.status)===k)]).filter(x=>x[1].length);const other=O.filter(o=>!PWO_ORD.includes(pwoN(o.status)));if(other.length)grp.push(['другие',other]);
+  const cls=k=>({'в логистике / на планировании':'s1','на перемещении':'s2','на перемещении / в пути':'s3'})[k]||'';
+  el.innerHTML=`<div class="tiles" style="margin-top:0"><div class="tile acc"><span class="mono">Едет к нам</span><b class="tnum">${fmtQty(coming)} шт.</b><small class="pay">в ${O.length} заказах · на ${rub(sum)}</small></div>
+    ${grp.map(([k,L])=>`<div class="tile"><span class="mono">${esc(L[0].status||k)}</span><b class="tnum">${L.length}</b><small class="pay">${fmtQty(L.reduce((a,o)=>a+gq(o),0))} шт.</small></div>`).join('')}</div>
+    ${j.diag&&j.diag.length?`<details style="margin:0 0 12px"><summary class="pay">Подробности ответа кабинета (${j.diag.length})</summary><p class="pay">${j.diag.map(esc).join('<br>')}</p></details>`:''}
+    ${O.length?grp.map(([k,L])=>`<h3 style="margin:18px 0 8px"><span class="pwst ${cls(k)}">${esc(L[0].status||k)}</span> <span class="pay">${L.length}</span></h3><div class="wlist">${L.map(o=>{const G=o.goods.filter(g=>g.type!==9),sv=o.goods.filter(g=>g.type===9);
+      const eta=o.from||o.to?`прибудет ${pwoDt(o.from)}${o.to&&pwoDt(o.to)!==pwoDt(o.from)?'–'+pwoDt(o.to):''}`:o.shipdate?'отгрузка '+pwoDt(o.shipdate):'';
+      return `<div class="wcard"><div class="wtop"><b>${esc(o.num)}</b><span class="pay">от ${pwoDt(o.created)}</span>${eta?`<span class="pwst ${cls(k)}">${esc(eta)}</span>`:''}<span class="spacer"></span><b class="tnum">${rub(o.sum)}</b></div>
+        ${o.customer&&!/Нефедов|4точки/i.test(o.customer)?`<p class="pay" style="margin:4px 0 0">Покупатель: ${esc(o.customer)}</p>`:''}
+        <div style="margin-top:6px">${G.map(g=>`<div class="pwg"><span>${esc(g.name)} <b>×${g.qty}</b></span><span class="pay tnum">${g.price?rub(g.price):''}</span>
+          <small class="pay">${g.wrh?`<span class="${here(g)?'ohb':'kb'}" style="margin:0 6px 0 0">${esc(g.wrh)}${here(g)?' · уже у нас':''}</span>`:''}${g.pid?`у нас: ${esc(g.our)} — наш ${fmtQty(g.q)}${g.qc?', ОХ '+fmtQty(g.qc):''}`:'карточки у нас нет — заведётся при приходе'}</small></div>`).join('')}
+        ${sv.length?`<p class="pay" style="margin:4px 0 0">+ ${sv.map(g=>esc(g.name)).join(', ')}</p>`:''}</div></div>`;}).join('')}</div>`).join('')
+      :'<div class="empty"><b>Сейчас к нам ничего не едет</b>Нет заказов в статусах «Подтвержден», «В логистике», «На перемещении».</div>'}
+    <p class="pay" style="margin:14px 0 40px">Обновлено в ${esc(j.at||'')}</p>`;}
 async function loadRes(){const el=$('#rsBody');el.innerHTML='<p class="note">Загружаю…</p>';let j;try{j=await api('reserves');}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
   if(!j.rows.length){el.innerHTML='<div class="empty"><b>Резервов нет</b>Товар можно закрепить за клиентом из продажи: «В резерв на 5 дней».</div>';return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">До</th><th style="text-align:left">Клиент</th><th style="text-align:left">Товар</th><th>Сумма</th><th></th></tr></thead><tbody>${j.rows.map(r=>`<tr data-rs="${r.id}" style="cursor:pointer"><td style="text-align:left">${r.until<j.today?`<b style="color:var(--signal-deep)">истёк ${fmtDay(r.until)}</b>`:fmtDay(r.until)}</td><td style="text-align:left">${esc(r.partner||'—')}${r.phone?`<small class="pay" style="display:block">${esc(fmtPhone(r.phone))}</small>`:''}</td><td style="text-align:left">${esc(r.items)}</td><td><b>${rub(r.sum)}</b></td><td><button type="button" class="out" data-rs0="${r.id}">Снять</button></td></tr>`).join('')}</tbody></table></div>`;
@@ -3090,12 +3121,12 @@ new MutationObserver(()=>arSync()).observe(document.querySelector('.areas'),{sub
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
-const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',buy:'Выкуп с ОХ',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',sv:'Сверка кассы и банка',cuts:'Сезоны, бренды, АКБ',cs:'История CloudShop',lbl:'Этикетки',res:'Резервы',month:'Все документы'};
+const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',buy:'Выкуп с ОХ',pwo:'Заказы Пауэра',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',sv:'Сверка кассы и банка',cuts:'Сезоны, бренды, АКБ',cs:'История CloudShop',lbl:'Этикетки',res:'Резервы',month:'Все документы'};
 function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
-  if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pay'){show('pay');loadPay();window.scrollTo(0,0);return;}if(p==='sv'){show('sv');loadSv();window.scrollTo(0,0);return;}if(p==='cs'){show('cs');loadCs();window.scrollTo(0,0);return;}if(p==='cuts'){show('cuts');loadCuts();window.scrollTo(0,0);return;}if(p==='lbl'){show('lbl');renderLbl();window.scrollTo(0,0);return;}if(p==='res'){show('res');loadRes();window.scrollTo(0,0);return;}if(p==='pho'){show('pho');loadPho();return;}
+  if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pay'){show('pay');loadPay();window.scrollTo(0,0);return;}if(p==='sv'){show('sv');loadSv();window.scrollTo(0,0);return;}if(p==='cs'){show('cs');loadCs();window.scrollTo(0,0);return;}if(p==='cuts'){show('cuts');loadCuts();window.scrollTo(0,0);return;}if(p==='lbl'){show('lbl');renderLbl();window.scrollTo(0,0);return;}if(p==='res'){show('res');loadRes();window.scrollTo(0,0);return;}if(p==='pwo'){show('pwo');loadPwo();window.scrollTo(0,0);return;}if(p==='pho'){show('pho');loadPho();return;}
   $('#stH1').textContent=PAGES[p];
   if(p==='goods'){S.st.wh='all';show('stock');stSub('goods');}
   else{if(S.dl.type!==(p==='month'?'':p))S.dl.partner='';S.dl.type=p==='month'?'':p;show('stock');stSub('docs');}
@@ -3426,7 +3457,7 @@ async function loadSup(){let L=[];try{L=(await api('suppliers')).suppliers;}catc
 
 /* ---------- вкладки ---------- */
 function show(v){if(v==='cli'&&S.role==='owner'){setArea('c');return;}S.view=v;['an','adv'].forEach(x=>{const e=document.getElementById('v-'+x);if(e)e.hidden=v!==x;});{const vf=document.getElementById('v-fr');if(vf)vf.hidden=v!=='fr';}{const vz=document.getElementById('v-zak');if(vz)vz.hidden=v!=='zak';if(v==='zak')loadZak();}{const vc=document.getElementById('v-crm');if(vc)vc.hidden=v!=='crm';if(v==='crm')loadCrm();}{const vt=document.getElementById('v-task');if(vt)vt.hidden=v!=='task';if(v==='task')loadTasks();}document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected',t.dataset.v===v));
-  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);{const vp=document.getElementById('v-pay');if(vp)vp.hidden=v!=='pay';const vs=document.getElementById('v-sv');if(vs)vs.hidden=v!=='sv';['cuts','lbl','res','cs'].forEach(x=>{const e=document.getElementById('v-'+x);if(e)e.hidden=v!==x;});}$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
+  $('#v-day').hidden=v!=='day';$('#v-cal').hidden=v!=='cal';if(v==='cal'){loadCal();loadQueue();}$('#v-cli').hidden=v!=='cli';$('#v-stock').hidden=v!=='stock';if(v==='stock')loadStock();if(v==='cli')setTimeout(()=>$('#cq').focus(),50);{const vp=document.getElementById('v-pay');if(vp)vp.hidden=v!=='pay';const vs=document.getElementById('v-sv');if(vs)vs.hidden=v!=='sv';['cuts','lbl','res','cs','pwo'].forEach(x=>{const e=document.getElementById('v-'+x);if(e)e.hidden=v!==x;});}$('#v-exp').hidden=v!=='exp';$('#v-sum').hidden=v!=='sum';$('#v-rep').hidden=v!=='rep';$('#v-sup').hidden=v!=='sup';$('#v-pho').hidden=v!=='pho';if(v==='sum'){renderSum();renderPrizes();bkpNote();$('#cpnVal').value=S.coupon;}if(v==='exp')loadExp();if(v==='day')loadDay();
   try{history.replaceState(null,'','#'+v);}catch(_){}}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>show(t.dataset.v));
 function renderAll(){renderDay();renderExpForm();renderExp();}
