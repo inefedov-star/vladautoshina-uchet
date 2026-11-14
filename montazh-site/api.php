@@ -1505,6 +1505,48 @@ try {
     usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
     out(['size' => "$w/" . rtrim(rtrim((string)$pr, '0'), '.') . ' R' . rtrim(rtrim((string)$d, '0'), '.'), 'rows' => array_slice($out2, 0, 120), 'found' => count($raw['items'])] + ($owner ? ['warehouses' => $whSeen, 'cached' => $hit && $raw !== null, 'diag' => $raw['diag'] ?? [], 'stages' => $stg, 'sample' => isset($raw['items'][0]) ? ['season' => $raw['items'][0]['season'], 'thorn' => $raw['items'][0]['thorn'], 'imgs' => $raw['items'][0]['imgs'] ?? []] : null] : []));
 
+  case 'pw_disk':
+    // «на заказ»: диски у Пауэра — диаметр и разболтовка обязательны, тип (литой/штамп/кованый), вылет и ЦО — по желанию
+    needRole($role, ['owner', 'seller', 'cashier', 'master']); session_write_close();
+    $d = (int)($_GET['d'] ?? 0); if (!preg_match('/(\d+)\s*[x×х*]\s*([\d.,]+)/u', (string)($_GET['pcd'] ?? ''), $m) || $d < 12) fail('Укажите диаметр и разболтовку диска');
+    $bc = (int)$m[1]; $bs = (float)str_replace(',', '.', $m[2]); $kind = (string)($_GET['k'] ?? ''); $tl = ['cast' => [0, 2], 'steel' => [1], 'forged' => [2]][$kind] ?? null;
+    $etMin = isset($_GET['et1']) && $_GET['et1'] !== '' ? (float)$_GET['et1'] : null; $etMax = isset($_GET['et2']) && $_GET['et2'] !== '' ? (float)$_GET['et2'] : null; $diaMin = isset($_GET['dia']) && $_GET['dia'] !== '' ? (float)$_GET['dia'] : null;
+    $key = "dk1|$d|$bc|$bs|" . ($tl ? implode(',', $tl) : '') ; $p = db($cfg); $owner = $role === 'owner';
+    $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$key]); $hit = $c->fetch(); $raw = null;
+    if ($hit && time() - (int)$hit['ts'] < 900 && ($_GET['fresh'] ?? '') !== '1') $raw = json_decode($hit['body'], true);
+    if ($raw === null) { $cl = api4t($cfg); $items = []; $days = [];
+      $flt = ['diameter_min' => $d, 'diameter_max' => $d, 'bolts_count_min' => $bc, 'bolts_count_max' => $bc, 'bolts_spacing_min' => $bs - 0.05, 'bolts_spacing_max' => $bs + 0.05, 'rim_vid_name_list' => ['car']];
+      if ($tl) $flt['type_list'] = $tl;
+      for ($page = 0; $page < 4; $page++) {
+        try { $r = $cl->GetFindDisk(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => $flt, 'page' => $page, 'pageSize' => 500]); }
+        catch (Throwable $e) { fail('Пауэр не ответил: ' . mb_substr($e->getMessage(), 0, 200), 502); }
+        $b0 = []; pwItems($r, $b0); pwDays($r, $days);
+        // цвет и тип диска — из ответа (pwItems их не берёт)
+        $ex = []; $fx = function ($x) use (&$fx, &$ex) { if (is_object($x)) $x = get_object_vars($x); if (!is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER); if (isset($l['code'], $l['whpr'])) { $ex[(string)$l['code']] = ['color' => (string)($l['color'] ?? ''), 'type' => isset($l['type']) ? (int)$l['type'] : null]; return; } foreach ($x as $v) if (is_array($v) || is_object($v)) $fx($v); }; $fx($r);
+        foreach ($b0 as $x) $items[] = $x + ($ex[$x['code']] ?? ['color' => '', 'type' => null]);
+        if (count($b0) < 500) break; }
+      $raw = ['items' => $items, 'days' => $days];
+      if ($items) $p->prepare('INSERT OR REPLACE INTO pwcache (k, ts, body) VALUES (?,?,?)')->execute([$key, time(), json_encode($raw, JSON_UNESCAPED_UNICODE)]); }
+    $allow = array_map('strval', (array)($cfg['pw_wrh'] ?? [])); $skip = array_map('strval', (array)($cfg['pw_wrh_skip'] ?? [])); $out2 = [];
+    foreach ($raw['items'] as $it) { $nm = (string)$it['name'];
+      // ширина, вылет, ЦО из названия Пауэра: «7x17/5x114.3 ET45 D60.1 …»
+      $w = preg_match('/(\d+(?:[.,]\d+)?)\s*[xх]\s*' . $d . '\b/u', $nm, $q) ? (float)str_replace(',', '.', $q[1]) : null;
+      $et = preg_match('/ET\s*(-?\d+(?:[.,]\d+)?)/iu', $nm, $q) ? (float)str_replace(',', '.', $q[1]) : null;
+      $dia = preg_match('/\b(?:D|DIA|ЦО)\s*(\d+(?:[.,]\d+)?)/iu', $nm, $q) ? (float)str_replace(',', '.', $q[1]) : null;
+      if ($etMin !== null && ($et === null || $et < $etMin)) continue; if ($etMax !== null && ($et === null || $et > $etMax)) continue; if ($diaMin !== null && ($dia === null || $dia + 0.01 < $diaMin)) continue;
+      $best = null; $rest = 0; $minDays = null;
+      foreach ($it['wh'] as $x) { $id = (string)$x['wrh'];
+        if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true) || pwPickup($id, (string)($raw['days'][$id]['name'] ?? ''))) continue;
+        $rest += $x['rest']; $dd = $raw['days'][$id]['days'] ?? null; if ($dd !== null && ($minDays === null || $dd < $minDays)) $minDays = $dd;
+        if ($best === null || $x['buy'] < $best['buy']) $best = $x; }
+      if ($best === null || $rest <= 0) continue;
+      $row = ['code' => $it['code'], 'name' => $nm, 'brand' => $it['brand'], 'model' => $it['model'], 'color' => $it['color'] ?? '', 'type' => ['Литой', 'Штампованный', 'Кованый'][$it['type'] ?? -1] ?? '', 'w' => $w, 'et' => $et, 'dia' => $dia,
+        'img' => $it['img'], 'small' => $it['small'] ?? $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
+      if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
+      $out2[] = $row; }
+    usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
+    out(['size' => "R$d $bc×" . rtrim(rtrim(number_format($bs, 2, '.', ''), '0'), '.'), 'rows' => array_slice($out2, 0, 150), 'found' => count($raw['items']), 'shown' => count($out2)]);
+
   case 'rep_cuts':
     // продажи в разрезах: сезон и шипы, бренды, диаметры, аккумуляторы — период против того же периода год назад, остаток и прогноз на 4 недели
     needRole($role, ['owner']);
