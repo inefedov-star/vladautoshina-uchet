@@ -1914,6 +1914,7 @@ try {
       if ($I === null) $I = ['status' => '', 'goods' => []];
       $stn = $I['status'] !== '' ? $I['status'] : ($ST[(string)$o['st']] ?? ('статус ' . $o['st']));
       if (!$ids && $stn !== '' && !in_array($nst($stn), $WANT, true)) continue;
+      if (isset($I['goods']) && !$I['goods'] && isset($I['status']) && $I['status'] !== '') continue; // родительский заказ: товары в подзаказах
       foreach ($I['goods'] as &$g) { $pid = $sup[codeNorm($g['code'])] ?? ($byCae[codeNorm($g['code'])] ?? null); $g['pid'] = $pid; if ($pid) { $g['our'] = $pn[$pid] ?? ''; $g['q'] = $sm[$pid]['q'] ?? 0; $g['qc'] = $smc[$pid]['q'] ?? 0; } } unset($g);
       $out[] = $o + ['status' => $stn, 'from' => $I['from'] ?? '', 'to' => $I['to'] ?? '', 'ship' => $I['ship'] ?? '', 'shipdate' => $I['shipdate'] ?? '', 'pickup' => $I['pickup'] ?? '', 'customer' => $I['customer'] ?? '', 'goods' => $I['goods']];
     }
