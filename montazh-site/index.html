@@ -976,7 +976,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
   <section id="v-pho" hidden>
     <div class="calbar"><h1>Фото товаров</h1></div>
     <p class="note" style="margin:0 0 10px">Одно фото на модель: шины — бренд и модель (шипованные отдельно), диски — модель, остальное — на карточку. Фото хранятся на вашем сайте и сразу видны в витрине и в карточке товара.</p>
-    <div class="row" style="margin-bottom:10px"><button class="btn sig" type="button" id="phAuto">Подобрать фото шин автоматически</button><button class="btn ghost" type="button" id="phRedo">Переподобрать фото от поставщика</button><button class="btn ghost" type="button" id="phTest">Проверить связь с поставщиком</button></div>
+    <div class="row" style="margin-bottom:10px"><button class="btn sig" type="button" id="phSvr" title="Север Авто: крупные чистые фото шин, дисков и аккумуляторов, без водяных знаков">Подобрать фото у Север Авто — шины, диски, АКБ</button><button class="btn ghost" type="button" id="phAuto" title="У Пауэра фото мельче (400 px) — для шин, которых нет у Север Авто">Добрать фото шин у Пауэра</button><button class="btn ghost" type="button" id="phRedo">Переподобрать фото от поставщика</button><button class="btn ghost" type="button" id="phTest">Проверить связь с поставщиком</button></div>
     <div id="phMsg"></div>
     <div class="tiles" id="phTiles" style="margin-top:0"></div>
     <div class="row" style="margin-bottom:10px;align-items:center">
@@ -3449,6 +3449,11 @@ async function phAutoRun(redo){const b=redo?$('#phRedo'):$('#phAuto');const labe
   for(let i=0;i<list.length&&phRun;i++){el.innerHTML=`<p class="note">Подбираю ${i+1} из ${list.length}: ${esc(list[i].label)} · нашлось ${ok}, нет у поставщика ${miss}${errs?', ошибок '+errs:''}</p>`;
     try{const j=await api('photo_suggest',null,{k:list[i].k,auto:'1'});if(j.saved)ok++;else miss++;}catch(e){errs++;if(errs>=3&&!ok){el.innerHTML=`<div class="hint" style="border-color:var(--signal)"><b>Остановлено: ${esc(e.message)}</b><p>Нажмите «Проверить связь с поставщиком».</p></div>`;break;}}}
   phRun=false;b.textContent=label;if(ok||miss)el.innerHTML=`<p class="note">Готово: фото нашлось у ${ok} моделей, у поставщика нет — ${miss}${errs?', ошибок '+errs:''}. Проверьте вкладку «С фото» — неподходящее можно заменить.</p>`;loadPho();}
+$('#phSvr').onclick=async()=>{const b=$('#phSvr'),el=$('#phMsg');if(b.disabled)return;b.disabled=true;let ok=0,mn=0,ml=[];
+  try{for(let i=0;i<30;i++){el.innerHTML=`<p class="note">Подбираю фото у Север Авто… найдено ${ok}</p>`;const j=await api('photo_auto',null,i?{}:{reset:'1'});ok+=j.saved;mn+=j.missN;ml=ml.concat(j.miss);if(!j.saved)break;}
+    el.innerHTML=`<div class="hint" style="margin-bottom:12px"><b>Готово: фото от Север Авто — у ${ok} моделей</b><p>Без фото осталось ${mn}: этих моделей сейчас нет у Север Авто. Шины можно добрать кнопкой «Добрать фото шин у Пауэра», остальное — загрузить своё фото. Новые модели проверяются сами раз в час.</p>${ml.length?`<details><summary>Каких моделей нет</summary><p class="note">${ml.slice(0,80).map(esc).join(' · ')}</p></details>`:''}</div>`;}
+  catch(e){el.innerHTML=`<div class="hint" style="margin-bottom:12px;border-color:var(--signal)"><b>Не получилось</b><p>${esc(e.message)}. Проверьте ключ в «Сервис → Поставщики «на заказ»».</p></div>`;}
+  b.disabled=false;loadPho();};
 $('#phAuto').onclick=()=>phAutoRun(false);$('#phRedo').onclick=()=>phAutoRun(true);
 document.querySelectorAll('#phShow .chip').forEach(c=>c.onclick=()=>{S.ph.show=c.dataset.s;renderPho();});
 $('#phFix').onclick=async()=>{const b=$('#phFix');b.disabled=true;try{let from=0;for(;;){const j=await api('photo_fix_all',{from});toast(`<b>Привожу фото к одному виду</b>${j.done} из ${j.total}`);if(!j.more)break;from=j.done;}toast('<b>Готово</b>Все фото — на белом квадрате, товар по центру');loadPho();}catch(e){toast('<b>Не получилось</b>'+esc(e.message));}b.disabled=false;};

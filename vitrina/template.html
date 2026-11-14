@@ -241,6 +241,7 @@ html.embed[data-theme="dark"] .mst.w{background:rgba(255,194,102,.15);color:#FFC
 @media(max-width:600px){#fs{display:none}.bar .logo i{display:none}}
 .csug{display:flex;flex-direction:column;gap:6px}.csb{display:block;text-align:left;border:1px solid var(--rule);background:var(--paper);border-radius:12px;padding:9px 12px;min-height:46px;font:inherit}.csb small{display:block;color:var(--ink-3);font-size:.8rem}.chint{margin:0;padding:8px 12px;border-radius:10px;background:var(--paper-2);font-size:.86rem;color:var(--ink-2)}
 .supb{display:inline-block;padding:1px 8px;border-radius:999px;font-weight:700;font-size:.78rem;background:#FFE7D6;color:#9A3D06;margin-right:4px}html[data-theme="dark"] .supb{background:#4A2A14;color:#FFC79E}
+.rng{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}.rng label{display:flex;align-items:center;gap:5px;font-size:.85rem;color:var(--ink-2)}.rng input[inputmode]{width:64px;min-height:36px;padding:0 8px;border:1.5px solid var(--rule);border-radius:10px;background:var(--paper-2);font:inherit;font-size:.95rem;color:var(--ink)}.rng .ck{gap:7px;font-weight:600;color:var(--ink);cursor:pointer}.rng .ck input{width:18px;height:18px;accent-color:var(--signal)}.pwf .ck{flex-direction:row;align-items:center;gap:7px;font-weight:600;cursor:pointer}.pwf .ck input{width:18px;height:18px;padding:0}
 .pwf{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end;margin:4px 0 10px}.pwf label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--ink-3,#777)}.pwf input{width:92px;padding:8px 10px;border:1px solid var(--rule);border-radius:10px;font:inherit;font-size:1rem;background:var(--paper,#fff);color:inherit}
 .pwr{display:grid;grid-template-columns:112px 1fr auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule)}.pwr img,.pwi{width:112px;height:112px;object-fit:contain;background:#fff;border-radius:10px}.pwt b{display:block}.pwt small,.pwp small{display:block;color:var(--ink-3);font-size:.82rem}.pwp{text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end}.pwp b{font-size:1.25rem}
 .pdiag{font-size:.78rem;color:var(--ink-3);background:var(--paper-2);border-radius:10px;padding:8px 10px;margin:0 0 8px}
@@ -318,7 +319,7 @@ let HEAVY=heavyList();
 
 /* ---------- общее состояние ---------- */
 const S={tab:'tires',sort:'price',q:'',
-  tires:{d:16,w:205,p:55,s:'winter'},heavy:{t:null,k:null,size:''},disks:{d:null,pcd:null,k:null},akb:{std:null,pol:null,cap:null},fast:{k:null,th:null},more:{g:null}};
+  tires:{d:16,w:205,p:55,s:'winter'},heavy:{t:null,k:null,size:''},disks:{d:null,pcd:null,k:null,w1:'',w2:'',c1:'',c2:'',set:false},akb:{std:null,body:null,ah:null,pol:null},fast:{k:null,th:null},more:{g:null}};
 
 /* ---------- разметка фильтров ---------- */
 function chipRow(label,vals,cur,avail,fmt,onPick,cls){
@@ -395,10 +396,20 @@ function tireSheet(x){const o=x.o;
     <p class="note">Шиномонтаж и балансировку посчитаем отдельно. Нужного размера нет — привезём под заказ.</p>`);}
 
 /* ---------- ДИСКИ ---------- */
-const DK={cast:'Литые',steel:'Штампованные',odd:'Некомплект'};
+const DK={cast:'Литые',steel:'Штампованные',forged:'Кованые'};
+const dNum=v=>{v=String(v??'').replace(',','.').trim();return v===''||isNaN(+v)?null:+v;};
+const dIn=(v,a,b)=>{a=dNum(a);b=dNum(b);if(a==null&&b==null)return true;v=dNum(v);return v!=null&&(a==null||v>=a-0.01)&&(b==null||v<=b+0.01);};
 function dMatch(o,skip){const f=S.disks;
   return (skip==='d'||f.d==null||o.d===f.d)&&(skip==='pcd'||f.pcd==null||(o.pcds||[]).includes(f.pcd))&&(skip==='k'||f.k==null||o.k===f.k)
+   &&dIn(o.w,f.w1,f.w2)&&dIn(o.dia,f.c1,f.c2)&&(!f.set||(o.q||0)>=4)
    &&qmatch(`${o.m} ${o.pcd} ${o.n}`);}
+/* ширина, ступица «от–до» и галочка «комплект» — одна строка под разболтовкой */
+function diskRange(){const f=S.disks,row=document.createElement('div');row.className='rng';
+  const inp=(k,ph)=>`<input inputmode="decimal" data-dr="${k}" value="${esc(f[k]||'')}" placeholder="${ph}" aria-label="${ph}">`;
+  row.innerHTML=`<label>Ширина, J ${inp('w1','от')}–${inp('w2','до')}</label><label>Ступица (ЦО) ${inp('c1','от')}–${inp('c2','до')}</label><label class="ck"><input type="checkbox" id="dkSet" ${f.set?'checked':''}> Комплект — от 4 шт.</label>`;
+  row.querySelectorAll('[data-dr]').forEach(i=>i.onchange=()=>{f[i.dataset.dr]=i.value.replace(',','.').trim();renderAll();});
+  row.querySelector('#dkSet').onchange=e=>{f.set=e.target.checked;renderAll();};
+  const l=document.createElement('span');l.className='mono lbl';l.textContent='Размеры';return [l,row];}
 function diskSvg(o){
   const holes=+String(o.pcd||'5').split('×')[0]||5;let inner='';
   if(o.k==='steel'){for(let i=0;i<8;i++){const a=i*45*Math.PI/180;inner+=`<ellipse cx="${(100+46*Math.cos(a)).toFixed(1)}" cy="${(100+46*Math.sin(a)).toFixed(1)}" rx="9" ry="13" transform="rotate(${i*45+90} ${(100+46*Math.cos(a)).toFixed(1)} ${(100+46*Math.sin(a)).toFixed(1)})" fill="var(--paper-3)"/>`;}}
@@ -407,40 +418,46 @@ function diskSvg(o){
   let bolts='';for(let i=0;i<holes;i++){const a=(i*360/holes-90)*Math.PI/180;bolts+=`<circle cx="${(100+15*Math.cos(a)).toFixed(1)}" cy="${(100+15*Math.sin(a)).toFixed(1)}" r="2.6" fill="var(--ink)"/>`;}
   return `<svg viewBox="0 0 200 200" aria-hidden="true"><circle cx="100" cy="100" r="88" fill="${o.k==='steel'?'var(--ink-2)':'var(--ink-3)'}"/><circle cx="100" cy="100" r="78" fill="var(--paper-2)"/>${inner}<circle cx="100" cy="100" r="24" fill="var(--paper-2)" stroke="var(--rule)" stroke-width="2"/>${bolts}<circle cx="100" cy="100" r="6" fill="var(--paper-3)"/></svg>`;}
 const DISKS_PICK=()=>{const f=S.disks,set=k=>v=>{f[k]=v;renderAll();};const out=[];
-  out.push(...chipRow('Тип',[['cast','Литые'],['steel','Штампованные'],['odd','Некомплект']],f.k,new Set(DISKS.filter(o=>dMatch(o,'k')).map(o=>o.k)),0,set('k'),()=>'txt'));
+  out.push(...chipRow('Тип',[['cast','Литые'],['steel','Штампованные']],f.k,new Set(DISKS.filter(o=>dMatch(o,'k')).map(o=>o.k)),0,set('k'),()=>'txt'));
   out.push(...chipRow('Диаметр',uniq(DISKS.map(o=>o.d)).map(v=>[v,'R'+v]),f.d,new Set(DISKS.filter(o=>dMatch(o,'d')).map(o=>o.d)),0,set('d')));
   out.push(...chipRow('Разболтовка',uniq(DISKS.flatMap(o=>o.pcds||[])).map(v=>[v,v]),f.pcd,new Set(DISKS.filter(o=>dMatch(o,'pcd')).flatMap(o=>o.pcds||[])),0,set('pcd')));
+  out.push(...diskRange());
   out.push(...searchRow('Марка машины или диска: Kia, Скад, Replica…'));return out;};
 function disksOut(){const rows=sortList(DISKS.filter(o=>dMatch(o)),o=>o.pr,o=>o.m);
   title(rows.length?`${rows.length} ${plural(rows.length,'диск','диска','дисков')}`:'');
   if(!rows.length)return empty('Таких дисков сейчас нет','Подберём под заказ по марке машины.');
-  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],diskSvg(o))}<div class="tags"><span class="tag ${o.k==='odd'?'stud':'all'}">${DK[o.k]}</span></div></div>
+  return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],diskSvg(o))}<div class="tags"><span class="tag all">${DK[o.k]||'Диски'}</span>${(o.q||0)<4?'<span class="tag stud">Некомплект</span>':''}</div></div>
     <div class="cb"><span class="mono brand">R${o.d} · ${esc(o.pcd)}</span><span class="model" style="font-size:1.25rem">${esc(o.m)}</span>
     <span class="spec">${o.w}×${o.d} · ET${o.et} · DIA ${o.dia}</span>
-    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${o.k==='odd'?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,o.k==='odd'?1:4)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${(o.q||0)<4?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,(o.q||0)<4?1:4)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
 
 /* ---------- АКБ ---------- */
 const STD={euro:'Легковые, евро',asia:'Азия',moto:'Мото',truck:'Грузовые'};
 const CAPS=[['s','до 55'],['m','56–65'],['l','66–80'],['xl','81–110'],['xxl','больше 110']];
 const capOf=a=>a<=55?'s':a<=65?'m':a<=80?'l':a<=110?'xl':'xxl';
 function aMatch(o,skip){const f=S.akb;
-  return (skip==='std'||f.std==null||o.std===f.std)&&(skip==='pol'||f.pol==null||o.pol===f.pol)&&(skip==='cap'||f.cap==null||capOf(o.ah)===f.cap)&&qmatch(o.m);}
+  return (skip==='std'||f.std==null||o.std===f.std)&&(skip==='body'||f.body==null||o.body===f.body)&&(skip==='ah'||f.ah==null||o.ah===f.ah)&&(skip==='pol'||f.pol==null||o.pol===f.pol)&&qmatch(o.m);}
+/* корпус — главный критерий: L1…L6 (евро), LB — низкие, B/D — Азия, 6СТ — грузовые */
+const BODY_ORD=b=>{const m=String(b||'').match(/^(LB|L|B|D|t)(\d+)/);if(!m)return 999;return ({L:0,LB:100,B:200,D:200,t:300})[m[1]]+(+m[2]);};
+const bodyShort=o=>String(o.bl||o.body||'').replace(/ · /,' ');
 function akbSvg(o){const L=o.pol==='rev';
   return `<svg viewBox="0 0 200 150" aria-hidden="true" style="width:70%"><rect x="20" y="30" width="160" height="100" rx="4" fill="var(--ink)"/>
   <rect x="${L?140:36}" y="18" width="24" height="14" fill="var(--ink-3)"/><rect x="${L?36:140}" y="18" width="24" height="14" fill="var(--ink-3)"/>
   <text x="${L?152:48}" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="20" font-weight="700" fill="var(--signal)">+</text>
   <text x="${L?48:152}" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="20" font-weight="700" fill="var(--paper-3)">−</text>
   <text x="100" y="104" text-anchor="middle" font-family="Fira Sans Extra Condensed,sans-serif" font-size="34" font-weight="800" fill="var(--paper)">${o.ah||''} А·ч</text></svg>`;}
-const AKB_PICK=()=>{const f=S.akb,set=k=>v=>{f[k]=v;renderAll();};const out=[];
+const AKB_PICK=()=>{const f=S.akb,set=k=>v=>{f[k]=v;if(k==='std'){f.body=null;f.ah=null;}if(k==='body')f.ah=null;renderAll();};const out=[];
   out.push(...chipRow('Тип',Object.entries(STD),f.std,new Set(AKB.filter(o=>aMatch(o,'std')).map(o=>o.std)),0,set('std'),()=>'txt'));
+  const bodies=[...new Map(AKB.filter(o=>o.body&&(f.std==null||o.std===f.std)).map(o=>[o.body,o])).values()].sort((a,b)=>BODY_ORD(a.body)-BODY_ORD(b.body));
+  if(bodies.length)out.push(...chipRow('Корпус',bodies.map(o=>[o.body,bodyShort(o)]),f.body,new Set(AKB.filter(o=>aMatch(o,'body')).map(o=>o.body)),0,set('body'),()=>'txt'));
+  out.push(...chipRow('Ёмкость, А·ч',uniq(AKB.filter(o=>o.ah&&(f.std==null||o.std===f.std)&&(f.body==null||o.body===f.body)).map(o=>o.ah)).sort((a,b)=>a-b).map(v=>[v,v]),f.ah,new Set(AKB.filter(o=>aMatch(o,'ah')).map(o=>o.ah)),0,set('ah')));
   out.push(...chipRow('Полярность',[['rev','Обратная  − +'],['dir','Прямая  + −']],f.pol,new Set(AKB.filter(o=>aMatch(o,'pol')).map(o=>o.pol)),0,set('pol'),()=>'txt'));
-  out.push(...chipRow('Ёмкость, А·ч',CAPS,f.cap,new Set(AKB.filter(o=>aMatch(o,'cap')).map(o=>capOf(o.ah))),0,set('cap'),()=>'txt'));
   out.push(...searchRow('Бренд: Зверь, Sebang, AOKLY, EFB, AGM…'));return out;};
 function akbOut(){const rows=sortList(AKB.filter(o=>aMatch(o)),o=>o.pr,o=>o.m);
   title(rows.length?`${rows.length} ${plural(rows.length,'аккумулятор','аккумулятора','аккумуляторов')}`:'');
   if(!rows.length)return empty('Такого аккумулятора нет','Привезём под заказ — назовите марку машины.');
   return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],akbSvg(o))}<div class="tags"><span class="tag all">${STD[o.std]}</span>${/AGM/i.test(o.m)?'<span class="tag win">AGM</span>':/EFB/i.test(o.m)?'<span class="tag win">EFB</span>':''}</div></div>
-    <div class="cb"><span class="mono brand">${o.pol==='rev'?'Обратная полярность':o.pol==='dir'?'Прямая полярность':''}</span>
+    <div class="cb"><span class="mono brand">${o.body?esc(bodyShort(o))+' · ':''}${o.pol==='rev'?'обратная':o.pol==='dir'?'прямая':''}</span>
     <span class="model" style="font-size:1.25rem">${esc(o.m.replace(/^(ASIA|Asia|MOTO)\s+/,'').replace(/^(о\/п|п\/п)\s+/,''))}</span>
     ${o.en?`<span class="spec">Пусковой ток ${o.en} А</span>`:''}
     <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${stockHtml(o.q,1)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
@@ -520,9 +537,9 @@ async function pwHeavy(){const h=S.heavy,q=hvQuery(),emb=document.documentElemen
 /* диски под заказ у Пауэра: диаметр и разболтовка из подбора, вылет и центральное отверстие — уточнить в окне */
 async function pwDisk(){const g=S.disks,emb=document.documentElement.classList.contains('embed');
   sheet(`<h2 class="model" id="shTitle" style="font-size:1.5rem;margin:0 0 6px">Диски на заказ: R${g.d} ${esc(g.pcd)}${g.k&&g.k!=='odd'?' · '+DK[g.k].toLowerCase():''}</h2>
-    <div class="pwf"><label>Вылет ET от <input id="pwE1" inputmode="numeric" placeholder="любой"></label><label>до <input id="pwE2" inputmode="numeric" placeholder="любой"></label><label>Ступица (ЦО) от <input id="pwDia" inputmode="decimal" placeholder="любая"></label><button type="button" class="tool" id="pwGo">Показать</button></div>
+    <div class="pwf"><label>Ширина, J от <input id="pwW1" inputmode="decimal" placeholder="любая" value="${esc(g.w1||'')}"></label><label>до <input id="pwW2" inputmode="decimal" placeholder="любая" value="${esc(g.w2||'')}"></label><label>Вылет ET от <input id="pwE1" inputmode="numeric" placeholder="любой"></label><label>до <input id="pwE2" inputmode="numeric" placeholder="любой"></label><label>Ступица (ЦО) от <input id="pwDia" inputmode="decimal" placeholder="любая" value="${esc(g.c1||'')}"></label><label>до <input id="pwDia2" inputmode="decimal" placeholder="любая" value="${esc(g.c2||'')}"></label><label class="ck"><input type="checkbox" id="pwSet" checked> Комплект — от 4 шт.</label><button type="button" class="tool" id="pwGo">Показать</button></div>
     <p class="note" id="pwMsg" style="margin-top:0">Смотрю склады поставщика…</p><div id="pwOut"></div>`);
-  const go=async()=>{const q='pw_disk&d='+g.d+'&pcd='+encodeURIComponent(g.pcd)+(g.k&&g.k!=='odd'?'&k='+g.k:'')+['pwE1:et1','pwE2:et2','pwDia:dia'].map(x=>{const[i,k]=x.split(':');const v=(document.getElementById(i).value||'').replace(',','.').trim();return v?'&'+k+'='+encodeURIComponent(v):'';}).join('');
+  const go=async()=>{const q='pw_disk&d='+g.d+'&pcd='+encodeURIComponent(g.pcd)+(g.k&&g.k!=='odd'?'&k='+g.k:'')+(document.getElementById('pwSet').checked?'&set=1':'')+['pwW1:w1','pwW2:w2','pwE1:et1','pwE2:et2','pwDia:dia','pwDia2:dia2'].map(x=>{const[i,k]=x.split(':');const v=(document.getElementById(i).value||'').replace(',','.').trim();return v?'&'+k+'='+encodeURIComponent(v):'';}).join('');
     document.getElementById('pwMsg').textContent='Смотрю склады поставщика…';document.getElementById('pwOut').innerHTML='';
     try{const j=await papi(q);
       document.getElementById('pwMsg').textContent=j.rows.length?`Привезём под заказ: ${j.shown} ${plural(j.shown,'диск','диска','дисков')}${j.shown>j.rows.length?' (показаны '+j.rows.length+' самых доступных)':''}. Срок — дни до нашего магазина. Нажмите на фото, чтобы рассмотреть.`:`У поставщика дисков R${g.d} ${g.pcd} с такими параметрами сейчас нет.`;
@@ -550,7 +567,7 @@ function renderCartBtn(){let b=document.getElementById('cartBtn');const sb=docum
   if(!SEL){if(b)b.remove();return;}if(!b){b=document.createElement('button');b.id='cartBtn';b.type='button';b.className='cartfab';b.onclick=openCart;document.body.appendChild(b);}
   const n=CART.reduce((a,x)=>a+x.q,0),sum=CART.reduce((a,x)=>a+x.q*x.price,0);b.innerHTML=n?`Продажа · ${n} шт · <b>${rub(sum)}</b>`:'Продажа · пусто';}
 document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('[data-add]');if(!b)return;e.preventDefault();e.stopPropagation();const o=findItem(b.dataset.add);if(!o)return;
-  const ex=CART.find(x=>x.id===o.id);const set=(o.b!==undefined&&o.s!==undefined)||(o.pcd&&o.k!=='odd');const q0=set?Math.min(4,Math.max(1,o.q||4)):1;
+  const ex=CART.find(x=>x.id===o.id);const set=(o.b!==undefined&&o.s!==undefined)||(o.pcd&&(o.q||0)>=4);const q0=set?Math.min(4,Math.max(1,o.q||4)):1;
   if(ex)ex.q+=set?q0:1;else CART.push({id:o.id,name:itName(o),price:o.pr,list:o.pr,q:q0,stock:o.q});saveCart();vtoast(`<b>${ex?'+'+(set?q0:1):'В продаже'}</b> ${esc(itName(o))}`);},true);
 function pinPad(){sheet(`<h2 class="model" id="shTitle" style="font-size:1.6rem;margin:0 0 6px">Вход продавца</h2><p class="note" style="margin-top:0">PIN выдаёт руководитель. Покупателю вход не нужен.</p>
   <div class="pinv" id="pinv"></div><div class="pinpad">${['1','2','3','4','5','6','7','8','9','⌫','0','Войти'].map(k=>`<button type="button" data-k="${k}">${k}</button>`).join('')}</div><p class="err" id="pinE" hidden></p>`);

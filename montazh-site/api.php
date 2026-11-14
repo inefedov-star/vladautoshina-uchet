@@ -358,7 +358,7 @@ function supShin(array $cfg, array $C): array { $id = preg_replace('/\D+/', '', 
 function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token']); if ($tk === '') return ['skip' => 'нет ключа SVR'];
   if (!class_exists('XMLReader')) throw new RuntimeException('на хостинге нет XMLReader');
   $p = db($cfg); $T = $C['svr_terr']; $n = 0;
-  foreach (['tire' => 1, 'disk' => 2, 'heavy' => 3] as $kind => $type) {
+  foreach (['tire' => 1, 'disk' => 2, 'heavy' => 3, 'akb' => 9] as $kind => $type) {
     $tmp = tempnam(sys_get_temp_dir(), 'svr'); file_put_contents($tmp, supGet('https://webmim.svrauto.ru/api/v1/catalog/unload?access-token=' . rawurlencode($tk) . '&format=xml&types=' . $type, 300));
     $x = new XMLReader(); if (!$x->open($tmp)) throw new RuntimeException('SVR: не читается файл');
     $p->beginTransaction(); $p->prepare('DELETE FROM supstock WHERE sup = ? AND kind = ?')->execute(['svr', $kind]);
@@ -367,6 +367,7 @@ function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token'
       $e = @simplexml_load_string($x->readOuterXml()); if (!$e) continue; $g = fn($k) => trim((string)($e->$k ?? ''));
       $terr = $g('TERRITORY_RN'); if (!isset($T[$terr])) continue; $rest = (int)supNum($g('NREST')); $buy = supNum($g('NPRICE_PREPAYMENT')) ?: supNum($g('NPRICE_DELAYED')); if ($rest <= 0 || !$buy) continue;
       $rrp = supNum($g('NPRICE_RRP')) ?: supNum($g('NPRICE_CLI_P'));
+      if ($kind === 'akb') { $ins->execute(['svr', 'akb', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SCAPACITY')), null, null, null, null, null, null, null, null, null, trim($g('SDIMENSIONS') . ' ' . $g('SPOLARITY')), $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]); $n++; continue; }
       if ($kind === 'heavy') { $nm9 = $g('SMODIFNAME'); $k9 = szKeys($nm9); if (!$k9 && $g('SDIAMETR') !== '') $k9 = [szKey3($g('SWIDTH'), supNum($g('SHEIGHT')) ?? 0, supNum(preg_replace('/[^\d.,]/', '', $g('SDIAMETR'))))];
         $ins->execute(['svr', 'heavy', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $nm9, supNum($g('SWIDTH')), supNum($g('SHEIGHT')), supNum(preg_replace('/[^\d.,]/', '', $g('SDIAMETR'))), supSeason($g('SSEASON')), 0, null, null, null, null, null, null, $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]);
         if ($k9) $p->prepare('UPDATE supstock SET szk = ? WHERE rowid = ?')->execute([implode(' ', $k9), $p->lastInsertId()]); $n++; continue; }
@@ -383,6 +384,37 @@ function supRefresh(array $cfg, bool $force = false): array { $C = supCfg($cfg);
     try { $r = $fn($cfg, $C); if (empty($r['skip'])) setSetting($cfg, 'sup_ts_' . $k, (string)time()); setSetting($cfg, 'sup_err_' . $k, ''); $out[$k] = $r; }
     catch (Throwable $e) { if (db($cfg)->inTransaction()) db($cfg)->rollBack(); setSetting($cfg, 'sup_err_' . $k, date('d.m H:i') . ' ' . mb_substr($e->getMessage(), 0, 200)); $out[$k] = ['error' => $e->getMessage()]; } }
   return $out; }
+// марка в одном написании у нас и у поставщиков (SVR пишет по-русски: ТУНГА, КОРДИАНТ, Пирелли)
+function brandNorm(string $b): string { $u = normModel(preg_replace('/\([^)]*\)/u', '', $b)); $u = preg_replace('/\s+(TYRES|TIRES|TYRE|ШИНЫ|АКБ)$/u', '', $u);
+  $m = ['ТУНГА' => 'TUNGA', 'КОРДИАНТ' => 'CORDIANT', 'ПИРЕЛЛИ' => 'PIRELLI', 'НОКИАН' => 'NOKIAN', 'КАМА' => 'KAMA', 'БЕЛШИНА' => 'BELSHINA', 'АМТЕЛ' => 'AMTEL', 'ВИАТТИ' => 'VIATTI', 'ГУДИЕР' => 'GOODYEAR', 'КОНТИНЕНТАЛ' => 'CONTINENTAL', 'МИШЛЕН' => 'MICHELIN', 'БРИДЖСТОУН' => 'BRIDGESTONE', 'ЙОКОХАМА' => 'YOKOHAMA', 'ТОЙО' => 'TOYO', 'ХАНКУК' => 'HANKOOK', 'КУМХО' => 'KUMHO', 'ДАНЛОП' => 'DUNLOP', 'НЕКСЕН' => 'NEXEN', 'МАТАДОР' => 'MATADOR', 'ГИСЛАВЕД' => 'GISLAVED', 'ТРАЙАНГЛ' => 'TRIANGLE', 'САИЛУН' => 'SAILUN', 'ЛИНГЛОНГ' => 'LINGLONG', 'ЛАУФЕНН' => 'LAUFENN', 'ФОРМУЛА' => 'FORMULA', 'ТОРЕРО' => 'TORERO', 'МАКСИС' => 'MAXXIS', 'АЙКОН' => 'IKON', 'СКАД' => 'SKAD', 'ЗУБР' => 'ZUBR', 'ЗВЕРЬ' => 'ZVER', 'ТЮМЕНЬ' => 'TYUMEN', 'АКТЕХ' => 'AKTEX', 'ROADX' => 'SAILUN', 'LEAO' => 'LINGLONG', 'LINGLONG LEAO' => 'LINGLONG', 'HANKOOK LAUFENN' => 'LAUFENN', 'PRINX FORTUNE' => 'FORTUNE', 'PIRELLI FORMULA' => 'FORMULA', 'FURUKAWA' => 'FURUKAWA'];
+  return $m[$u] ?? ($m[explode(' ', $u)[0]] ?? explode(' ', $u)[0]); }
+// фото моделей от поставщиков: SVR — крупные фото без водяных знаков (1000–1200 px); Шинсервис — с крупным логотипом, не берём
+function photoAuto(array $cfg, int $limit = 25): array { $p = db($cfg); $pm = photoMap($cfg); $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $done = 0; $miss = []; $t0 = time();
+  $tried = json_decode(getSetting($cfg, 'photo_auto_tried') ?? '{}', true) ?: [];
+  $S = ['tire' => [], 'disk' => [], 'akb' => []];
+  foreach ($p->query("SELECT kind, brand, model, name, w, color, img FROM supstock WHERE sup = 'svr' AND kind IN ('tire', 'disk', 'akb') AND img != ''")->fetchAll() as $r) $S[$r['kind']][brandNorm((string)$r['brand'])][] = $r;
+  $seen = [];
+  foreach ($p->query("SELECT id, name, kind, attrs FROM products WHERE archived = 0 AND kind IN ('tire', 'disk', 'akb')")->fetchAll() as $pr) {
+    $id = (int)$pr['id']; if (($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0) <= 0) continue; $a = json_decode($pr['attrs'], true) ?: [];
+    $k = photoKey($pr['kind'], $a, $pr['name'], $id); if (isset($seen[$k]) || isset($pm[$k]) || ($pr['kind'] === 'akb' && isset($pm[photoKeyOld('akb', $pr['name'])]))) continue; $seen[$k] = 1;
+    if (isset($tried[$k]) && time() - $tried[$k] < 7 * 86400) continue;
+    if ($done >= $limit || time() - $t0 > 80) break;
+    $best = null; $bs = 0;
+    if ($pr['kind'] === 'tire') { $b = brandNorm((string)($a['brand'] ?? '')); $words = array_filter(explode(' ', normModel(str_replace('_', ' ', (string)($a['model'] ?? '')))), fn($w) => mb_strlen($w) >= 2 || ctype_digit($w));
+      foreach ($S['tire'][$b] ?? [] as $r) { $t = ' ' . normModel(str_replace('_', ' ', $r['model'] . ' ' . $r['name'])) . ' '; $hit = (bool)$words; foreach ($words as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; }
+        if ($hit) { $sc = 100 - abs(mb_strlen(normModel($r['model'])) - mb_strlen(implode(' ', $words))); if ($sc > $bs) { $bs = $sc; $best = $r; } } } }
+    elseif ($pr['kind'] === 'disk') { $mw = array_values(array_filter(explode(' ', normModel((string)($a['model'] ?? ''))), fn($w) => mb_strlen($w) >= 2)); if (!$mw) { $tried[$k] = time(); continue; }
+      $b = brandNorm($mw[0]); $rest = array_slice($mw, 1, 2);
+      foreach ($S['disk'][$b] ?? [] as $r) { $t = ' ' . normModel($r['model'] . ' ' . $r['name'] . ' ' . $r['color']) . ' '; $hit = (bool)$rest; foreach ($rest as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; } if ($hit) { $best = $r; break; } } }
+    else { [$ab, $al, ] = akbModel($pr['name'], $a); [$bc, , $bg] = akbBody($pr['name'], $a); $b = brandNorm($ab);
+      foreach ($S['akb'][$b] ?? [] as $r) { [$rb, , $rg] = akbBody($r['name'] . ' ' . preg_replace('/[хx]/u', '*', (string)$r['color']), ['ah' => $r['w']]); if ($rg !== $bg) continue;
+        $sc = 10 + ($rb === $bc ? 3 : 0) + ($al !== '' && mb_stripos($r['model'] . ' ' . $r['name'], $al) !== false ? 5 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } } }
+    if (!$best) { $tried[$k] = time(); $miss[] = photoLabel($pr['kind'], $a, $pr['name']); continue; }
+    try { $bytes = supGet((string)$best['img'], 30); $info = @getimagesizefromstring($bytes); if (!$info || strlen($bytes) < 2000) throw new RuntimeException('не картинка');
+      photoSave($cfg, $k, $bytes, 'svr', (string)$best['img']); $done++; }
+    catch (Throwable $e) { $tried[$k] = time(); $miss[] = photoLabel($pr['kind'], $a, $pr['name']) . ' (' . $e->getMessage() . ')'; } }
+  setSetting($cfg, 'photo_auto_tried', json_encode($tried));
+  return ['saved' => $done, 'miss' => array_slice($miss, 0, 40), 'missN' => count($miss)]; }
 // варианты «на заказ» у других поставщиков в формате строк Пауэра
 function supRows(array $cfg, string $kind, array $q, bool $owner): array { $C = supCfg($cfg); $p = db($cfg); $o = [];
   $nm = ['shin' => 'Шинсервис', 'svr' => 'SVR'];
@@ -619,6 +651,24 @@ function photoKey(string $kind, array $a, string $name, int $id): string {
   if ($kind === 'akb') { [$b, $l, $body] = akbModel($name, $a); if ($b !== '') return 'akb|' . $b . '|' . $l . '|' . $body; return photoKeyOld($kind, $name); }
   return 'p|' . $id;
 }
+// типоразмер корпуса АКБ: по размерам из названия (242*175*190), по коду (L2, LB3, D26, 95D26L, 42B19L), иначе по ёмкости
+// евро: L1 207, L2 242, L3 278, L4 315, L5 353, L6 394 (высота 190); низкие LB — высота 175; Азия: B19/B24, D20, D23, D26, D31 (высота 220+);
+// грузовые: 6СТ-140 513×189×223, 6СТ-190 513×223×223, 6СТ-225 518×276×242; мото — отдельно
+function akbBody(string $name, array $a): array { $u = mb_strtoupper(str_replace(',', '.', $name)); $ah = (float)($a['ah'] ?? 0);
+  $moto = mb_strpos($u, 'MOTO') !== false || mb_strpos($u, 'МОТО') !== false || ($ah > 0 && $ah <= 30);
+  if ($moto) return ['moto', 'Мото', 'moto'];
+  $low = (bool)preg_match('/НИЗК|\bLB\d/u', $u); $asia = mb_strpos($u, 'ASIA') !== false || mb_strpos($u, 'АЗИЯ') !== false || mb_strpos($u, 'JIS') !== false || ($a['std'] ?? '') === 'asia';
+  if (preg_match('/(\d{3})\s*[XХ*×]\s*(\d{3})\s*[XХ*×]\s*(\d{3})/u', $u, $m)) { [$L, $W, $H] = [(int)$m[1], (int)$m[2], (int)$m[3]];
+    if ($L >= 480) return $W >= 260 ? ['t225', '6СТ-225 · 518×276×242', 'truck'] : ($W >= 200 ? ['t190', '6СТ-190 · 513×223×223', 'truck'] : ['t140', '6СТ-140 · 513×189×223', 'truck']);
+    if ($H >= 210) { $c = $L < 215 ? 'D20' : ($L < 245 ? 'D23' : ($L < 285 ? 'D26' : 'D31')); return [$c, $c . ' · Азия ' . $L . '×' . $W . '×' . $H, 'asia']; }
+    $n = $L < 220 ? 1 : ($L < 260 ? 2 : ($L < 296 ? 3 : ($L < 334 ? 4 : ($L < 374 ? 5 : 6)))); $c = ($H <= 180 ? 'LB' : 'L') . $n;
+    return [$c, $c . ' · ' . ($H <= 180 ? 'низкий ' : '') . [1 => 207, 242, 278, 315, 353, 394][$n] . '×175×' . ($H <= 180 ? 175 : 190), 'euro']; }
+  if (preg_match('/\d{2,3}\s?([BD])(19|20|23|24|26|31)[LR]?\b/u', $u, $m) || preg_match('/\b([BD])(19|20|23|24|26|31)[LR]?\b/u', $u, $m)) { $c = $m[1] . $m[2]; return [$c, $c . ' · Азия', 'asia']; }
+  if (preg_match('/\b(LB?)([1-6])\b/u', $u, $m)) { $c = $m[1] . $m[2]; $n = (int)$m[2]; return [$c, $c . ' · ' . ($m[1] === 'LB' ? 'низкий ' : '') . [1 => 207, 242, 278, 315, 353, 394][$n] . '×175×' . ($m[1] === 'LB' ? 175 : 190), 'euro']; }
+  if ($ah >= 132 || mb_strpos($u, 'КОНУС') !== false) return $ah >= 210 ? ['t225', '6СТ-225 · 518×276×242', 'truck'] : ($ah >= 165 ? ['t190', '6СТ-190 · 513×223×223', 'truck'] : ['t140', '6СТ-140 · 513×189×223', 'truck']);
+  if ($asia) { $c = $ah <= 45 ? 'B24' : ($ah <= 75 ? 'D23' : ($ah <= 90 ? 'D26' : 'D31')); return [$c, $c . ' · Азия', 'asia']; }
+  $n = $ah <= 56 ? 1 : ($ah <= 66 ? 2 : ($ah <= 80 ? 3 : ($ah <= 92 ? 4 : ($ah <= 100 ? 5 : 6)))); $c = ($low && $n <= 5 ? 'LB' : 'L') . $n;
+  return [$c, $c . ' · ' . ($low ? 'низкий ' : '') . [1 => 207, 242, 278, 315, 353, 394][$n] . '×175×' . ($low ? 175 : 190), 'euro']; }
 // прежний ключ фото АКБ (на каждую карточку) — чтобы уже загруженные фото не пропали
 function photoKeyOld(string $kind, string $name): string { return $kind === 'akb' ? 'akb|' . trim(preg_replace('/\s+/u', ' ', mb_strtoupper(preg_replace('/^Аккумулятор\s*|\b(о\/п|п\/п|обр\.?|прям\.?)\b/ui', ' ', $name)))) : ''; }
 // аккумулятор: бренд, линейка (EFB, AGM, Premium…) и корпус (евро, Азия, мото, грузовой) — у одной линейки фото одно на все ёмкости
@@ -1640,6 +1690,9 @@ try {
     $d = (int)($_GET['d'] ?? 0); if (!preg_match('/(\d+)\s*[x×х*]\s*([\d.,]+)/u', (string)($_GET['pcd'] ?? ''), $m) || $d < 12) fail('Укажите диаметр и разболтовку диска');
     $bc = (int)$m[1]; $bs = (float)str_replace(',', '.', $m[2]); $kind = (string)($_GET['k'] ?? ''); $tl = ['cast' => [0, 2], 'steel' => [1], 'forged' => [2]][$kind] ?? null;
     $etMin = isset($_GET['et1']) && $_GET['et1'] !== '' ? (float)$_GET['et1'] : null; $etMax = isset($_GET['et2']) && $_GET['et2'] !== '' ? (float)$_GET['et2'] : null; $diaMin = isset($_GET['dia']) && $_GET['dia'] !== '' ? (float)$_GET['dia'] : null;
+    $gf = fn($k) => isset($_GET[$k]) && $_GET[$k] !== '' ? (float)str_replace(',', '.', (string)$_GET[$k]) : null; $diaMax = $gf('dia2'); $wMin = $gf('w1'); $wMax = $gf('w2'); $setOnly = ($_GET['set'] ?? '') === '1';
+    // одно правило для всех поставщиков: ЦО до, ширина от–до, комплект — от 4 шт.
+    $dkOk = fn($w, $dia, $rest) => !(($diaMax !== null && ($dia === null || $dia - 0.01 > $diaMax)) || ($wMin !== null && ($w === null || $w + 0.01 < $wMin)) || ($wMax !== null && ($w === null || $w - 0.01 > $wMax)) || ($setOnly && $rest < 4));
     $key = "dk1|$d|$bc|$bs|" . ($tl ? implode(',', $tl) : '') ; $p = db($cfg); $owner = $role === 'owner';
     $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$key]); $hit = $c->fetch(); $raw = null;
     if ($hit && time() - (int)$hit['ts'] < 900 && ($_GET['fresh'] ?? '') !== '1') $raw = json_decode($hit['body'], true);
@@ -1668,14 +1721,14 @@ try {
         if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true) || pwPickup($id, (string)($raw['days'][$id]['name'] ?? ''))) continue;
         $rest += $x['rest']; $dd = $raw['days'][$id]['days'] ?? null; if ($dd !== null && ($minDays === null || $dd < $minDays)) $minDays = $dd;
         if ($best === null || $x['buy'] < $best['buy']) $best = $x; }
-      if ($best === null || $rest <= 0) continue;
+      if ($best === null || $rest <= 0 || !$dkOk($w, $dia, $rest)) continue;
       $row = ['code' => $it['code'], 'name' => $nm, 'brand' => $it['brand'], 'model' => $it['model'], 'color' => $it['color'] ?? '', 'type' => ['Литой', 'Штампованный', 'Кованый'][$it['type'] ?? -1] ?? '', 'w' => $w, 'et' => $et, 'dia' => $dia,
         'img' => $it['img'], 'small' => $it['small'] ?? $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
       if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
       $out2[] = $row; }
     foreach ($out2 as &$r9) $r9['sup'] = 'Пауэр'; unset($r9);
     foreach (supRows($cfg, 'disk', ['d' => $d, 'pn' => $bc, 'pcd' => $bs], $owner) as $r9) {
-      if ($etMin !== null && ($r9['et'] === null || $r9['et'] < $etMin)) continue; if ($etMax !== null && ($r9['et'] === null || $r9['et'] > $etMax)) continue; if ($diaMin !== null && ($r9['dia'] === null || $r9['dia'] + 0.01 < $diaMin)) continue;
+      if ($etMin !== null && ($r9['et'] === null || $r9['et'] < $etMin)) continue; if ($etMax !== null && ($r9['et'] === null || $r9['et'] > $etMax)) continue; if ($diaMin !== null && ($r9['dia'] === null || $r9['dia'] + 0.01 < $diaMin)) continue; if (!$dkOk($r9['w'] ?? null, $r9['dia'], (int)$r9['rest'])) continue;
       if ($kind === 'steel' && !preg_match('/штамп|сталь/iu', $r9['color'] . ' ' . $r9['name'])) continue; if (in_array($kind, ['cast', 'forged'], true) && preg_match('/штамп|стальн/iu', $r9['color'] . ' ' . $r9['name'])) continue;
       $out2[] = $r9; }
     usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
@@ -2195,7 +2248,7 @@ try {
   case 'cron':
     // обновление по расписанию (cron на хостинге): брони «ждёт выдачи» из кабинета Пауэра и кэш «Заказов Пауэра»
     if (empty($cfg['cron_key']) || !hash_equals((string)$cfg['cron_key'], (string)($_GET['key'] ?? ''))) fail('Нет доступа', 403);
-    $r = ['holds' => pwSyncHolds($cfg, true), 'suppliers' => supRefresh($cfg)]; try { $o = pwOrdersData($cfg, true); $r['orders'] = count($o['orders']); } catch (Throwable $e) { $r['orders_error'] = $e->getMessage(); }
+    $r = ['holds' => pwSyncHolds($cfg, true), 'suppliers' => supRefresh($cfg)]; try { $r['photos'] = photoAuto($cfg, 15)['saved']; } catch (Throwable $e) {} try { $o = pwOrdersData($cfg, true); $r['orders'] = count($o['orders']); } catch (Throwable $e) { $r['orders_error'] = $e->getMessage(); }
     out($r);
   case 'pw_orders':
     needRole($role, ['owner']); session_write_close();
@@ -2752,6 +2805,12 @@ try {
     catch (Throwable $e) { $res['probe'] = ['ok' => false, 'error' => $e->getMessage()]; }
     out($res);
 
+  case 'photo_auto':
+    // подобрать фото моделей от поставщиков (SVR) для всего, что есть в наличии и ещё без фото
+    needRole($role, ['owner']); session_write_close(); @set_time_limit(120);
+    if (($_GET['reset'] ?? '') === '1') setSetting($cfg, 'photo_auto_tried', '{}');
+    out(photoAuto($cfg, 40));
+
   case 'photo_suggest':
     // предложить фото модели из API поставщика: ищем по размеру одной из шин модели и сверяем бренд+модель
     needRole($role, ['owner']);
@@ -2891,8 +2950,9 @@ try {
             continue; } } }
       $o = ['id' => $id, 'n' => $n, 'pr' => $pr, 'q' => $q];
       if ($p['kind'] === 'tireo') { $o['sk'] = $k9 ?? null; if ($k9 && preg_match('/\d{2}\s?[CС](?![A-Za-zА-Яа-я])/u', $n)) $o['tt'] = 'c'; elseif ($k9) { [$a9, $b9, $c9] = explode('|', $k9); $o['tt'] = (fmod((float)$c9, 1) != 0 || ((float)$c9 == 20 && in_array($a9, ['7.5', '8.25', '9', '10', '11', '12', '13', '14'], true) && $b9 === '') || ((float)$a9 >= 215 && in_array((float)$c9, [17.5, 19.5, 22.5], true))) ? 'truck' : 'spec'; } else $o['tt'] = 'spec'; }
-      if ($p['kind'] === 'disk') { $o += ['t' => 'disk', 'k' => $a['type'] ?? 'cast', 'pcds' => $a['pcds'] ?? [], 'd' => isset($a['d']) ? (int)$a['d'] : null, 'w' => $a['w'] ?? null, 'pcd' => $a['pcd'] ?? null, 'et' => $a['et'] ?? null, 'dia' => $a['dia'] ?? null, 'm' => ($a['model'] ?? '') !== '' ? $a['model'] : $n]; }
-      elseif ($p['kind'] === 'akb') { $o += ['t' => 'akb', 'ah' => $a['ah'] ?? null, 'pol' => $a['pol'] ?? null, 'std' => $a['std'] ?? 'euro', 'en' => $a['en'] ?? null, 'm' => preg_replace('/^Аккумулятор\s+/u', '', $n)]; }
+      if ($p['kind'] === 'disk') { $k9 = $a['type'] ?? 'cast'; if ($k9 === 'odd') $k9 = preg_match('/штамп|TREBL|KFZ|ACCURIDE|MEFRO|ВАЗ-|ГАЗ-|КРКЗ/ui', $n) && !preg_match('/лит/ui', $n) ? 'steel' : 'cast';
+        $o += ['t' => 'disk', 'k' => $k9, 'pcds' => $a['pcds'] ?? [], 'd' => isset($a['d']) ? (int)$a['d'] : null, 'w' => $a['w'] ?? null, 'pcd' => $a['pcd'] ?? null, 'et' => $a['et'] ?? null, 'dia' => $a['dia'] ?? null, 'm' => ($a['model'] ?? '') !== '' ? $a['model'] : $n]; }
+      elseif ($p['kind'] === 'akb') { [$bc9, $bl9, $bg9] = akbBody($n, $a); $o += ['t' => 'akb', 'ah' => $a['ah'] ?? null, 'pol' => $a['pol'] ?? null, 'std' => $bg9, 'body' => $bc9, 'bl' => $bl9, 'en' => $a['en'] ?? null, 'm' => preg_replace('/^Аккумулятор\s+/u', '', $n)]; }
       elseif ($p['kind'] === 'fast') { $o += ['t' => 'fast', 'th' => $a['thread'] ?? null, 'seat' => $a['seat'] ?? null, 'k' => $a['type'] ?? 'other']; if (!empty($a['ring'])) { $o['ro'] = $a['ring']['out'] ?? null; $o['ri'] = $a['ring']['in'] ?? null; } }
       elseif (in_array($p['kind'], ['tireo', 'tube', 'tool'], true)) $o['t'] = $p['kind'];
       else { $g = $a['group'] ?? 'acc'; $o += ['t' => 'acc', 'g' => $g === 'consumable' ? 'acc' : $g]; }
