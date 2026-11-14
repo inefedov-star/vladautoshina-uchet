@@ -379,13 +379,27 @@ function pwMatcher(array $cfg): callable { $p = db($cfg);
   $byCae = []; foreach ($p->query("SELECT id, cae FROM products WHERE cae != '' AND archived = 0")->fetchAll() as $r) $byCae[codeNorm((string)$r['cae'])] = (int)$r['id'];
   $sup = []; foreach ($p->query('SELECT pk, code, product_id FROM supcodes')->fetchAll() as $r) if (mb_strpos((string)$r['pk'], 'ПАУЭР') !== false) $sup[(string)$r['code']] = (int)$r['product_id'];
   return function (string $code) use ($byCae, $sup) { $c = codeNorm($code); return $sup[$c] ?? ($byCae[$c] ?? null); }; }
+// провести бронь «ждёт выдачи» как выдачу с ОХ (заказ выдан в кабинете Пауэра): шины уходят с ОХ
+function issAutoPost(array $cfg, int $id, string $day, string $why): ?string { $p = db($cfg);
+  $st = $p->prepare("SELECT * FROM docs WHERE id = ? AND type = 'iss' AND status = 'draft'"); $st->execute([$id]); $d = $st->fetch(); if (!$d) return 'бронь не найдена';
+  // выдан раньше, чем появилась бронь, — значит, выдача уже учтена (история CloudShop); сами не проводим
+  if ($day < date('Y-m-d', (int)($d['created'] ?: time()))) return 'в кабинете выдан ' . date('d.m', strtotime($day)) . ', раньше брони — проверьте и снимите бронь';
+  $l = $p->prepare("SELECT product_id, qty FROM moves WHERE doc_id = ? AND wh = 'custody'"); $l->execute([$id]); $lines = $l->fetchAll(); if (!$lines) return 'в брони нет строк';
+  $sm = stockMap($cfg, 'custody'); $HL = heldMap($cfg, $id); $short = []; $cost = []; $need = [];
+  foreach ($lines as $x) $need[(int)$x['product_id']] = ($need[(int)$x['product_id']] ?? 0) - (float)$x['qty'];
+  foreach ($need as $pid => $q) { $all = $sm[$pid]['q'] ?? 0; if ($all - ($HL[$pid] ?? 0) + 1e-9 < $q) $short[] = $pid; $cost[$pid] = $all > 0 ? round($sm[$pid]['c'] / $all, 2) : 0; }
+  if ($short) { $nm = $p->query('SELECT name FROM products WHERE id IN (' . implode(',', array_map('intval', $short)) . ')')->fetchAll(PDO::FETCH_COLUMN); return 'на ОХ в пульте не хватает: ' . implode('; ', $nm); }
+  $p->beginTransaction(); $uc = $p->prepare("UPDATE moves SET cost = ? WHERE doc_id = ? AND product_id = ? AND wh = 'custody'");
+  foreach ($cost as $pid => $c) $uc->execute([$c, $id, $pid]);
+  $p->prepare("UPDATE docs SET status = 'posted', posted_at = ?, day = ?, note = CASE WHEN COALESCE(note, '') = '' THEN ? ELSE note || ' · ' || ? END WHERE id = ?")->execute([time(), $day, $why, $why, $id]);
+  $p->commit(); logit($cfg, 'auto', 'doc_post', (string)$id); return null; }
 // заказы партнёров на выдачу с нашего ОХ (кабинет «Выдача заказов») → «Ждёт выдачи» в пульте: бронь товара на ОХ
 function pwSyncHolds(array $cfg, bool $force = false): array {
   $last = (int)(getSetting($cfg, 'pw_hold_sync') ?? 0);
   if (!$force && time() - $last < 600) return ['skipped' => true, 'at' => $last];
   setSetting($cfg, 'pw_hold_sync', (string)time());
   if (empty($cfg['api4t_login']) || !class_exists('SoapClient')) return ['error' => 'нет доступа к API Пауэра'];
-  @set_time_limit(120); $p = db($cfg); $res = ['created' => 0, 'updated' => 0, 'gone' => [], 'nocard' => [], 'orders' => 0];
+  @set_time_limit(120); $p = db($cfg); $res = ['created' => 0, 'updated' => 0, 'issued' => [], 'issue_err' => [], 'gone' => [], 'nocard' => [], 'orders' => 0];
   $obj = function ($x) use (&$obj) { if (is_object($x)) $x = get_object_vars($x); if (is_array($x)) foreach ($x as $k => $v) $x[$k] = (is_object($v) || is_array($v)) ? $obj($v) : $v; return $x; };
   $find = function ($x, string $key, array &$out, int $dep = 0) use (&$find) { if ($dep > 9 || !is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER); if (array_key_exists($key, $l)) { $out[] = $l; return; } foreach ($x as $v) if (is_array($v)) $find($v, $key, $out, $dep + 1); };
   try { $cl = api4t($cfg); } catch (Throwable $e) { return ['error' => $e->getMessage()]; }
@@ -398,8 +412,15 @@ function pwSyncHolds(array $cfg, bool $force = false): array {
     try { $i = $obj($cl->GetStoOrderInfo($auth + ['orderID' => $oid])); } catch (Throwable $e) { $res['error'] = 'GetStoOrderInfo ' . $num . ': ' . mb_substr($e->getMessage(), 0, 150); continue; }
     $h = []; $find($i, 'statusname', $h); $h = $h[0] ?? []; $g = []; $find($i, 'product_name', $g);
     $stn = trim((string)($h['statusname'] ?? '')); $stOf[$num] = $stn;
-    // выданные (отгружено) и отменённые заказы — уже не ждут; бронь по ним, если была, помечается ниже
-    if (preg_match('/^(Отгруж|Заказ отмен|Отмен|Выдан)/u', $stn)) continue;
+    // заказ выдан в кабинете («Отгружено…»): бронь в пульте проводим как выдачу с ОХ — шины уходят с нашего ОХ
+    if (preg_match('/^(Отгруж|Выдан)/u', $stn)) {
+      $q = $p->prepare("SELECT id FROM docs WHERE type = 'iss' AND status = 'draft' AND hold = 1 AND num = ? ORDER BY id DESC LIMIT 1"); $q->execute([$num]); $hid = (int)$q->fetchColumn();
+      if ($hid) { $sd = substr((string)($h['shipmentdate'] ?? $o['shipmentdate'] ?? ''), 0, 10); if (!preg_match('/^20\d\d-\d\d-\d\d$/', $sd)) $sd = date('Y-m-d');
+        $err = issAutoPost($cfg, $hid, $sd, 'выдан в кабинете Пауэра ' . date('d.m H:i') . ' (автоматически)');
+        if ($err === null) $res['issued'][] = $num . ' ' . (string)($o['recipient'] ?? ''); else $res['issue_err'][] = $num . ': ' . $err; }
+      continue; }
+    // отменённые — уже не ждут; бронь по ним, если была, помечается ниже
+    if (preg_match('/^(Заказ отмен|Отмен)/u', $stn)) continue;
     $lines = []; foreach ($g as $x) { if ((int)($x['product_type'] ?? 0) === 9) continue;
       $isOh = (int)($x['wrh'] ?? 0) === $ohWrh || preg_match('/^\s*(ОХ|OX)/u', (string)($x['wrh_short_name'] ?? '')); if (!$isOh) continue;
       $pid = $match((string)($x['code'] ?? '')); $q = (int)($x['quantity'] ?? 0); if ($q <= 0) continue;
@@ -417,8 +438,16 @@ function pwSyncHolds(array $cfg, bool $force = false): array {
     foreach ($lines as $pid => $q) $ins->execute([$id, $pid, -$q]);
     $p->commit(); }
   // брони, заказов которых в кабинете больше нет среди ожидающих выдачи (выдали или отменили)
-  if ($res['orders'] > 0 && empty($res['error'])) foreach ($p->query("SELECT id, num FROM docs WHERE type = 'iss' AND status = 'draft' AND hold = 1 AND (num LIKE 'F%' OR num LIKE 'Z%')")->fetchAll() as $d)
-    if (!isset($active[$d['num']])) $res['gone'][(string)$d['id']] = $stOf[$d['num']] ?? 'нет среди ожидающих выдачи';
+  // брони, заказов которых нет среди ожидающих: спрашиваем кабинет по номеру — выдан (проводим) или отменён (помечаем)
+  if (empty($res['error'])) foreach ($p->query("SELECT id, num FROM docs WHERE type = 'iss' AND status = 'draft' AND hold = 1 AND (num LIKE 'F%' OR num LIKE 'Z%')")->fetchAll() as $d) {
+    if (isset($active[$d['num']])) continue; $stn = $stOf[$d['num']] ?? ''; $sd = '';
+    if ($stn === '') { try { $i = $obj($cl->GetStoOrderInfo($auth + ['orderNumber' => $d['num']])); $h = []; $find($i, 'statusname', $h); $h = $h[0] ?? []; $stn = trim((string)($h['statusname'] ?? '')); $sd = substr((string)($h['shipmentdate'] ?? ''), 0, 10); } catch (Throwable $e) { $stn = ''; } }
+    if (preg_match('/^(Отгруж|Выдан)/u', $stn)) { if (!preg_match('/^20\d\d-\d\d-\d\d$/', $sd)) $sd = date('Y-m-d');
+      $err = issAutoPost($cfg, (int)$d['id'], $sd, 'выдан в кабинете Пауэра ' . date('d.m H:i') . ' (автоматически)');
+      if ($err === null) $res['issued'][] = $d['num']; else { $res['issue_err'][] = $d['num'] . ': ' . $err; $res['gone'][(string)$d['id']] = $stn . ' — не провелось: ' . $err; }
+      continue; }
+    $res['gone'][(string)$d['id']] = $stn !== '' ? $stn : 'нет среди ожидающих выдачи'; }
+  if ($res['issued']) { $log = json_decode(getSetting($cfg, 'pw_hold_issued') ?? '[]', true) ?: []; foreach ($res['issued'] as $x) array_unshift($log, date('d.m H:i') . ' — ' . $x); setSetting($cfg, 'pw_hold_issued', json_encode(array_slice($log, 0, 15), JSON_UNESCAPED_UNICODE)); }
   setSetting($cfg, 'pw_hold_gone', json_encode($res['gone'])); setSetting($cfg, 'pw_hold_nocard', json_encode($res['nocard'], JSON_UNESCAPED_UNICODE));
   return $res; }
 // «ждёт выдачи»: черновики выдачи с ОХ, забронированные под заказ партнёра поставщика (товар ещё на ОХ, но уже чужой)
@@ -1983,7 +2012,7 @@ try {
     $gone = json_decode(getSetting($cfg, 'pw_hold_gone') ?? '[]', true) ?: []; $nocard = json_decode(getSetting($cfg, 'pw_hold_nocard') ?? '[]', true) ?: [];
     $rows = db($cfg)->query("SELECT d.id, d.day, d.partner, d.recv, d.num, d.note, SUM(ABS(m.qty)) qty, GROUP_CONCAT(pr.name || ' ×' || CAST(ABS(m.qty) AS INTEGER), '; ') items FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products pr ON pr.id = m.product_id WHERE d.type = 'iss' AND d.status = 'draft' AND d.hold = 1 GROUP BY d.id ORDER BY d.day, d.id")->fetchAll();
     $today = new DateTime(date('Y-m-d'));
-    out(['rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'day' => $r['day'], 'days' => (int)$today->diff(new DateTime($r['day']))->days, 'partner' => $r['partner'], 'recv' => $r['recv'], 'num' => $r['num'], 'note' => $r['note'], 'qty' => (float)$r['qty'], 'items' => $r['items'], 'gone' => $gone[(string)$r['id']] ?? ''], $rows), 'nocard' => $nocard, 'sync' => $sync, 'synced' => (int)(getSetting($cfg, 'pw_hold_sync') ?? 0)]);
+    out(['rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'day' => $r['day'], 'days' => (int)$today->diff(new DateTime($r['day']))->days, 'partner' => $r['partner'], 'recv' => $r['recv'], 'num' => $r['num'], 'note' => $r['note'], 'qty' => (float)$r['qty'], 'items' => $r['items'], 'gone' => $gone[(string)$r['id']] ?? ''], $rows), 'nocard' => $nocard, 'issued' => json_decode(getSetting($cfg, 'pw_hold_issued') ?? '[]', true) ?: [], 'sync' => $sync, 'synced' => (int)(getSetting($cfg, 'pw_hold_sync') ?? 0)]);
 
   case 'doc_save':
     // черновик прихода: шапка и строки целиком; проведённый документ так не меняется
