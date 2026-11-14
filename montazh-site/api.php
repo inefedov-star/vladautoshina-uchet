@@ -393,10 +393,13 @@ function pwSyncHolds(array $cfg, bool $force = false): array {
   $ohWrh = (int)($cfg['pw_oh_wrh'] ?? 337); $match = pwMatcher($cfg);
   try { $r = $obj($cl->GetStoOrderList($auth + ['filter' => ['dStart' => date('Y-m-d\T00:00:00', time() - 120 * 86400), 'viewShipped' => false, 'viewArchive' => false]])); }
   catch (Throwable $e) { return ['error' => 'GetStoOrderList: ' . mb_substr($e->getMessage(), 0, 200)]; }
-  $L = []; $find($r, 'orderid', $L); $res['orders'] = count($L); $active = [];
+  $L = []; $find($r, 'orderid', $L); $res['orders'] = count($L); $active = []; $stOf = [];
   foreach ($L as $o) { $num = (string)($o['number'] ?? ''); $oid = (int)$o['orderid']; if ($num === '') continue;
     try { $i = $obj($cl->GetStoOrderInfo($auth + ['orderID' => $oid])); } catch (Throwable $e) { $res['error'] = 'GetStoOrderInfo ' . $num . ': ' . mb_substr($e->getMessage(), 0, 150); continue; }
     $h = []; $find($i, 'statusname', $h); $h = $h[0] ?? []; $g = []; $find($i, 'product_name', $g);
+    $stn = trim((string)($h['statusname'] ?? '')); $stOf[$num] = $stn;
+    // выданные (отгружено) и отменённые заказы — уже не ждут; бронь по ним, если была, помечается ниже
+    if (preg_match('/^(Отгруж|Заказ отмен|Отмен|Выдан)/u', $stn)) continue;
     $lines = []; foreach ($g as $x) { if ((int)($x['product_type'] ?? 0) === 9) continue;
       $isOh = (int)($x['wrh'] ?? 0) === $ohWrh || preg_match('/^\s*(ОХ|OX)/u', (string)($x['wrh_short_name'] ?? '')); if (!$isOh) continue;
       $pid = $match((string)($x['code'] ?? '')); $q = (int)($x['quantity'] ?? 0); if ($q <= 0) continue;
@@ -415,7 +418,7 @@ function pwSyncHolds(array $cfg, bool $force = false): array {
     $p->commit(); }
   // брони, заказов которых в кабинете больше нет среди ожидающих выдачи (выдали или отменили)
   if ($res['orders'] > 0 && empty($res['error'])) foreach ($p->query("SELECT id, num FROM docs WHERE type = 'iss' AND status = 'draft' AND hold = 1 AND (num LIKE 'F%' OR num LIKE 'Z%')")->fetchAll() as $d)
-    if (!isset($active[$d['num']])) $res['gone'][] = (int)$d['id'];
+    if (!isset($active[$d['num']])) $res['gone'][(string)$d['id']] = $stOf[$d['num']] ?? 'нет среди ожидающих выдачи';
   setSetting($cfg, 'pw_hold_gone', json_encode($res['gone'])); setSetting($cfg, 'pw_hold_nocard', json_encode($res['nocard'], JSON_UNESCAPED_UNICODE));
   return $res; }
 // «ждёт выдачи»: черновики выдачи с ОХ, забронированные под заказ партнёра поставщика (товар ещё на ОХ, но уже чужой)
@@ -1980,7 +1983,7 @@ try {
     $gone = json_decode(getSetting($cfg, 'pw_hold_gone') ?? '[]', true) ?: []; $nocard = json_decode(getSetting($cfg, 'pw_hold_nocard') ?? '[]', true) ?: [];
     $rows = db($cfg)->query("SELECT d.id, d.day, d.partner, d.recv, d.num, d.note, SUM(ABS(m.qty)) qty, GROUP_CONCAT(pr.name || ' ×' || CAST(ABS(m.qty) AS INTEGER), '; ') items FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products pr ON pr.id = m.product_id WHERE d.type = 'iss' AND d.status = 'draft' AND d.hold = 1 GROUP BY d.id ORDER BY d.day, d.id")->fetchAll();
     $today = new DateTime(date('Y-m-d'));
-    out(['rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'day' => $r['day'], 'days' => (int)$today->diff(new DateTime($r['day']))->days, 'partner' => $r['partner'], 'recv' => $r['recv'], 'num' => $r['num'], 'note' => $r['note'], 'qty' => (float)$r['qty'], 'items' => $r['items'], 'gone' => in_array((int)$r['id'], $gone, true)], $rows), 'nocard' => $nocard, 'sync' => $sync, 'synced' => (int)(getSetting($cfg, 'pw_hold_sync') ?? 0)]);
+    out(['rows' => array_map(fn($r) => ['id' => (int)$r['id'], 'day' => $r['day'], 'days' => (int)$today->diff(new DateTime($r['day']))->days, 'partner' => $r['partner'], 'recv' => $r['recv'], 'num' => $r['num'], 'note' => $r['note'], 'qty' => (float)$r['qty'], 'items' => $r['items'], 'gone' => $gone[(string)$r['id']] ?? ''], $rows), 'nocard' => $nocard, 'sync' => $sync, 'synced' => (int)(getSetting($cfg, 'pw_hold_sync') ?? 0)]);
 
   case 'doc_save':
     // черновик прихода: шапка и строки целиком; проведённый документ так не меняется
