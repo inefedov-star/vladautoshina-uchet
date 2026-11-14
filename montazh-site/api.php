@@ -1457,7 +1457,7 @@ try {
 
   case 'pw_find':
     // «на заказ»: что в этом размере есть на складах Пауэра с доставкой. Закупочная цена — только собственнику
-    needRole($role, ['owner', 'seller', 'cashier', 'master']);
+    needRole($role, ['owner', 'seller', 'cashier', 'master']); session_write_close();
     $w = (int)($_GET['w'] ?? 0); $pr = (float)($_GET['p'] ?? 0); $d = (float)($_GET['d'] ?? 0); if ($w < 100 || $d < 10) fail('Укажите размер полностью: ширина, профиль и диаметр');
     $season = (string)($_GET['s'] ?? ''); $key = "v3|$w/$pr/$d"; $p = db($cfg); $owner = $role === 'owner';
     $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$key]); $hit = $c->fetch(); $raw = null;
@@ -2002,13 +2002,15 @@ try {
     $r = ['holds' => pwSyncHolds($cfg, true)]; try { $o = pwOrdersData($cfg, true); $r['orders'] = count($o['orders']); } catch (Throwable $e) { $r['orders_error'] = $e->getMessage(); }
     out($r);
   case 'pw_orders':
-    needRole($role, ['owner']);
+    needRole($role, ['owner']); session_write_close();
     out(pwOrdersData($cfg, ($_GET['fresh'] ?? '') === '1'));
 
   case 'wait_list':
     // «ждут выдачи»: забронированные на ОХ заказы партнёров поставщика
     needRole($role, ['owner', 'master', 'cashier']);
-    $sync = $role === 'owner' ? pwSyncHolds($cfg, ($_GET['sync'] ?? '') === '1') : [];
+    // долгие запросы к кабинету — не держим сессию, иначе остальные кнопки пульта ждут; при работающем расписании (cron) сами не ходим
+    session_write_close(); $man = ($_GET['sync'] ?? '') === '1';
+    $sync = $role === 'owner' && ($man || time() - (int)(getSetting($cfg, 'pw_hold_sync') ?? 0) > 1800) ? pwSyncHolds($cfg, $man) : [];
     $gone = json_decode(getSetting($cfg, 'pw_hold_gone') ?? '[]', true) ?: []; $nocard = json_decode(getSetting($cfg, 'pw_hold_nocard') ?? '[]', true) ?: [];
     $rows = db($cfg)->query("SELECT d.id, d.day, d.partner, d.recv, d.num, d.note, SUM(ABS(m.qty)) qty, GROUP_CONCAT(pr.name || ' ×' || CAST(ABS(m.qty) AS INTEGER), '; ') items FROM docs d JOIN moves m ON m.doc_id = d.id JOIN products pr ON pr.id = m.product_id WHERE d.type = 'iss' AND d.status = 'draft' AND d.hold = 1 GROUP BY d.id ORDER BY d.day, d.id")->fetchAll();
     $today = new DateTime(date('Y-m-d'));
