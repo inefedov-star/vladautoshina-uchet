@@ -310,11 +310,15 @@ $('#stamp').textContent='Наличие на '+STAMP;
 
 const by=t=>OTHER.filter(o=>o.t===t);
 let DISKS=by('disk'),AKB=by('akb'),FAST=by('fast');
-let MORE=OTHER.filter(o=>['acc','tube','tool','tireo'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
+let MORE=OTHER.filter(o=>['acc','tube','tool'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
+/* грузовые, спецтехника и легкогрузовые (C): своё наличие + подбор размера «на заказ» */
+const hvFmt=k=>{if(!k)return '';const[a,b,c]=String(k).split('|');return a+(b?(+a<100&&+b<20?'×':'/')+b:'')+(c?(b?' R':'-')+c:'');};
+function heavyList(){return [...TIRES.filter(o=>o.c).map(o=>({...o,n:`${o.w}/${o.p} R${o.d}C ${o.b} ${o.m}`.trim(),tt:'c',sk:`${o.w}|${o.p}|${o.d}`})),...OTHER.filter(o=>o.t==='tireo').map(o=>({...o,tt:o.tt||'spec'}))];}
+let HEAVY=heavyList();
 
 /* ---------- общее состояние ---------- */
 const S={tab:'tires',sort:'price',q:'',
-  tires:{d:16,w:205,p:55,s:'winter'},disks:{d:null,pcd:null,k:null},akb:{std:null,pol:null,cap:null},fast:{k:null,th:null},more:{g:null}};
+  tires:{d:16,w:205,p:55,s:'winter'},heavy:{t:null,k:null,size:''},disks:{d:null,pcd:null,k:null},akb:{std:null,pol:null,cap:null},fast:{k:null,th:null},more:{g:null}};
 
 /* ---------- разметка фильтров ---------- */
 function chipRow(label,vals,cur,avail,fmt,onPick,cls){
@@ -337,7 +341,7 @@ const sortList=(arr,price,name)=>{const a=[...arr];
 
 /* ---------- ШИНЫ ---------- */
 const SEAS={winter:['Зима','win'],summer:['Лето','sum'],all:['Всесезон','all']};
-const tSize=o=>`${o.w}/${o.p} R${o.d}${o.c?'C':''}`;
+const tSize=o=>o.w<100?`${o.w}×${o.p} R${o.d}`:`${o.w}/${o.p} R${o.d}${o.c?'C':''}`;
 function tMatch(o,skip){const f=S.tires;
   return (skip==='d'||f.d==null||o.d===f.d)&&(skip==='w'||f.w==null||o.w===f.w)&&(skip==='p'||f.p==null||o.p===f.p)
    &&(skip==='s'||f.s==null||(f.s==='stud'?o.st:f.s==='fric'?(o.s==='winter'&&!o.st):o.s===f.s))
@@ -352,11 +356,11 @@ const TIRES_PICK=()=>{const f=S.tires,set=(k)=>v=>{f[k]=v;renderAll();};
   const out=[];
   const l=document.createElement('span');l.className='mono lbl';l.textContent='Размер';
   const sn=document.createElement('div');sn.className='size-now';
-  sn.innerHTML=`<b>${f.w??'<em>___</em>'}/${f.p??'<em>__</em>'} R${f.d??'<em>__</em>'}</b>`;
+  sn.innerHTML=`<b>${f.w??'<em>___</em>'}${f.w&&f.w<100?'×':'/'}${f.p??'<em>__</em>'} R${f.d??'<em>__</em>'}</b>`;
   if(f.d||f.w||f.p||f.s){const r=document.createElement('button');r.className='reset';r.type='button';r.textContent='Сбросить всё';r.onclick=()=>{Object.keys(f).forEach(k=>f[k]=null);S.q='';renderAll();};sn.appendChild(r);}
   out.push(l,sn);
   out.push(...chipRow('Диаметр',uniq(TIRES.map(o=>o.d)).map(v=>[v,'R'+v]),f.d,new Set(TIRES.filter(o=>tMatch(o,'d')).map(o=>o.d)),0,set('d')));
-  out.push(...chipRow('Ширина',uniq(TIRES.map(o=>o.w)).map(v=>[v,v]),f.w,new Set(TIRES.filter(o=>tMatch(o,'w')).map(o=>o.w)),0,set('w')));
+  out.push(...chipRow('Ширина',uniq(TIRES.map(o=>o.w)).map(v=>[v,v<100?v+'″':v]),f.w,new Set(TIRES.filter(o=>tMatch(o,'w')).map(o=>o.w)),0,set('w')));
   out.push(...chipRow('Профиль',uniq(TIRES.map(o=>o.p)).map(v=>[v,v]),f.p,new Set(TIRES.filter(o=>tMatch(o,'p')).map(o=>o.p)),0,set('p')));
   out.push(...chipRow('Сезон',[['winter','Вся зима'],['stud','Шипы'],['fric','Липучка'],['summer','Лето'],['all','Всесезон']],f.s,null,0,set('s'),v=>'txt '+(v==='summer'?'s':v==='all'?'':'w')));
   out.push(...searchRow('Бренд или модель: Ikon, Pirelli, Ice 9…'));
@@ -367,7 +371,7 @@ function tiresOut(){
   let g=[...m.values()].map(list=>({list,o:list[0],min:Math.min(...list.map(x=>x.pr)),max:Math.max(...list.map(x=>x.pr))}));
   g=sortList(g,x=>S.sort==='desc'?x.max:x.min,x=>x.o.b+' '+x.o.m);
   const f=S.tires,full=f.d&&f.w&&f.p;
-  title(rows.length?(full?`${f.w}/${f.p} R${f.d}: `:'')+`${g.length} ${plural(g.length,'модель','модели','моделей')} шин`:'');
+  title(rows.length?(full?`${tSize(f)}: `:'')+`${g.length} ${plural(g.length,'модель','модели','моделей')} шин`:'');
   if(!rows.length)return empty('Такого размера сейчас нет','Привезём под заказ — уточните у продавца. Или уберите один из фильтров.'+(SEL&&full&&document.documentElement.classList.contains('embed')?`<p style="margin-top:14px"><button class="tool" type="button" id="toZak" style="background:var(--signal);border-color:var(--signal);color:#fff">Оформить заказ на ${f.w}/${f.p} R${f.d}</button></p>`:''));
   const html=`<div class="grid">${g.map((x,i)=>{const o=x.o,one=x.list.length===1;
     const szs=one?'':`<div class="sizes">${x.list.slice(0,6).map(s=>`<span class="sz">${tSize(s)}</span>`).join('')}${x.list.length>6?`<span class="sz">+${x.list.length-6}</span>`:''}</div>`;
@@ -451,10 +455,10 @@ const FAST_PICK=()=>{const f=S.fast,set=k=>v=>{f[k]=v;renderAll();};const out=[]
 function fastOut(){const rows=sortList(FAST.filter(o=>fMatch(o)),o=>o.pr,o=>o.n);
   title(rows.length?`${rows.length} ${plural(rows.length,'позиция','позиции','позиций')} крепежа`:'');
   if(!rows.length)return empty('Ничего не нашлось','Попробуйте другую резьбу или уберите фильтр.');
-  return [listHtml(rows,o=>[o.n,[o.th?'М'+o.th:'',o.seat||'',o.ro?`ступица ${o.ri} → диск ${o.ro}`:''].filter(Boolean).join(' · ')])];}
+  return [tileHtml(rows,o=>[o.n,[o.th?'М'+o.th:'',o.seat||'',o.ro?`ступица ${o.ri} → диск ${o.ro}`:''].filter(Boolean).join(' · '),FK[o.k]||''],o=>icoSvg(o.k==='ring'?'ring':o.k==='lock'?'lock':'nut'))];}
 
 /* ---------- ЕЩЁ ---------- */
-const MG={acc:'Аксессуары',caps:'Колпаки',akbacc:'Для АКБ',chem:'Автохимия',tube:'Камеры',tool:'Инструмент',tireo:'Грузовые и спецшины'};
+const MG={acc:'Аксессуары',caps:'Колпаки',akbacc:'Для АКБ',chem:'Автохимия',tube:'Камеры',tool:'Инструмент'};
 function mMatch(o,skip){const f=S.more;return (skip==='g'||f.g==null||o.g===f.g)&&qmatch(o.n);}
 const MORE_PICK=()=>{const f=S.more;const out=[];
   out.push(...chipRow('Раздел',Object.entries(MG),f.g,new Set(MORE.filter(o=>mMatch(o,'g')).map(o=>o.g)),0,v=>{f.g=v;renderAll();},()=>'txt'));
@@ -462,13 +466,33 @@ const MORE_PICK=()=>{const f=S.more;const out=[];
 function moreOut(){const rows=sortList(MORE.filter(o=>mMatch(o)),o=>o.pr,o=>o.n);
   title(rows.length?`${rows.length} ${plural(rows.length,'позиция','позиции','позиций')}`:'');
   if(!rows.length)return empty('Ничего не нашлось','Уберите фильтр или измените запрос.');
-  return [listHtml(rows,o=>[o.n,S.more.g?'':MG[o.g]])];}
+  return [tileHtml(rows,o=>[o.n,'',MG[o.g]||''],o=>icoSvg(o.g))];}
+/* плитки для крепежа, «Ещё» и грузовых: фото товара, если есть, иначе значок */
+function icoSvg(k){const P={nut:'<polygon points="100,40 152,70 152,130 100,160 48,130 48,70" fill="none" stroke="var(--ink-3)" stroke-width="10"/><circle cx="100" cy="100" r="24" fill="none" stroke="var(--ink-3)" stroke-width="10"/>',ring:'<circle cx="100" cy="100" r="58" fill="none" stroke="var(--ink-3)" stroke-width="14"/><circle cx="100" cy="100" r="34" fill="none" stroke="var(--rule)" stroke-width="6"/>',lock:'<circle cx="100" cy="100" r="56" fill="none" stroke="var(--ink-3)" stroke-width="10"/><path d="M80 92 q20-30 40 0 q-20 30-40 0z" fill="var(--ink-3)"/>',tube:'<circle cx="100" cy="100" r="62" fill="none" stroke="var(--ink-3)" stroke-width="22"/>',tool:'<path d="M60 140 L120 80 M110 60 a24 24 0 1 0 30 30" fill="none" stroke="var(--ink-3)" stroke-width="12" stroke-linecap="round"/>',tire:'<circle cx="100" cy="100" r="64" fill="none" stroke="var(--ink-3)" stroke-width="24"/><circle cx="100" cy="100" r="22" fill="var(--rule)"/>'};
+  return `<svg viewBox="0 0 200 200" aria-hidden="true" style="width:56%">${P[k]||'<rect x="55" y="55" width="90" height="90" rx="14" fill="none" stroke="var(--ink-3)" stroke-width="10"/>'}</svg>`;}
+function tileHtml(rows,fn,svg){return `<div class="grid">${rows.map(o=>{const[a,b,tag]=fn(o);return `<div class="card" style="cursor:default"><div class="ph">${phImg([o],svg(o))}${tag?`<div class="tags"><span class="tag all">${esc(tag)}</span></div>`:''}</div>
+    <div class="cb"><span class="model" style="font-size:1.05rem;line-height:1.25">${esc(a)}</span>${b?`<span class="spec">${esc(b)}</span>`:''}
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${stockHtml(o.q,1)}</span>${addBtn(o)}</div></div></div>`;}).join('')}</div>`;}
+/* ---------- ГРУЗОВЫЕ И СПЕЦ ---------- */
+const HT={c:'Легкогрузовые (C)',truck:'Грузовые',spec:'Спецтехника и с/х'};
+function hMatch(o,skip){const f=S.heavy;return (skip==='t'||f.t==null||o.tt===f.t)&&(skip==='k'||f.k==null||o.sk===f.k)&&qmatch(o.n);}
+const HEAVY_PICK=()=>{const f=S.heavy,set=k=>v=>{f[k]=v;if(k==='t')f.k=null;renderAll();};const out=[];
+  out.push(...chipRow('Тип',Object.entries(HT),f.t,new Set(HEAVY.filter(o=>hMatch(o,'t')).map(o=>o.tt)),0,set('t'),()=>'txt'));
+  const ks=uniq(HEAVY.filter(o=>hMatch(o,'k')&&o.sk).map(o=>o.sk)).sort((a,b)=>{const x=a.split('|'),y=b.split('|');return (+x[2]-+y[2])||(+x[0]-+y[0]);});
+  if(ks.length)out.push(...chipRow('Размеры в наличии',ks.map(k=>[k,hvFmt(k)]),f.k,null,0,set('k')));
+  const l=document.createElement('span');l.className='mono lbl';l.textContent='Любой размер — для заказа';
+  const i=document.createElement('input');i.className='search';i.id='hvSize';i.placeholder='315/80 R22.5, 10.00 R20, 12.5/80-18, 195/75 R16C';i.value=f.size;i.oninput=()=>{f.size=i.value;pwBtnUp();};
+  out.push(l,i,...searchRow('Бренд или модель'));return out;};
+function heavyOut(){const rows=sortList(HEAVY.filter(o=>hMatch(o)),o=>o.pr,o=>o.n);
+  title(rows.length?`${rows.length} ${plural(rows.length,'шина','шины','шин')} в наличии`:'');
+  if(!rows.length)return empty('В наличии нет','Впишите размер и посмотрите «на заказ» у поставщиков.');
+  return [tileHtml(rows,o=>[o.n,'',HT[o.tt]||''],()=>icoSvg('tire'))];}
 
 function listHtml(rows,fn){return `<div class="list">${rows.map(o=>{const[a,b]=fn(o);
   return `<div class="li"><div class="nm">${esc(a)}${b?`<small>${esc(b)}</small>`:''}</div><span class="pr tnum">${rub(o.pr)}</span>${stockHtml(o.q,1)}${addBtn(o)}</div>`;}).join('')}</div>`;}
 
 /* ---------- каркас ---------- */
-const TABS=[['tires','Шины',TIRES.length,TIRES_PICK,tiresOut],['disks','Диски',DISKS.length,DISKS_PICK,disksOut],['akb','Аккумуляторы',AKB.length,AKB_PICK,akbOut],
+const TABS=[['tires','Шины',TIRES.length,TIRES_PICK,tiresOut],['heavy','Грузовые и спец',HEAVY.length,HEAVY_PICK,heavyOut],['disks','Диски',DISKS.length,DISKS_PICK,disksOut],['akb','Аккумуляторы',AKB.length,AKB_PICK,akbOut],
   ['fast','Крепёж',FAST.length,FAST_PICK,fastOut],['more','Ещё',MORE.length,MORE_PICK,moreOut]];
 function title(t){$('#resTitle').textContent=t||'Нет в наличии';try{pwBtnUp();}catch(_){}}
 function empty(h,p){return [`<div class="empty"><b>${h}</b>${p}</div>`];}
@@ -482,7 +506,17 @@ function renderPickLite(){/* при поиске по шинам доступн�
   if(document.activeElement&&document.activeElement.id==='q-tires'){renderPick();}}
 function renderAll(){renderTabs();renderPick();renderOut();psum();renderCartBtn();pwBtnUp();}
 /* «на заказ»: что в выбранном размере есть на складах поставщика с доставкой — для продавца и собственника */
-function pwBtnUp(){const b=document.getElementById('pwBtn');if(!b)return;const f=S.tires,g=S.disks,ok=!!SEL&&S.tab==='tires'&&f.d&&f.w&&f.p,okd=!!SEL&&S.tab==='disks'&&g.d&&g.pcd;b.hidden=!(ok||okd);if(ok)b.textContent=`Посмотреть на заказ ${f.w}/${f.p} R${f.d}`;else if(okd)b.textContent=`Диски на заказ R${g.d} ${g.pcd}`;}
+function hvQuery(){const h=S.heavy;return (h.size||'').trim()||(h.k?hvFmt(h.k)+(h.t==='c'?'C':''):'');}
+function pwBtnUp(){const b=document.getElementById('pwBtn');if(!b)return;const f=S.tires,g=S.disks,ok=!!SEL&&S.tab==='tires'&&f.d&&f.w&&f.p,okd=!!SEL&&S.tab==='disks'&&g.d&&g.pcd,okh=!!SEL&&S.tab==='heavy'&&!!hvQuery();b.hidden=!(ok||okd||okh);if(ok)b.textContent=`Посмотреть на заказ ${tSize(f)}`;else if(okd)b.textContent=`Диски на заказ R${g.d} ${g.pcd}`;else if(okh)b.textContent=`На заказ: ${hvQuery()}`;}
+/* грузовые/спец/легкогрузовые на заказ */
+async function pwHeavy(){const h=S.heavy,q=hvQuery(),emb=document.documentElement.classList.contains('embed');
+  const isC=h.t==='c'||/\d\s?C\b/i.test(q);const m=q.replace(',','.').match(/(\d{3})\s*\/\s*(\d{2})\s*(?:Z?R|\/|-|\s)\s*(\d{2})/);
+  sheet(`<h2 class="model" id="shTitle" style="font-size:1.5rem;margin:0 0 6px">На заказ: ${esc(q)}</h2><p class="note" id="pwMsg" style="margin-top:0">Смотрю склады поставщиков…</p><div id="pwOut"></div>`);
+  try{const j=isC&&m?await papi('pw_find&t=c&w='+m[1]+'&p='+m[2]+'&d='+m[3]):await papi('pw_heavy&size='+encodeURIComponent(q));
+    document.getElementById('pwMsg').textContent=j.rows.length?`Привезём под заказ: ${j.rows.length} ${plural(j.rows.length,'вариант','варианта','вариантов')} от ${[...new Set(j.rows.map(r=>r.sup||'Пауэр'))].join(', ')}. Срок — дни до нашего магазина.`:`У поставщиков ${q} сейчас нет.`;
+    document.getElementById('pwOut').innerHTML=j.rows.map((r,i)=>`<div class="pwr">${r.img?`<img class="pimg" src="${esc(r.img)}" alt="Увеличить фото" loading="lazy" referrerpolicy="no-referrer" style="cursor:zoom-in">`:'<span class="pwi"></span>'}<div class="pwt"><b>${esc((r.brand+' '+r.model).trim()||r.name)}</b><small>${esc(r.name)}</small><small><span class="supb">${esc(r.sup||'Пауэр')}${r.days!=null?' · '+r.days+' '+plural(r.days,'день','дня','дней'):''}</span> ${r.rest>=20?'20+':r.rest} шт</small></div><div class="pwp"><b class="tnum">${rub(r.price)}</b><small>за 1 шт.</small>${emb?`<button type="button" class="tool" data-pwz="${i}">Оформить заказ</button>`:''}</div></div>`).join('');
+    document.querySelectorAll('[data-pwz]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.pwz];const n=prompt('Сколько штук?','4');const k=Math.max(1,parseInt(n,10)||0);if(!n)return;try{parent.postMessage({ivanor:'zak',items:`${r.name||r.brand+' '+r.model}, ${k} шт`,phone:CCL.phone,name:CCL.name,total:r.price*k,supplier:r.sup||'Пауэр',note:'код '+(r.sup||'Пауэр')+' '+r.code+(r.wh&&r.wh!=='доставка'?', склад '+r.wh:'')+(r.days!=null?', доставка '+r.days+' д.':'')},location.origin);}catch(_){}closeSheet();});}
+  catch(e){document.getElementById('pwMsg').textContent='Не получилось: '+e.message;}}
 /* диски под заказ у Пауэра: диаметр и разболтовка из подбора, вылет и центральное отверстие — уточнить в окне */
 async function pwDisk(){const g=S.disks,emb=document.documentElement.classList.contains('embed');
   sheet(`<h2 class="model" id="shTitle" style="font-size:1.5rem;margin:0 0 6px">Диски на заказ: R${g.d} ${esc(g.pcd)}${g.k&&g.k!=='odd'?' · '+DK[g.k].toLowerCase():''}</h2>
@@ -496,9 +530,9 @@ async function pwDisk(){const g=S.disks,emb=document.documentElement.classList.c
       document.querySelectorAll('[data-pwz]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.pwz];try{parent.postMessage({ivanor:'zak',items:`Диски ${r.name||r.brand+' '+r.model}, 4 шт`,phone:CCL.phone,name:CCL.name,total:r.price*4,supplier:r.sup||'Пауэр',note:'код '+(r.sup||'Пауэр')+' '+r.code+(r.wh&&r.wh!=='доставка'?', склад '+r.wh:'')+(r.days!=null?', доставка '+r.days+' д.':'')},location.origin);}catch(_){}closeSheet();});}
     catch(e){document.getElementById('pwMsg').textContent='Не получилось: '+e.message;}};
   document.getElementById('pwGo').onclick=go;go();}
-document.getElementById('pwBtn').onclick=async()=>{if(S.tab==='disks')return pwDisk();const f=S.tires;sheet(`<h2 class="model" id="shTitle" style="font-size:1.5rem;margin:0 0 6px">На заказ: ${f.w}/${f.p} R${f.d}</h2><p class="note" id="pwMsg" style="margin-top:0">Смотрю склады поставщика…</p><div id="pwOut"></div>`);
+document.getElementById('pwBtn').onclick=async()=>{if(S.tab==='disks')return pwDisk();if(S.tab==='heavy')return pwHeavy();const f=S.tires;sheet(`<h2 class="model" id="shTitle" style="font-size:1.5rem;margin:0 0 6px">На заказ: ${tSize(f)}</h2><p class="note" id="pwMsg" style="margin-top:0">Смотрю склады поставщика…</p><div id="pwOut"></div>`);
   try{const j=await papi('pw_find&w='+f.w+'&p='+f.p+'&d='+f.d+(f.s?'&s='+f.s:''));const emb=document.documentElement.classList.contains('embed');
-    const sn={winter:'зима',stud:'зима, шипы',fric:'зима, липучка',summer:'лето',all:'всесезон'}[f.s]||'все сезоны';document.getElementById('shTitle').textContent=`На заказ: ${f.w}/${f.p} R${f.d} · ${sn}`;
+    const sn={winter:'зима',stud:'зима, шипы',fric:'зима, липучка',summer:'лето',all:'всесезон'}[f.s]||'все сезоны';document.getElementById('shTitle').textContent=`На заказ: ${tSize(f)} · ${sn}`;
     document.getElementById('pwMsg').textContent=j.rows.length?`Привезём под заказ: ${j.rows.length} ${plural(j.rows.length,'вариант','варианта','вариантов')} от ${[...new Set(j.rows.map(r=>r.sup||'Пауэр'))].join(', ')}. Срок — дни до нашего магазина. Нажмите на фото, чтобы рассмотреть рисунок.`:`У поставщика ${f.w}/${f.p} R${f.d} (${sn}) сейчас нет.`;
     document.getElementById('pwOut').innerHTML=j.rows.map((r,i)=>`<div class="pwr">${r.img?`<img class="pimg" src="${esc(r.img)}" alt="Увеличить фото" loading="lazy" referrerpolicy="no-referrer" style="cursor:zoom-in">`:'<span class="pwi"></span>'}<div class="pwt"><b>${esc(r.brand+' '+r.model||r.name)}</b><small>${esc(r.name)}</small><small><span class="supb">${esc(r.sup||'Пауэр')}${r.days!=null?' · '+r.days+' '+plural(r.days,'день','дня','дней'):''}</span> ${r.season==='winter'?(r.stud?'зима, шипы':'зима, липучка'):r.season==='summer'?'лето':'всесезон'} · ${r.rest>=20?'20+':r.rest} шт</small></div><div class="pwp"><b class="tnum">${rub(r.price)}</b><small>за 4 шт. ${rub(r.price*4)}</small>${emb?`<button type="button" class="tool" data-pwz="${i}">Оформить заказ</button>`:''}</div></div>`).join('');
     document.querySelectorAll('[data-pwz]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.pwz];try{parent.postMessage({ivanor:'zak',items:`${r.name||r.brand+' '+r.model}, 4 шт`,phone:CCL.phone,name:CCL.name,total:r.price*4,supplier:r.sup||'Пауэр',note:'код '+(r.sup||'Пауэр')+' '+r.code+(r.wh&&r.wh!=='доставка'?', склад '+r.wh:'')+(r.days!=null?', доставка '+r.days+' д.':'')},location.origin);}catch(_){}closeSheet();});}
@@ -596,8 +630,8 @@ function loadLive(){pfetch('api.php?a=vitrina',{credentials:'omit',cache:'no-cac
   if(!j||!j.live||(!(j.tires||[]).length&&!(j.other||[]).length))return;
   if(!$('#sheet').hidden)return;
   TIRES=j.tires;OTHER=j.other;DISKS=by('disk');AKB=by('akb');FAST=by('fast');
-  MORE=OTHER.filter(o=>['acc','tube','tool','tireo'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));
-  const c={tires:TIRES.length,disks:DISKS.length,akb:AKB.length,fast:FAST.length,more:MORE.length};TABS.forEach(t=>{if(t[0] in c)t[2]=c[t[0]];});
+  MORE=OTHER.filter(o=>['acc','tube','tool'].includes(o.t)).map(o=>({...o,g:o.t==='acc'?(o.g||'acc'):o.t}));HEAVY=heavyList();
+  const c={tires:TIRES.length,heavy:HEAVY.length,disks:DISKS.length,akb:AKB.length,fast:FAST.length,more:MORE.length};TABS.forEach(t=>{if(t[0] in c)t[2]=c[t[0]];});
   STAMP=j.stamp;$('#stamp').textContent='Наличие на '+STAMP;renderAll();}).catch(()=>{});}
 loadLive();setInterval(loadLive,10*60*1000);
 })();

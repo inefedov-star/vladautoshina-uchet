@@ -105,6 +105,7 @@ function db(array $cfg): PDO {
   $pdo->exec('CREATE TABLE IF NOT EXISTS supstock (sup TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, brand TEXT, model TEXT, name TEXT, w REAL, p REAL, d REAL, season TEXT, stud INTEGER, pn INTEGER, pcd REAL, pcd2 REAL, et REAL, dia REAL, color TEXT, wh TEXT, rest INTEGER, buy REAL, rrp REAL, img TEXT, mcode TEXT)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS supstock_t ON supstock (kind, d, w, p)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS supstock_d ON supstock (kind, d, pn, pcd)');
+  try { $pdo->exec('ALTER TABLE supstock ADD COLUMN szk TEXT'); } catch (Throwable $e) {}
   // движения истории CloudShop (пересчитываются из архива arch) и выравнивание на день перехода
   $pdo->exec("CREATE TABLE IF NOT EXISTS csmoves (id INTEGER PRIMARY KEY AUTOINCREMENT, doc TEXT NOT NULL DEFAULT '', num TEXT NOT NULL DEFAULT '', day TEXT NOT NULL, type TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'cs', party TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, wh TEXT NOT NULL, qty REAL NOT NULL, cost REAL NOT NULL DEFAULT 0, price REAL)");
   $pdo->exec('CREATE INDEX IF NOT EXISTS csmoves_pid ON csmoves(pid)');
@@ -357,7 +358,7 @@ function supShin(array $cfg, array $C): array { $id = preg_replace('/\D+/', '', 
 function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token']); if ($tk === '') return ['skip' => 'нет ключа SVR'];
   if (!class_exists('XMLReader')) throw new RuntimeException('на хостинге нет XMLReader');
   $p = db($cfg); $T = $C['svr_terr']; $n = 0;
-  foreach (['tire' => 1, 'disk' => 2] as $kind => $type) {
+  foreach (['tire' => 1, 'disk' => 2, 'heavy' => 3] as $kind => $type) {
     $tmp = tempnam(sys_get_temp_dir(), 'svr'); file_put_contents($tmp, supGet('https://webmim.svrauto.ru/api/v1/catalog/unload?access-token=' . rawurlencode($tk) . '&format=xml&types=' . $type, 300));
     $x = new XMLReader(); if (!$x->open($tmp)) throw new RuntimeException('SVR: не читается файл');
     $p->beginTransaction(); $p->prepare('DELETE FROM supstock WHERE sup = ? AND kind = ?')->execute(['svr', $kind]);
@@ -366,6 +367,9 @@ function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token'
       $e = @simplexml_load_string($x->readOuterXml()); if (!$e) continue; $g = fn($k) => trim((string)($e->$k ?? ''));
       $terr = $g('TERRITORY_RN'); if (!isset($T[$terr])) continue; $rest = (int)supNum($g('NREST')); $buy = supNum($g('NPRICE_PREPAYMENT')) ?: supNum($g('NPRICE_DELAYED')); if ($rest <= 0 || !$buy) continue;
       $rrp = supNum($g('NPRICE_RRP')) ?: supNum($g('NPRICE_CLI_P'));
+      if ($kind === 'heavy') { $nm9 = $g('SMODIFNAME'); $k9 = szKeys($nm9); if (!$k9 && $g('SDIAMETR') !== '') $k9 = [szKey3($g('SWIDTH'), supNum($g('SHEIGHT')) ?? 0, supNum(preg_replace('/[^\d.,]/', '', $g('SDIAMETR'))))];
+        $ins->execute(['svr', 'heavy', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $nm9, supNum($g('SWIDTH')), supNum($g('SHEIGHT')), supNum(preg_replace('/[^\d.,]/', '', $g('SDIAMETR'))), supSeason($g('SSEASON')), 0, null, null, null, null, null, null, $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]);
+        if ($k9) $p->prepare('UPDATE supstock SET szk = ? WHERE rowid = ?')->execute([implode(' ', $k9), $p->lastInsertId()]); $n++; continue; }
       if ($kind === 'tire') { $th = mb_strtolower($g('STHORNING')); $ins->execute(['svr', 'tire', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SWIDTH')), supNum($g('SHEIGHT')), supNum(preg_replace('/[^\d.,]/', '', $g('SDIAMETR'))), supSeason($g('SSEASON')), (preg_match('/^(да|y|yes|1)$/u', $th) || (mb_strpos($th, 'шип') !== false && mb_strpos($th, 'не') === false && mb_strpos($th, 'без') === false) || preg_match('/(^|[\s(])шип/iu', $g('SMODIFNAME'))) ? 1 : 0, null, null, null, null, null, null, $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]); }
       else $ins->execute(['svr', 'disk', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SWIDTH')), null, supNum($g('SDIAMETR')), null, null, (int)supNum($g('SHOLESQUANT')), supNum($g('SPCD')), supNum($g('SDPCD')), supNum($g('SWHEELOFFSET')), supNum($g('SDIA')), trim($g('STYPE') . ' ' . $g('SCOLOR')), $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]);
       $n++; }
@@ -383,11 +387,13 @@ function supRefresh(array $cfg, bool $force = false): array { $C = supCfg($cfg);
 function supRows(array $cfg, string $kind, array $q, bool $owner): array { $C = supCfg($cfg); $p = db($cfg); $o = [];
   $nm = ['shin' => 'Шинсервис', 'svr' => 'SVR'];
   if ($kind === 'tire') { $st = $p->prepare("SELECT * FROM supstock WHERE kind = 'tire' AND w = ? AND p = ? AND d = ?"); $st->execute([$q['w'], $q['p'], $q['d']]); }
+  elseif ($kind === 'heavy') { [$a9, , $c9] = explode('|', $q['key']); $st = $p->prepare("SELECT * FROM supstock WHERE kind = 'heavy' AND (szk LIKE ? OR szk LIKE ?)"); $st->execute(['%' . $a9 . '|%|' . $c9 . '%', '%' . $a9 . '||' . $c9 . '%']); }
   else { $st = $p->prepare("SELECT * FROM supstock WHERE kind = 'disk' AND d = ? AND pn = ? AND (ABS(pcd - ?) < 0.06 OR ABS(COALESCE(pcd2, 0) - ?) < 0.06)"); $st->execute([$q['d'], $q['pn'], $q['pcd'], $q['pcd']]); }
-  foreach ($st->fetchAll() as $r) { $days = $r['sup'] === 'shin' ? (int)$C['shin_days'] : (int)($C['svr_days'][array_search($r['wh'], $C['svr_terr'], true)] ?? 3);
+  foreach ($st->fetchAll() as $r) { if ($kind === 'heavy' && !szMatch((string)$r['name'] . ' ' . str_replace('|', ' ', ''), $q['key']) && !in_array($q['key'], explode(' ', (string)$r['szk']), true)) continue;
+    $days = $r['sup'] === 'shin' ? (int)$C['shin_days'] : (int)($C['svr_days'][array_search($r['wh'], $C['svr_terr'], true)] ?? 3);
     $price = pwRetail((float)$r['buy'], (float)$r['rrp'], $cfg);
     $row = ['sup' => $nm[$r['sup']] ?? $r['sup'], 'code' => $r['sku'], 'name' => $r['name'], 'brand' => $r['brand'], 'model' => $r['model'], 'img' => $r['img'], 'small' => $r['img'], 'rest' => (int)$r['rest'], 'days' => $days, 'price' => $price, 'wh' => $r['wh']];
-    if ($kind === 'tire') { $row['season'] = $r['season']; $row['stud'] = (bool)$r['stud']; }
+    if ($kind === 'tire' || $kind === 'heavy') { $row['season'] = $r['season']; $row['stud'] = (bool)$r['stud']; }
     else { $row['w'] = $r['w'] !== null ? (float)$r['w'] : null; $row['et'] = $r['et'] !== null ? (float)$r['et'] : null; $row['dia'] = $r['dia'] !== null ? (float)$r['dia'] : null; $row['color'] = (string)$r['color']; $row['type'] = ''; }
     if ($owner) { $row['buy'] = round((float)$r['buy']); $row['inet'] = round((float)$r['rrp']); }
     $o[] = $row; }
@@ -560,9 +566,18 @@ function pwFilter(SoapClient $c, int $w, float $p, float $d): array {
 // размер из названия шины Пауэра: «205/55R16», «205/55 R16C»
 function pwSize(string $name): ?array { return preg_match('/(\d{3})\s*\/\s*(\d{2,3}(?:[.,]\d)?)\s*Z?R\s*(\d{2}(?:[.,]\d)?)/iu', $name, $m) ? [(int)$m[1], (float)str_replace(',', '.', $m[2]), (float)str_replace(',', '.', $m[3])] : null; }
 // нужный ли размер в названии: «205/65R16», «205/65 R16C», «205/65/16», «205x65 R16»; без размера в названии — считаем подходящим
-function pwSizeOk(string $name, int $w, float $p, float $d): bool { $u = mb_strtoupper(str_replace(',', '.', $name));
-  if (!preg_match_all('/(\d{3})\s*[\/XХ]\s*(\d{2,3}(?:\.\d)?)\s*(?:Z?R|\/|-|\s)\s*(\d{2}(?:\.\d)?)/u', $u, $m, PREG_SET_ORDER)) return true;
-  foreach ($m as $x) if ((int)$x[1] === $w && abs((float)$x[2] - $p) < 0.01 && abs((float)$x[3] - $d) < 0.01) return true; return false; }
+// размер шины в любом написании → ключ «ширина|профиль|диаметр»: 205/55R16, 205/55/16, 31x10.5R15, 12.5/80-18, 10.00R20, 11R22.5, 16.9-28
+function szNorm(string $v): string { return rtrim(rtrim(number_format((float)str_replace(',', '.', $v), 2, '.', ''), '0'), '.'); }
+function szKeys(string $s): array { $u = preg_replace('/[ХX×*]/u', 'X', mb_strtoupper(str_replace(',', '.', $s))); $o = [];
+  if (preg_match_all('/(?<![\d.])(\d{1,3}(?:\.\d{1,2})?)\s*(?:[\/X]\s*(\d{1,3}(?:\.\d{1,2})?))?\s*(?:Z?R|-|\/|\s)\s*(\d{2}(?:\.5)?)(?!\d)/u', $u, $m, PREG_SET_ORDER))
+    foreach ($m as $x) $o[] = szNorm($x[1]) . '|' . (($x[2] ?? '') !== '' ? szNorm($x[2]) : '') . '|' . szNorm($x[3]);
+  return array_values(array_unique($o)); }
+function szKey3($w, $p, $d): string { return szNorm((string)$w) . '|' . ((float)$p > 0 ? szNorm((string)$p) : '') . '|' . szNorm((string)$d); }
+// подходит ли размер: ключ запроса есть среди размеров в названии; если в запросе нет профиля (10.00R20) — сравниваем ширину и диаметр
+function szMatch(string $name, string $key): bool { $ks = szKeys($name); if (in_array($key, $ks, true)) return true; [$a, $b, $c] = explode('|', $key);
+  if ($b === '') foreach ($ks as $k) { [$a2, , $c2] = explode('|', $k); if ($a2 === $a && $c2 === $c) return true; } return false; }
+// нужный ли размер в названии; без размера в названии — не подходит (иначе API отдаёт сельхоз- и спецшины)
+function pwSizeOk(string $name, $w, float $p, float $d): bool { return in_array(szKey3($w, $p, $d), szKeys($name), true); }
 // склад только для самовывоза: наше ответхранение (ОХВЛАДН) и пункты выдачи «ОХ Владимир …»
 function pwPickup(string $id, string $name): bool { return (bool)preg_match('/^\s*(ОХ|OX)/iu', $id) || (bool)preg_match('/^\s*(ОХ|OX)(\s|$|[А-ЯA-Z])/u', mb_strtoupper($name)) || mb_stripos($name, 'самовывоз') !== false; }
 // сроки доставки по складам из того же ответа (warehouseLogistics): склад → дней
@@ -1531,7 +1546,8 @@ try {
   case 'pw_find':
     // «на заказ»: что в этом размере есть на складах Пауэра с доставкой. Закупочная цена — только собственнику
     needRole($role, ['owner', 'seller', 'cashier', 'master']); session_write_close();
-    $w = (int)($_GET['w'] ?? 0); $pr = (float)($_GET['p'] ?? 0); $d = (float)($_GET['d'] ?? 0); if ($w < 100 || $d < 10) fail('Укажите размер полностью: ширина, профиль и диаметр');
+    $w = (int)($_GET['w'] ?? 0); $pr = (float)($_GET['p'] ?? 0); $d = (float)($_GET['d'] ?? 0); if ($w < 10 || $d < 10) fail('Укажите размер полностью: ширина, профиль и диаметр');
+    $onlyC = ($_GET['t'] ?? '') === 'c'; // легкогрузовые: только шины с индексом C (R16C) или LT
     $season = (string)($_GET['s'] ?? ''); $key = "v3|$w/$pr/$d"; $p = db($cfg); $owner = $role === 'owner';
     $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$key]); $hit = $c->fetch(); $raw = null;
     if ($hit && time() - (int)$hit['ts'] < 900 && ($_GET['fresh'] ?? '') !== '1') $raw = json_decode($hit['body'], true);
@@ -1571,11 +1587,52 @@ try {
       if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
       $out2[] = $row; }
     foreach ($out2 as &$r9) $r9['sup'] = 'Пауэр'; unset($r9);
+    $isC = fn(string $n) => (bool)preg_match('/(?:R|\/|-)\s*\d{2}(?:[.,]5)?\s?C\b|\bLT\s?\d{3}/u', mb_strtoupper($n));
     // другие поставщики «на заказ» (Шинсервис, SVR) — тот же размер и сезон
     foreach (supRows($cfg, 'tire', ['w' => $w, 'p' => $pr, 'd' => $d], $owner) as $r9) { $win = $r9['season'] === 'winter'; $sum = $r9['season'] === 'summer'; $stud = $r9['stud'];
       if ($season === 'winter' && !$win) continue; if ($season === 'summer' && !$sum) continue; if ($season === 'stud' && !($win && $stud)) continue; if ($season === 'fric' && !($win && !$stud)) continue; if ($season === 'all' && ($win || $sum)) continue; $out2[] = $r9; }
+    if ($onlyC) $out2 = array_values(array_filter($out2, fn($r9) => $isC((string)$r9['name'])));
     usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
     out(['size' => "$w/" . rtrim(rtrim((string)$pr, '0'), '.') . ' R' . rtrim(rtrim((string)$d, '0'), '.'), 'rows' => array_slice($out2, 0, 120), 'found' => count($raw['items'])] + ($owner ? ['warehouses' => $whSeen, 'cached' => $hit && $raw !== null, 'diag' => $raw['diag'] ?? [], 'stages' => $stg, 'sample' => isset($raw['items'][0]) ? ['season' => $raw['items'][0]['season'], 'thorn' => $raw['items'][0]['thorn'], 'imgs' => $raw['items'][0]['imgs'] ?? []] : null] : []));
+
+  case 'pw_heavy':
+    // «на заказ»: грузовые шины и спецтехника — размер в любом написании (315/80R22.5, 10.00R20, 12.5/80-18, 16.9-28)
+    needRole($role, ['owner', 'seller', 'cashier', 'master']); session_write_close();
+    $ks = szKeys((string)($_GET['size'] ?? '')); if (!$ks) fail('Не понял размер. Пример: 315/80 R22.5, 10.00 R20, 12.5/80-18, 16.9-28');
+    $key = $ks[0]; [$ka, $kb, $kc] = explode('|', $key); $owner = $role === 'owner'; $p = db($cfg); $ck = 'hv1|' . $key;
+    $c = $p->prepare('SELECT ts, body FROM pwcache WHERE k = ?'); $c->execute([$ck]); $hit = $c->fetch(); $raw = null;
+    if ($hit && time() - (int)$hit['ts'] < 900 && ($_GET['fresh'] ?? '') !== '1') $raw = json_decode($hit['body'], true);
+    if ($raw === null) { $cl = api4t($cfg); $items = []; $days = []; $diag = [];
+      // фильтр API: ширина и диаметр (профиль у грузовых часто не заполнен), если ничего — только диаметр
+      $fw = []; $fd = [];
+      try { foreach ($cl->__getTypes() as $t) { if (!preg_match('/^struct\s+(\w*Filter\w*)\s*\{(.*)\}/su', $t, $m) || !preg_match('/tyre|tire/i', $m[1])) continue;
+        foreach (preg_split('/;\s*/', trim($m[2])) as $line) { if (!preg_match('/(\w+)\s+(\w+)$/', trim($line), $x)) continue; $ln = strtolower($x[2]);
+          if (preg_match('/^width_(min|max)$/', $ln)) $fw[$x[2]] = (float)$ka; if (preg_match('/^diameter_(min|max)$/', $ln)) { $fd[$x[2]] = (float)$kc; $fw[$x[2]] = (float)$kc; } } } } catch (Throwable $e) {}
+      if (!$fd) { $fd = ['diameter_min' => (float)$kc, 'diameter_max' => (float)$kc]; $fw = $fd + ['width_min' => (float)$ka, 'width_max' => (float)$ka]; }
+      foreach ([$fw, $fd] as $flt) { $got = 0;
+        for ($page = 0; $page < 6; $page++) {
+          try { $r = $cl->GetFindTyre(['login' => $cfg['api4t_login'], 'password' => $cfg['api4t_password'], 'filter' => $flt, 'page' => $page, 'pageSize' => 500]); }
+          catch (Throwable $e) { $diag[] = mb_substr($e->getMessage(), 0, 160); break; }
+          $b0 = []; pwItems($r, $b0); pwDays($r, $days); $got += count($b0);
+          foreach ($b0 as $x) if (szMatch((string)$x['name'], $key)) $items[$x['code']] = $x;
+          if (count($b0) < 500) break; }
+        $diag[] = ['filter' => array_keys($flt), 'got' => $got, 'ok' => count($items)]; if ($items) break; }
+      $raw = ['items' => array_values($items), 'days' => $days, 'diag' => $diag];
+      if ($items) $p->prepare('INSERT OR REPLACE INTO pwcache (k, ts, body) VALUES (?,?,?)')->execute([$ck, time(), json_encode($raw, JSON_UNESCAPED_UNICODE)]); }
+    $allow = array_map('strval', (array)($cfg['pw_wrh'] ?? [])); $skip = array_map('strval', (array)($cfg['pw_wrh_skip'] ?? [])); $out2 = [];
+    foreach ($raw['items'] as $it) { $best = null; $rest = 0; $minDays = null;
+      foreach ($it['wh'] as $x) { $id = (string)$x['wrh'];
+        if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true) || pwPickup($id, (string)($raw['days'][$id]['name'] ?? ''))) continue;
+        $rest += $x['rest']; $dd = $raw['days'][$id]['days'] ?? null; if ($dd !== null && ($minDays === null || $dd < $minDays)) $minDays = $dd;
+        if ($best === null || $x['buy'] < $best['buy']) $best = $x; }
+      if ($best === null || $rest <= 0) continue;
+      $row = ['sup' => 'Пауэр', 'code' => $it['code'], 'name' => $it['name'], 'brand' => $it['brand'], 'model' => $it['model'], 'img' => $it['img'], 'small' => $it['small'] ?? $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg), 'season' => supSeason((string)$it['season']), 'stud' => (bool)$it['thorn']];
+      if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
+      $out2[] = $row; }
+    foreach (supRows($cfg, 'heavy', ['key' => $key], $owner) as $r9) $out2[] = $r9;
+    usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
+    $sz = $ka . ($kb !== '' ? '/' . $kb : '') . ' R' . $kc;
+    out(['size' => $sz, 'rows' => array_slice($out2, 0, 150), 'shown' => count($out2)] + ($owner ? ['diag' => $raw['diag'] ?? []] : []));
 
   case 'pw_disk':
     // «на заказ»: диски у Пауэра — диаметр и разболтовка обязательны, тип (литой/штамп/кованый), вылет и ЦО — по желанию
@@ -2821,10 +2878,19 @@ try {
       $a = json_decode($p['attrs'], true) ?: []; $id = $p['ext_id'] !== null && $p['ext_id'] !== '' ? (string)$p['ext_id'] : 'p' . $p['id'];
       $n = trim(preg_replace('/\s+/u', ' ', $p['name'])); $pr = (int)round((float)$p['price']);
       if ($p['kind'] === 'tire' && !empty($a['w'])) {
-        $tires[] = ['id' => $id, 'w' => (int)$a['w'], 'p' => (int)$a['p'], 'd' => (int)$a['d'], 'c' => !empty($a['c']), 'b' => (string)($a['brand'] ?? ''), 'm' => (string)($a['model'] ?? ''), 'a' => $a['alias'] ?? null,
+        $tires[] = ['id' => $id, 'w' => (int)$a['w'], 'p' => (float)$a['p'], 'd' => (int)$a['d'], 'c' => !empty($a['c']), 'b' => (string)($a['brand'] ?? ''), 'm' => (string)($a['model'] ?? ''), 'a' => $a['alias'] ?? null,
           's' => $a['season'] ?? 'all', 'st' => !empty($a['stud']), 'xl' => !empty($a['xl']), 'i' => $a['index'] ?? null, 'pr' => $pr, 'q' => $q, 'suv' => !empty($a['suv']), 'cy' => $p['country'] !== '' ? $p['country'] : null];
         continue; }
+      // грузовые/спец и AT/MT в дюймах: размер-ключ; дюймовые (31x10.5 R15, 33x12.5 R20) показываем среди легковых шин
+      if ($p['kind'] === 'tireo') { $k9 = szKeys($n)[0] ?? null;
+        if ($k9) { [$a9, $b9, $c9] = explode('|', $k9);
+          if ((float)$a9 >= 25 && (float)$a9 <= 44 && $b9 !== '' && (float)$b9 < 20 && fmod((float)$b9, 1) == 0.5 && (float)$c9 >= 14 && (float)$c9 <= 24 && fmod((float)$c9, 1) == 0) {
+            $rest9 = trim(preg_replace('/^.*?\d{2}(?:[.,]\d+)?\s*[xх×*X]\s*\d{1,2}(?:[.,]\d+)?\s*(?:R|-|\/)\s*\d{2}\s*/u', '', $n)); $sp9 = mb_strpos($rest9, ' ');
+            $tires[] = ['id' => $id, 'w' => (int)$a9, 'p' => (float)$b9, 'd' => (int)$c9, 'c' => false, 'b' => $sp9 ? mb_substr($rest9, 0, $sp9) : $rest9, 'm' => $sp9 ? trim(mb_substr($rest9, $sp9 + 1)) : '', 'a' => null,
+              's' => 'all', 'st' => (bool)preg_match('/шип/iu', $n), 'xl' => false, 'i' => null, 'pr' => $pr, 'q' => $q, 'suv' => true, 'inch' => true, 'cy' => $p['country'] !== '' ? $p['country'] : null];
+            continue; } } }
       $o = ['id' => $id, 'n' => $n, 'pr' => $pr, 'q' => $q];
+      if ($p['kind'] === 'tireo') { $o['sk'] = $k9 ?? null; if ($k9 && preg_match('/\d{2}\s?[CС](?![A-Za-zА-Яа-я])/u', $n)) $o['tt'] = 'c'; elseif ($k9) { [$a9, $b9, $c9] = explode('|', $k9); $o['tt'] = (fmod((float)$c9, 1) != 0 || ((float)$c9 == 20 && in_array($a9, ['7.5', '8.25', '9', '10', '11', '12', '13', '14'], true) && $b9 === '') || ((float)$a9 >= 215 && in_array((float)$c9, [17.5, 19.5, 22.5], true))) ? 'truck' : 'spec'; } else $o['tt'] = 'spec'; }
       if ($p['kind'] === 'disk') { $o += ['t' => 'disk', 'k' => $a['type'] ?? 'cast', 'pcds' => $a['pcds'] ?? [], 'd' => isset($a['d']) ? (int)$a['d'] : null, 'w' => $a['w'] ?? null, 'pcd' => $a['pcd'] ?? null, 'et' => $a['et'] ?? null, 'dia' => $a['dia'] ?? null, 'm' => ($a['model'] ?? '') !== '' ? $a['model'] : $n]; }
       elseif ($p['kind'] === 'akb') { $o += ['t' => 'akb', 'ah' => $a['ah'] ?? null, 'pol' => $a['pol'] ?? null, 'std' => $a['std'] ?? 'euro', 'en' => $a['en'] ?? null, 'm' => preg_replace('/^Аккумулятор\s+/u', '', $n)]; }
       elseif ($p['kind'] === 'fast') { $o += ['t' => 'fast', 'th' => $a['thread'] ?? null, 'seat' => $a['seat'] ?? null, 'k' => $a['type'] ?? 'other']; if (!empty($a['ring'])) { $o['ro'] = $a['ring']['out'] ?? null; $o['ri'] = $a['ring']['in'] ?? null; } }
