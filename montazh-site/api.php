@@ -393,9 +393,19 @@ function supRefresh(array $cfg, bool $force = false): array { $C = supCfg($cfg);
     try { $r = $fn($cfg, $C); if (empty($r['skip'])) setSetting($cfg, 'sup_ts_' . $k, (string)time()); setSetting($cfg, 'sup_err_' . $k, ''); $out[$k] = $r; }
     catch (Throwable $e) { if (db($cfg)->inTransaction()) db($cfg)->rollBack(); setSetting($cfg, 'sup_err_' . $k, date('d.m H:i') . ' ' . mb_substr($e->getMessage(), 0, 200)); $out[$k] = ['error' => $e->getMessage()]; } }
   return $out; }
-// цвет диска одним словом: black / silver / gray / gold / white (по-русски и по-английски, коды BK, S, GM…)
-function diskColor(string $t): string { $u = ' ' . normModel($t) . ' ';
-  foreach (['black' => '/ (BLACK|BK|B|BL|MB|ЧЕРН\w*|ЧЁРН\w*|БЛЭК|DARK|ДАРК|ГРАФИТ\w*|GRAPHITE|GM|GUN\w*)(?= )/u', 'silver' => '/ (SILVER|S|SL|SIL|СЕРЕБР\w*|СИЛЬВЕР|СЕЛЕНА|SELENA|HS|HYPER|АЛМАЗ\w*|БЛИЗЗАРД|BLIZZARD|СЕРЫЙ|СЕРЫЕ|GREY|GRAY|GR)(?= )/u', 'white' => '/ (WHITE|W|БЕЛ\w*)(?= )/u', 'gold' => '/ (GOLD|ЗОЛОТ\w*)(?= )/u'] as $c => $re) if (preg_match($re, $u)) return $c; return ''; }
+// цвет диска: набор оттенков по словам названия. «Селена» (серебро) ≠ «Алмаз» (проточка) ≠ «Графит» ≠ «Блэк платинум»
+function diskColors(string $t): array { $u = ' ' . normModel($t) . ' '; $o = [];
+  $M = ['selena' => 'СЕЛЕНА|SELENA|SILVER|S|SL|SIL|СИЛЬВЕР|СЕРЕБР\w*|СЕРЕБРИСТ\w*|СЕРЫЙ|СЕРЫЕ|GREY|GRAY|GR|БЛИЗЗАРД|BLIZZARD|W\d*S',
+    'hyper' => 'HS|HYPER|ХАЙПЕР\w*|HB',
+    'almaz' => 'АЛМАЗ\w*|DIAMOND|BD|BKF|MB|BFP|MBF|ПОЛИР\w*|POLISHED|BP|BKP|DB|ПРОТОЧК\w*|MACHINED|BFM|SF|GMF|BMF',
+    'graphite' => 'ГРАФИТ\w*|GRAPHITE|GM|GUN\w*|ГАНМЕТАЛ\w*|МОКРЫЙ|АСФАЛЬТ',
+    'black' => 'BLACK|BK|B|BL|ЧЕРН\w*|ЧЁРН\w*|БЛЭК|МАТОВ\w*\sЧЕРН\w*',
+    'platinum' => 'ПЛАТИНУМ|PLATINUM|ДАРК|DARK',
+    'quartz' => 'КВАРЦ',
+    'white' => 'WHITE|W|БЕЛ\w*', 'gold' => 'GOLD|ЗОЛОТ\w*|БРОНЗ\w*|BRONZE', 'chrome' => 'CHROME|ХРОМ\w*', 'red' => 'RED|КРАСН\w*'];
+  foreach ($M as $c => $re) if (preg_match('/ (' . $re . ')(?= )/u', $u)) $o[$c] = 1;
+  return array_keys($o); }
+function diskColor(string $t): string { $c = diskColors($t); return $c ? $c[0] : ''; }
 // марка в одном написании у нас и у поставщиков (SVR пишет по-русски: ТУНГА, КОРДИАНТ, Пирелли)
 function brandNorm(string $b): string { $u = normModel(preg_replace('/\([^)]*\)/u', '', $b)); $u = preg_replace('/\s+(TYRES|TIRES|TYRE|ШИНЫ|АКБ)$/u', '', $u);
   $m = ['ТУНГА' => 'TUNGA', 'КОРДИАНТ' => 'CORDIANT', 'ПИРЕЛЛИ' => 'PIRELLI', 'НОКИАН' => 'NOKIAN', 'КАМА' => 'KAMA', 'БЕЛШИНА' => 'BELSHINA', 'АМТЕЛ' => 'AMTEL', 'ВИАТТИ' => 'VIATTI', 'ГУДИЕР' => 'GOODYEAR', 'КОНТИНЕНТАЛ' => 'CONTINENTAL', 'МИШЛЕН' => 'MICHELIN', 'БРИДЖСТОУН' => 'BRIDGESTONE', 'ЙОКОХАМА' => 'YOKOHAMA', 'ТОЙО' => 'TOYO', 'ХАНКУК' => 'HANKOOK', 'КУМХО' => 'KUMHO', 'ДАНЛОП' => 'DUNLOP', 'НЕКСЕН' => 'NEXEN', 'МАТАДОР' => 'MATADOR', 'ГИСЛАВЕД' => 'GISLAVED', 'ТРАЙАНГЛ' => 'TRIANGLE', 'САИЛУН' => 'SAILUN', 'ЛИНГЛОНГ' => 'LINGLONG', 'ЛАУФЕНН' => 'LAUFENN', 'ФОРМУЛА' => 'FORMULA', 'ТОРЕРО' => 'TORERO', 'МАКСИС' => 'MAXXIS', 'АЙКОН' => 'IKON', 'СКАД' => 'SKAD', 'ЗУБР' => 'ZUBR', 'ЗВЕРЬ' => 'ZVER', 'ТЮМЕНЬ' => 'TYUMEN', 'АКТЕХ' => 'AKTEX', 'ROADX' => 'SAILUN', 'LEAO' => 'LINGLONG', 'LINGLONG LEAO' => 'LINGLONG', 'HANKOOK LAUFENN' => 'LAUFENN', 'PRINX FORTUNE' => 'FORTUNE', 'PIRELLI FORMULA' => 'FORMULA', 'FURUKAWA' => 'FURUKAWA'];
@@ -418,10 +428,12 @@ function photoAuto(array $cfg, int $limit = 25, string $redo = ''): array { $p =
       foreach ($S['tire'][$b] ?? [] as $r) { $t = ' ' . normModel(str_replace('_', ' ', $r['model'] . ' ' . $r['name'])) . ' '; $hit = (bool)$words; foreach ($words as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; }
         if ($hit) { $sc = 100 - abs(mb_strlen(normModel($r['model'])) - mb_strlen(implode(' ', $words))); if ($sc > $bs) { $bs = $sc; $best = $r; } } } }
     elseif ($pr['kind'] === 'disk') { $mw = array_values(array_filter(explode(' ', normModel((string)($a['model'] ?? ''))), fn($w) => mb_strlen($w) >= 2)); if (!$mw) { $tried[$k] = time(); continue; }
-      $b = brandNorm($mw[0]); $rest = array_values(array_filter(array_slice($mw, 1, 3), fn($w) => diskColor($w) === '')); $rest = array_slice($rest, 0, 2); $mc = diskColor(implode(' ', $mw));
+      $b = brandNorm($mw[0]); $rest = array_values(array_filter(array_slice($mw, 1, 3), fn($w) => diskColor($w) === '')); $rest = array_slice($rest, 0, 2); $mc = diskColors(implode(' ', $mw));
       foreach ($S['disk'][$b] ?? [] as $r) { $t = ' ' . normModel($r['model'] . ' ' . $r['name'] . ' ' . $r['color']) . ' '; $hit = (bool)$rest; foreach ($rest as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; } if (!$hit) continue;
         // цвет: серебристый диск не показываем чёрным фото и наоборот
-        $rc = diskColor($t); $sc = 10 + ($mc !== '' && $rc === $mc ? 5 : 0) - ($mc !== '' && $rc !== '' && $rc !== $mc ? 20 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } }
+        $rc = diskColors($r['name'] . ' ' . $r['color']); $in = count(array_intersect($mc, $rc));
+        if ($mc && $rc && !$in) continue; // оба с цветом, и цвета разные — это другое фото
+        $sc = 10 + 5 * $in - 3 * (count($mc) - $in) - 2 * (count($rc) - $in) - ($mc && !$rc ? 4 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } }
       if ($bs <= 0) $best = null; }
     else { [$ab, $al, ] = akbModel($pr['name'], $a); [$bc, , $bg] = akbBody($pr['name'], $a); $b = brandNorm($ab);
       foreach ($S['akb'][$b] ?? [] as $r) { [$rb, , $rg] = akbBody($r['name'] . ' ' . preg_replace('/[хx]/u', '*', (string)$r['color']), ['ah' => $r['w']]); if ($rg !== $bg) continue;
