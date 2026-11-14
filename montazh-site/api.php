@@ -102,6 +102,8 @@ function db(array $cfg): PDO {
   foreach (['res_until' => "TEXT NOT NULL DEFAULT ''", 'inv_no' => "TEXT NOT NULL DEFAULT ''", 'upd_no' => "TEXT NOT NULL DEFAULT ''", 'inv_paid' => "TEXT NOT NULL DEFAULT ''", 'recv' => "TEXT NOT NULL DEFAULT ''", 'hold' => "INTEGER NOT NULL DEFAULT 0"] as $c9 => $t9) if (!in_array($c9, $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN $c9 $t9");
   $pdo->exec('CREATE TABLE IF NOT EXISTS pwcache (k TEXT PRIMARY KEY, ts INTEGER NOT NULL, body TEXT NOT NULL)');
   // остатки других поставщиков «на заказ» (Шинсервис, SVR): обновляются по расписанию целиком
+  // каталог фото SVR: все модели с картинкой, независимо от склада и остатка (только для подбора фото)
+  $pdo->exec('CREATE TABLE IF NOT EXISTS svrphoto (kind TEXT NOT NULL, brand TEXT, model TEXT, name TEXT, w REAL, color TEXT, img TEXT)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS supstock (sup TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, brand TEXT, model TEXT, name TEXT, w REAL, p REAL, d REAL, season TEXT, stud INTEGER, pn INTEGER, pcd REAL, pcd2 REAL, et REAL, dia REAL, color TEXT, wh TEXT, rest INTEGER, buy REAL, rrp REAL, img TEXT, mcode TEXT)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS supstock_t ON supstock (kind, d, w, p)');
   $pdo->exec('CREATE INDEX IF NOT EXISTS supstock_d ON supstock (kind, d, pn, pcd)');
@@ -357,7 +359,7 @@ function supShin(array $cfg, array $C): array { $id = preg_replace('/\D+/', '', 
 // SVR / МИМ: выгрузка остатков XML по ключу, только выбранные склады (территории)
 function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token']); if ($tk === '') return ['skip' => 'нет ключа SVR'];
   if (!class_exists('XMLReader')) throw new RuntimeException('на хостинге нет XMLReader');
-  $p = db($cfg); $T = $C['svr_terr']; $n = 0;
+  $p = db($cfg); $T = $C['svr_terr']; $n = 0; $ph = [];
   foreach (['tire' => 1, 'disk' => 2, 'heavy' => 3, 'akb' => 9] as $kind => $type) {
     $tmp = tempnam(sys_get_temp_dir(), 'svr'); file_put_contents($tmp, supGet('https://webmim.svrauto.ru/api/v1/catalog/unload?access-token=' . rawurlencode($tk) . '&format=xml&types=' . $type, 300));
     $x = new XMLReader(); if (!$x->open($tmp)) throw new RuntimeException('SVR: не читается файл');
@@ -365,6 +367,7 @@ function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token'
     $ins = $p->prepare('INSERT INTO supstock (sup, kind, sku, brand, model, name, w, p, d, season, stud, pn, pcd, pcd2, et, dia, color, wh, rest, buy, rrp, img, mcode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
     while ($x->read()) { if ($x->nodeType !== XMLReader::ELEMENT || $x->name !== 'COMMODITY') continue;
       $e = @simplexml_load_string($x->readOuterXml()); if (!$e) continue; $g = fn($k) => trim((string)($e->$k ?? ''));
+      if ($kind !== 'heavy' && ($im = $g('SPICTURE')) !== '') { $pk = $kind === 'akb' ? $g('NNOMMODIF') : mb_strtoupper($g('SMARKA') . '|' . $g('SMODEL') . '|' . ($kind === 'disk' ? $g('SCOLOR') : '')); if (!isset($ph[$pk])) $ph[$pk] = [$kind, $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), $kind === 'akb' ? supNum($g('SCAPACITY')) : null, $kind === 'akb' ? $g('SDIMENSIONS') : ($kind === 'disk' ? trim($g('STYPE') . ' ' . $g('SCOLOR')) : ''), $im]; }
       $terr = $g('TERRITORY_RN'); if (!isset($T[$terr])) continue; $rest = (int)supNum($g('NREST')); $buy = supNum($g('NPRICE_PREPAYMENT')) ?: supNum($g('NPRICE_DELAYED')); if ($rest <= 0 || !$buy) continue;
       $rrp = supNum($g('NPRICE_RRP')) ?: supNum($g('NPRICE_CLI_P'));
       if ($kind === 'akb') { $ins->execute(['svr', 'akb', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SCAPACITY')), null, null, null, null, null, null, null, null, null, trim($g('SDIMENSIONS') . ' ' . $g('SPOLARITY')), $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]); $n++; continue; }
@@ -375,7 +378,8 @@ function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token'
       else $ins->execute(['svr', 'disk', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SWIDTH')), null, supNum($g('SDIAMETR')), null, null, (int)supNum($g('SHOLESQUANT')), supNum($g('SPCD')), supNum($g('SDPCD')), supNum($g('SWHEELOFFSET')), supNum($g('SDIA')), trim($g('STYPE') . ' ' . $g('SCOLOR')), $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]);
       $n++; }
     $x->close(); @unlink($tmp); $p->commit(); }
-  return ['rows' => $n]; }
+  if ($ph) { $p->beginTransaction(); $p->exec('DELETE FROM svrphoto'); $ins = $p->prepare('INSERT INTO svrphoto (kind, brand, model, name, w, color, img) VALUES (?,?,?,?,?,?,?)'); foreach ($ph as $r) $ins->execute($r); $p->commit(); }
+  return ['rows' => $n, 'photos' => count($ph)]; }
 // обновить остатки поставщиков (раз в час по расписанию; force — кнопкой)
 function supRefresh(array $cfg, bool $force = false): array { $C = supCfg($cfg); $out = [];
   foreach (['shin' => 'supShin', 'svr' => 'supSvr'] as $k => $fn) { $last = (int)(getSetting($cfg, 'sup_ts_' . $k) ?? 0);
@@ -392,7 +396,7 @@ function brandNorm(string $b): string { $u = normModel(preg_replace('/\([^)]*\)/
 function photoAuto(array $cfg, int $limit = 25): array { $p = db($cfg); $pm = photoMap($cfg); $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $done = 0; $miss = []; $t0 = time();
   $tried = json_decode(getSetting($cfg, 'photo_auto_tried') ?? '{}', true) ?: [];
   $S = ['tire' => [], 'disk' => [], 'akb' => []];
-  foreach ($p->query("SELECT kind, brand, model, name, w, color, img FROM supstock WHERE sup = 'svr' AND kind IN ('tire', 'disk', 'akb') AND img != ''")->fetchAll() as $r) $S[$r['kind']][brandNorm((string)$r['brand'])][] = $r;
+  foreach ($p->query("SELECT kind, brand, model, name, w, color, img FROM svrphoto WHERE img != ''")->fetchAll() as $r) $S[$r['kind']][brandNorm((string)$r['brand'])][] = $r;
   $seen = [];
   foreach ($p->query("SELECT id, name, kind, attrs FROM products WHERE archived = 0 AND kind IN ('tire', 'disk', 'akb')")->fetchAll() as $pr) {
     $id = (int)$pr['id']; if (($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0) <= 0) continue; $a = json_decode($pr['attrs'], true) ?: [];

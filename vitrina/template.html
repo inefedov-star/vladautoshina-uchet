@@ -110,7 +110,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .price{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-top:auto;padding-top:10px;border-top:1px solid var(--rule-soft)}
 .price b{font-family:var(--f-display);font-weight:800;font-size:1.75rem;letter-spacing:-.02em;line-height:1}
 .price b small{font-family:var(--f-text);font-weight:500;font-size:.8rem;color:var(--ink-3);letter-spacing:0;margin-right:3px}
-.price span{font-size:.82rem;color:var(--ink-3);text-align:right}
+.price{flex-wrap:wrap;row-gap:6px;column-gap:8px}.price span{font-size:.76rem;letter-spacing:-.01em;color:var(--ink-3);text-align:right;white-space:nowrap}.price span *{display:inline}
 .stock{font-size:.82rem;font-weight:600;color:var(--moss)}
 .stock.low{color:var(--signal-deep)}
 
@@ -379,7 +379,7 @@ function tiresOut(){
     return `<button class="card" type="button" data-i="${i}"><div class="ph">${phImg(x.list,tireSvg(o))}<div class="tags">${tTags(o)}</div></div>
       <div class="cb"><span class="mono brand">${esc(o.b)}${one?' · '+tSize(o):''}</span><span class="model">${esc(o.m)}</span>
       ${o.a?`<span class="alias">Известна как ${esc(o.a)}</span>`:''}${szs}
-      <div class="price"><b class="tnum">${one?'':'<small>от</small>'}${rub(x.min)}</b><span>${one?`за 4 шт. ${rub(o.pr*4)}<br>${stockHtml(o.q)}`:`${x.list.length} ${plural(x.list.length,'размер','размера','размеров')}`}</span></div></div></button>`;}).join('')}</div>`;
+      <div class="price"><b class="tnum">${one?'':'<small>от</small>'}${rub(x.min)}</b><span>${one?`за 4 шт. ${rub(o.pr*4)} · ${stockHtml(o.q)}`:`${x.list.length} ${plural(x.list.length,'размер','размера','размеров')}`}</span></div></div></button>`;}).join('')}</div>`;
   return [html,el=>el.querySelectorAll('.card').forEach(b=>b.onclick=()=>tireSheet(g[+b.dataset.i]))];
 }
 function tireSheet(x){const o=x.o;
@@ -429,7 +429,7 @@ function disksOut(){const rows=sortList(DISKS.filter(o=>dMatch(o)),o=>o.pr,o=>o.
   return [`<div class="grid">${rows.map(o=>`<div class="card" style="cursor:default"><div class="ph">${phImg([o],diskSvg(o))}<div class="tags"><span class="tag all">${DK[o.k]||'Диски'}</span>${(o.q||0)<4?'<span class="tag stud">Некомплект</span>':''}</div></div>
     <div class="cb"><span class="mono brand">R${o.d} · ${esc(o.pcd)}</span><span class="model" style="font-size:1.25rem">${esc(o.m)}</span>
     <span class="spec">${o.w}×${o.d} · ET${o.et} · DIA ${o.dia}</span>
-    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${(o.q||0)<4?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)}<br>${stockHtml(o.q,(o.q||0)<4?1:4)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
+    <div class="price"><b class="tnum">${rub(o.pr)}</b><span>${(o.q||0)<4?'за 1 шт.':'за 4 шт. '+rub(o.pr*4)} · ${stockHtml(o.q,(o.q||0)<4?1:4)}</span>${addBtn(o)}</div></div></div>`).join('')}</div>`];}
 
 /* ---------- АКБ ---------- */
 const STD={euro:'Легковые, евро',asia:'Азия',moto:'Мото',truck:'Грузовые'};
