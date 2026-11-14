@@ -424,6 +424,7 @@ function photoAuto(array $cfg, int $limit = 25, string $redo = ''): array { $p =
         if ($rl !== '' && $rl !== $al) continue; if (in_array($al, ['AGM', 'EFB', 'GEL'], true) && $rl !== $al) continue;
         $sc = 10 + ($rb === $bc ? 3 : 0) + ($al !== '' && mb_stripos($rt, $al) !== false ? 5 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } } }
     if ($redo !== '') $tried['redo|' . $k] = time();
+    if (!$best && $redo !== '') $p->prepare("DELETE FROM photos WHERE k = ? AND source = 'svr'")->execute([$k]);
     if (!$best) { $tried[$k] = time(); $miss[] = photoLabel($pr['kind'], $a, $pr['name']); continue; }
     try { $bytes = supGet((string)$best['img'], 30); $info = @getimagesizefromstring($bytes); if (!$info || strlen($bytes) < 2000) throw new RuntimeException('не картинка');
       photoSave($cfg, $k, $bytes, 'svr', (string)$best['img']); $done++; }
