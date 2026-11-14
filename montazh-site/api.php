@@ -166,6 +166,11 @@ function db(array $cfg): PDO {
   $pdo->exec("CREATE TABLE IF NOT EXISTS bank (k TEXT PRIMARY KEY, acc TEXT NOT NULL DEFAULT '', day TEXT NOT NULL, dir TEXT NOT NULL, amount REAL NOT NULL, kind TEXT NOT NULL, ref_day TEXT NOT NULL DEFAULT '', fee REAL NOT NULL DEFAULT 0, payer TEXT NOT NULL DEFAULT '', inn TEXT NOT NULL DEFAULT '', purpose TEXT NOT NULL DEFAULT '', inv_no TEXT NOT NULL DEFAULT '', term TEXT NOT NULL DEFAULT '')");
   $pdo->exec('CREATE INDEX IF NOT EXISTS bank_day ON bank(day)');
   $pdo->exec('CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, note TEXT NOT NULL DEFAULT \'\', who TEXT NOT NULL DEFAULT \'\', due TEXT NOT NULL DEFAULT \'\', prio INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT \'open\', phone TEXT NOT NULL DEFAULT \'\', created INTEGER, done_at INTEGER, author TEXT)');
+  // аккумуляторы, попавшие в «прочее» (группа CloudShop), — переводим в АКБ с ёмкостью, полярностью и типом
+  foreach ($pdo->query("SELECT id, name, attrs FROM products WHERE kind = 'acc' AND name LIKE 'Аккумулятор%'")->fetchAll() as $r) {
+    if (!preg_match('/(\d+)\s*а\s*[\/.]?\s*ч/ui', $r['name'], $m)) continue; $a = json_decode($r['attrs'], true) ?: [];
+    $a += ['ah' => (int)$m[1], 'pol' => preg_match('/п\/п|прям/ui', $r['name']) ? 'dir' : 'rev', 'std' => preg_match('/ASIA|АЗИЯ|JIS|тонк/ui', $r['name']) ? 'asia' : 'euro', 'en' => null];
+    $pdo->prepare("UPDATE products SET kind = 'akb', attrs = ? WHERE id = ?")->execute([json_encode($a, JSON_UNESCAPED_UNICODE), $r['id']]); }
   return $pdo;
 }
 function logit(array $cfg, ?string $role, string $action, string $ref = ''): void {
@@ -676,13 +681,13 @@ function akbBody(string $name, array $a): array { $u = mb_strtoupper(str_replace
   if ($moto) return ['moto', 'Мото', 'moto'];
   $low = (bool)preg_match('/НИЗК|\bLB\d/u', $u); $asia = mb_strpos($u, 'ASIA') !== false || mb_strpos($u, 'АЗИЯ') !== false || mb_strpos($u, 'JIS') !== false || ($a['std'] ?? '') === 'asia';
   if (preg_match('/(\d{3})\s*[XХ*×]\s*(\d{3})\s*[XХ*×]\s*(\d{3})/u', $u, $m)) { [$L, $W, $H] = [(int)$m[1], (int)$m[2], (int)$m[3]];
-    if ($L >= 480) return $W >= 260 ? ['t225', '6СТ-225 · 518×276×242', 'truck'] : ($W >= 200 ? ['t190', '6СТ-190 · 513×223×223', 'truck'] : ['t140', '6СТ-140 · 513×189×223', 'truck']);
+    if ($L >= 480) return $W >= 260 ? ['t225', '6СТ-225/240 · 518×276×242', 'truck'] : ($W >= 200 ? ['t190', '6СТ-190 · 513×223×223', 'truck'] : ['t140', '6СТ-140 · 513×189×223', 'truck']);
     if ($H >= 210) { $c = $L < 215 ? 'D20' : ($L < 245 ? 'D23' : ($L < 285 ? 'D26' : 'D31')); return [$c, $c . ' · Азия ' . $L . '×' . $W . '×' . $H, 'asia']; }
     $n = $L < 220 ? 1 : ($L < 260 ? 2 : ($L < 296 ? 3 : ($L < 334 ? 4 : ($L < 374 ? 5 : 6)))); $c = ($H <= 180 ? 'LB' : 'L') . $n;
     return [$c, $c . ' · ' . ($H <= 180 ? 'низкий ' : '') . [1 => 207, 242, 278, 315, 353, 394][$n] . '×175×' . ($H <= 180 ? 175 : 190), 'euro']; }
   if (preg_match('/\d{2,3}\s?([BD])(19|20|23|24|26|31)[LR]?\b/u', $u, $m) || preg_match('/\b([BD])(19|20|23|24|26|31)[LR]?\b/u', $u, $m)) { $c = $m[1] . $m[2]; return [$c, $c . ' · Азия', 'asia']; }
   if (preg_match('/\b(LB?)([1-6])\b/u', $u, $m)) { $c = $m[1] . $m[2]; $n = (int)$m[2]; return [$c, $c . ' · ' . ($m[1] === 'LB' ? 'низкий ' : '') . [1 => 207, 242, 278, 315, 353, 394][$n] . '×175×' . ($m[1] === 'LB' ? 175 : 190), 'euro']; }
-  if ($ah >= 132 || mb_strpos($u, 'КОНУС') !== false) return $ah >= 210 ? ['t225', '6СТ-225 · 518×276×242', 'truck'] : ($ah >= 165 ? ['t190', '6СТ-190 · 513×223×223', 'truck'] : ['t140', '6СТ-140 · 513×189×223', 'truck']);
+  if ($ah >= 132 || mb_strpos($u, 'КОНУС') !== false) return $ah >= 210 ? ['t225', '6СТ-225/240 · 518×276×242', 'truck'] : ($ah >= 165 ? ['t190', '6СТ-190 · 513×223×223', 'truck'] : ['t140', '6СТ-140 · 513×189×223', 'truck']);
   if ($asia) { $c = $ah <= 45 ? 'B24' : ($ah <= 75 ? 'D23' : ($ah <= 90 ? 'D26' : 'D31')); return [$c, $c . ' · Азия', 'asia']; }
   $n = $ah <= 56 ? 1 : ($ah <= 66 ? 2 : ($ah <= 80 ? 3 : ($ah <= 92 ? 4 : ($ah <= 100 ? 5 : 6)))); $c = ($low && $n <= 5 ? 'LB' : 'L') . $n;
   return [$c, $c . ' · ' . ($low ? 'низкий ' : '') . [1 => 207, 242, 278, 315, 353, 394][$n] . '×175×' . ($low ? 175 : 190), 'euro']; }
