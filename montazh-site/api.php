@@ -101,6 +101,10 @@ function db(array $cfg): PDO {
   // резерв (черновик продажи, товар закреплён до даты) и счёт/УПД из Эльбы у продажи организации
   foreach (['res_until' => "TEXT NOT NULL DEFAULT ''", 'inv_no' => "TEXT NOT NULL DEFAULT ''", 'upd_no' => "TEXT NOT NULL DEFAULT ''", 'inv_paid' => "TEXT NOT NULL DEFAULT ''"] as $c9 => $t9) if (!in_array($c9, $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN $c9 $t9");
   $pdo->exec('CREATE TABLE IF NOT EXISTS pwcache (k TEXT PRIMARY KEY, ts INTEGER NOT NULL, body TEXT NOT NULL)');
+  // движения истории CloudShop (пересчитываются из архива arch) и выравнивание на день перехода
+  $pdo->exec("CREATE TABLE IF NOT EXISTS csmoves (id INTEGER PRIMARY KEY AUTOINCREMENT, doc TEXT NOT NULL DEFAULT '', num TEXT NOT NULL DEFAULT '', day TEXT NOT NULL, type TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'cs', party TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, wh TEXT NOT NULL, qty REAL NOT NULL, cost REAL NOT NULL DEFAULT 0, price REAL)");
+  $pdo->exec('CREATE INDEX IF NOT EXISTS csmoves_pid ON csmoves(pid)');
+  if (!in_array('cs_doc', $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN cs_doc TEXT NOT NULL DEFAULT ''");
   $mcols = array_column($pdo->query('PRAGMA table_info(moves)')->fetchAll(), 'name');
   // цена по прайсу на момент продажи — чтобы видеть скидку
   if (!in_array('list', $mcols, true)) $pdo->exec("ALTER TABLE moves ADD COLUMN list REAL");
@@ -273,11 +277,49 @@ function spinState(array $cfg, string $month): array {
 function couponValue(array $cfg): int { $v = db($cfg)->query("SELECT v FROM settings WHERE k = 'coupon'")->fetchColumn(); return $v !== false ? (int)$v : 2600; }
 /* остатки и средняя себестоимость по проведённым документам */
 function stockMap(array $cfg, string $wh = 'shop'): array {
-  $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(m.qty) q, SUM(m.qty * m.cost) c FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND m.wh = ? GROUP BY m.product_id");
-  $st->execute([$wh]); $out = [];
+  $st = db($cfg)->prepare("SELECT pid, SUM(q) q, SUM(c) c FROM (SELECT m.product_id pid, m.qty q, m.qty * m.cost c FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND m.wh = ? UNION ALL SELECT pid, qty, qty * cost FROM csmoves WHERE wh = ?) GROUP BY pid");
+  $st->execute([$wh, $wh]); $out = [];
   foreach ($st->fetchAll() as $r) $out[(int)$r['pid']] = ['q' => (float)$r['q'], 'c' => (float)$r['c']];
   return $out;
 }
+// ===== переход с CloudShop: остаток из всех движений истории =====
+// arch (документы CloudShop) → движения по складам: продажа берёт с нашего склада, а если там не хватает — с ответхранения;
+// возврат закупки поставщику «ОХ …» — выдача партнёру с ответхранения. Возвращает движения и итоговый остаток (товар|склад → шт.)
+function csReplay(array $cfg, string $until): array {
+  $p = db($cfg); $st = $p->prepare("SELECT doc, num, day, type, party, pid, ext, name, qty, price, cost FROM arch WHERE day <= ? ORDER BY day, doc, id"); $st->execute([$until]);
+  $q = []; $M = []; $miss = []; $T = ['in' => ['in', 'shop'], 'oh_in' => ['in', 'custody'], 'oh_out' => ['iss', 'custody'], 'sale' => ['sale', ''], 'ret' => ['ret', 'shop'], 'rin' => ['rin', 'shop'], 'chg' => ['inv', 'shop'], 'mov' => ['mov', 'shop']];
+  foreach ($st->fetchAll() as $r) { $x = (float)$r['qty']; if ($x == 0 || !isset($T[$r['type']])) continue;
+    if (!$r['pid']) { $k = (string)$r['ext']; if (!isset($miss[$k])) $miss[$k] = ['ext' => $k, 'name' => $r['name'], 'n' => 0, 'net' => 0]; $miss[$k]['n']++; $miss[$k]['net'] += $x; continue; }
+    [$t, $wh] = $T[$r['type']]; $pid = (int)$r['pid'];
+    if ($t === 'sale') { $sh = $q[$pid . '|shop'] ?? 0; $cu = $q[$pid . '|custody'] ?? 0; $need = -$x;
+      // продажа: сначала наш склад, недостающее — с ответхранения (в CloudShop продажа ОХ-товара записана обычной продажей)
+      $fromShop = $sh >= $need || $cu <= 0 ? $need : max(0, $sh); $fromCu = $need - $fromShop;
+      if ($fromCu > $cu) { $fromShop += $fromCu - $cu; $fromCu = $cu; }
+      foreach (['shop' => $fromShop, 'custody' => $fromCu] as $w => $n) if ($n > 1e-9) { $M[] = [$r['doc'], $r['num'], $r['day'], 'sale', $r['party'], $pid, $w, -$n, (float)$r['cost'], (float)$r['price']]; $q[$pid . '|' . $w] = ($q[$pid . '|' . $w] ?? 0) - $n; }
+      continue; }
+    if ($t === 'iss' && ($q[$pid . '|custody'] ?? 0) < -$x - 1e-9) { $cu = max(0, $q[$pid . '|custody'] ?? 0); $rest = -$x - $cu; // ОХ: выдали больше, чем числилось на ОХ — остальное с нашего склада
+      if ($cu > 0) { $M[] = [$r['doc'], $r['num'], $r['day'], 'iss', $r['party'], $pid, 'custody', -$cu, (float)$r['cost'], null]; $q[$pid . '|custody'] -= $cu; }
+      $M[] = [$r['doc'], $r['num'], $r['day'], 'rin', $r['party'], $pid, 'shop', -$rest, (float)$r['cost'], null]; $q[$pid . '|shop'] = ($q[$pid . '|shop'] ?? 0) - $rest; continue; }
+    $M[] = [$r['doc'], $r['num'], $r['day'], $t, $r['party'], $pid, $wh, $x, (float)$r['cost'], in_array($t, ['ret'], true) ? (float)$r['price'] : null]; $q[$pid . '|' . $wh] = ($q[$pid . '|' . $wh] ?? 0) + $x; }
+  return ['moves' => $M, 'q' => $q, 'miss' => array_values($miss)];
+}
+// товары из истории CloudShop, которых нет в каталоге (старые, снятые с продажи) — архивные карточки, чтобы движения легли на них
+function csFixMissing(array $cfg): int { $p = db($cfg); $n = 0; $now = time();
+  $sel = $p->prepare('SELECT id FROM products WHERE ext_id = ?'); $ins = $p->prepare("INSERT INTO products (ext_id, name, grp, cat, kind, attrs, barcode, article, unit, price, supplier, country, archived, created, updated) VALUES (?,?, 'Из истории CloudShop', '', ?, ?, '', '', 'шт', 0, '', '', 1, ?, ?)");
+  $upd = $p->prepare("UPDATE arch SET pid = ? WHERE pid IS NULL AND ((ext = ? AND ext != '') OR (ext = '' AND name = ?))");
+  foreach ($p->query("SELECT ext, name, MAX(price) pr FROM arch WHERE pid IS NULL GROUP BY CASE WHEN ext != '' THEN ext ELSE name END")->fetchAll() as $r) {
+    $ext = (string)$r['ext'] !== '' ? (string)$r['ext'] : 'arch:' . md5((string)$r['name']); $nm = trim((string)$r['name']) ?: 'Товар из CloudShop';
+    $sel->execute([$ext]); $id = $sel->fetchColumn();
+    if (!$id) { $sz = pwSize($nm); $kind = $sz ? 'tire' : (preg_match('/\d+\s*а[\/.]?\s*ч|аккумулятор/iu', $nm) ? 'akb' : 'acc'); $at = $sz ? ['w' => $sz[0], 'p' => $sz[1], 'd' => $sz[2]] : new stdClass();
+      $ins->execute([$ext, mb_substr($nm, 0, 300), $kind, json_encode($at, JSON_UNESCAPED_UNICODE), $now, $now]); $id = (int)$p->lastInsertId(); $n++; }
+    $upd->execute([(int)$id, (string)$r['ext'], (string)$r['name']]); }
+  return $n; }
+// остаток пульта без того, что заменит история: стартовые документы и всё проведённое по день перехода (кроме уже заменённых)
+function csRef(array $cfg, string $until): array { $q = [];
+  $st = db($cfg)->prepare("SELECT m.product_id pid, m.wh, SUM(m.qty) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' GROUP BY m.product_id, m.wh"); $st->execute();
+  foreach ($st->fetchAll() as $r) $q[(int)$r['pid'] . '|' . $r['wh']] = (float)$r['q'];
+  foreach (db($cfg)->query("SELECT pid, wh, SUM(qty) q FROM csmoves GROUP BY pid, wh")->fetchAll() as $r) $q[(int)$r['pid'] . '|' . $r['wh']] = ($q[(int)$r['pid'] . '|' . $r['wh']] ?? 0) + (float)$r['q'];
+  return $q; }
 // сколько штук в резерве: черновики продаж с действующим сроком резерва
 function reservedMap(array $cfg): array { $o = [];
   $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(ABS(m.qty)) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.type = 'sale' AND d.status = 'draft' AND d.res_until != '' AND d.res_until >= ? GROUP BY m.product_id");
@@ -326,11 +368,11 @@ function pwDays($x, array &$out, int $depth = 0): void {
   if ((isset($l['whid']) || isset($l['wrh'])) && (isset($l['logistdays']) || isset($l['days']))) { $out[(string)($l['whid'] ?? $l['wrh'])] = ['days' => (int)($l['logistdays'] ?? $l['days']), 'name' => (string)($l['description'] ?? $l['name'] ?? '')]; return; }
   foreach ($x as $v) if (is_array($v) || is_object($v)) pwDays($v, $out, $depth + 1);
 }
-function docLabel(string $t): string { return ['open' => 'Ввод остатков', 'in' => 'Приход', 'iss' => 'Выдача с ответхранения', 'sale' => 'Продажа', 'ret' => 'Возврат', 'off' => 'Списание', 'inv' => 'Корректировка остатков', 'rin' => 'Возврат поставщику'][$t] ?? $t; }
+function docLabel(string $t): string { return ['open' => 'Ввод остатков', 'in' => 'Приход', 'iss' => 'Выдача с ответхранения', 'sale' => 'Продажа', 'ret' => 'Возврат', 'off' => 'Списание', 'inv' => 'Корректировка остатков', 'rin' => 'Возврат поставщику', 'mov' => 'Перемещение'][$t] ?? $t; }
 // последняя закупочная цена по товарам (для подсказки в приходе и как запасная себестоимость)
 function lastCosts(array $cfg): array {
   $last = [];
-  foreach (db($cfg)->query("SELECT m.product_id pid, m.cost FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type IN ('in','open') AND m.qty > 0 AND m.wh = 'shop' ORDER BY d.day, m.id")->fetchAll() as $r) $last[(int)$r['pid']] = (float)$r['cost'];
+  foreach (db($cfg)->query("SELECT pid, cost FROM (SELECT m.product_id pid, m.cost, d.day, m.id o FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type IN ('in','open') AND m.qty > 0 AND m.wh = 'shop' UNION ALL SELECT pid, cost, day, id - 1000000000 FROM csmoves WHERE type = 'in' AND wh = 'shop' AND qty > 0) ORDER BY day, o")->fetchAll() as $r) $last[(int)$r['pid']] = (float)$r['cost'];
   return $last;
 }
 // знак строки движения: продажа и выдача уменьшают склад, приход и возврат — увеличивают
@@ -1751,6 +1793,9 @@ try {
     if (!$owner) unset($p['supplier']);
     $mv = db($cfg)->prepare("SELECT d.id doc, d.type, d.day, d.num, d.partner, d.wh dwh, m.qty, m.cost, m.wh FROM moves m JOIN docs d ON d.id = m.doc_id WHERE m.product_id = ? AND d.status = 'posted' ORDER BY d.day DESC, d.id DESC LIMIT 100");
     $mv->execute([$id]); $moves = array_map(function ($r) use ($owner) { $r['label'] = docLabel($r['type']); if (!$owner) { unset($r['cost']); $r['partner'] = ''; } return $r; }, $mv->fetchAll());
+    $cm = db($cfg)->prepare("SELECT day, type, kind, num, party, wh, qty, cost FROM csmoves WHERE pid = ? ORDER BY day DESC, id DESC LIMIT 60"); $cm->execute([$id]);
+    foreach ($cm->fetchAll() as $r) $moves[] = ['doc' => null, 'type' => $r['type'], 'day' => $r['day'], 'num' => $r['num'], 'partner' => $owner ? $r['party'] : '', 'dwh' => $r['wh'], 'qty' => (float)$r['qty'], 'wh' => $r['wh'], 'label' => ($r['kind'] === 'align' ? 'Выравнивание при переходе' : docLabel($r['type']) . ' (CloudShop)')] + ($owner ? ['cost' => (float)$r['cost']] : []);
+    usort($moves, fn($a, $b) => strcmp($b['day'], $a['day'])); $moves = array_slice($moves, 0, 120);
     $s = stockMap($cfg)[$id] ?? ['q' => 0, 'c' => 0]; $cu = stockMap($cfg, 'custody')[$id] ?? ['q' => 0];
     $pk = photoKey($p['kind'], (array)$p['attrs'], $p['name'], (int)$p['id']); $pm = photoMap($cfg);
     out(['photo' => photoUrl($pm, $p['kind'], (array)$p['attrs'], $p['name'], (int)$p['id']), 'photo_key' => $pk, 'product' => $p, 'qty' => $s['q'], 'custody' => $cu['q'], 'cost' => $owner && $s['q'] > 0 ? round($s['c'] / $s['q'], 2) : null, 'moves' => $moves]);
@@ -1997,6 +2042,65 @@ try {
     out(['until' => $until, 'from' => $from, 'to' => $to, 'gb' => $gb, 'kpi' => array_map($R, $K), 'prev' => array_map($R, $P), 'series' => $series, 'kinds' => $fix($kinds), 'dia' => $dd, 'brands' => array_slice($br, 0, 12),
       'top' => array_slice($byRev, 0, 15), 'topProfit' => array_slice($byProf, 0, 15), 'low' => array_slice($low, 0, 15), 'pay' => $fix($pay), 'wh' => $fix($whs), 'sellers' => array_map(function ($x) use ($selc) { $x['checks'] = count($selc[$x['k']] ?? []); return $x; }, $fix($sel))]);
 
+  case 'cs_check':
+  case 'cs_apply':
+    // переход с CloudShop: остаток из всей истории + выравнивание до текущего остатка (это и есть расхождения — их видно до применения)
+    needRole($role, ['owner']); if ($a === 'cs_apply') post(); @set_time_limit(300); @ini_set('memory_limit', '512M');
+    $p = db($cfg); $b = $a === 'cs_apply' ? body() : $_GET; $lastArch = (string)$p->query('SELECT MAX(day) FROM arch')->fetchColumn();
+    $until = isDay($b['until'] ?? '') ? $b['until'] : $lastArch; if ($until === '') fail('Сначала загрузите историю CloudShop (Сервис → Архив CloudShop)');
+    $prevUntil = (string)($p->query("SELECT v FROM settings WHERE k = 'cs_until'")->fetchColumn() ?: '');
+    if ($prevUntil !== '' && $until < $prevUntil) fail('Переход уже сделан по ' . $prevUntil . ' — дату можно только сдвинуть вперёд');
+    $created = $a === 'cs_apply' ? csFixMissing($cfg) : 0;
+    $R = csReplay($cfg, $until);
+    if ($prevUntil !== '') {
+      // повторная подтяжка (параллельная работа): история продлевается, выравнивание остаётся как при переходе;
+      // документы пульта за новые дни, которые есть и в CloudShop (тот же день, вид и товары), не считаем второй раз
+      $sig = function (string $day, string $t, array $L): string { ksort($L); return $day . '|' . $t . '|' . implode(',', array_map(fn($k, $v) => $k . ':' . round($v, 3), array_keys($L), $L)); };
+      $CS = []; $st = $p->prepare("SELECT doc, day, type, pid, qty FROM arch WHERE day > ? AND day <= ? AND pid IS NOT NULL"); $st->execute([$prevUntil, $until]); $G = [];
+      foreach ($st->fetchAll() as $r) { $t = ['sale' => 'sale', 'ret' => 'ret', 'in' => 'in|shop', 'oh_in' => 'in|custody', 'oh_out' => 'iss', 'rin' => 'rin'][$r['type']] ?? null; if (!$t) continue; $G[$r['doc'] . '#' . $t]['d'] = $r['day']; $G[$r['doc'] . '#' . $t]['t'] = $t; $G[$r['doc'] . '#' . $t]['L'][(int)$r['pid']] = ($G[$r['doc'] . '#' . $t]['L'][(int)$r['pid']] ?? 0) + (float)$r['qty']; }
+      foreach ($G as $k => $g) $CS[$sig($g['d'], $g['t'], $g['L'])][] = explode('#', $k)[0];
+      $st = $p->prepare("SELECT d.id, d.type, d.day, d.wh, d.partner, d.note, m.product_id pid, m.qty FROM docs d JOIN moves m ON m.doc_id = d.id WHERE d.status = 'posted' AND d.day > ? AND d.day <= ? ORDER BY d.id"); $st->execute([$prevUntil, $until]); $PD = [];
+      foreach ($st->fetchAll() as $r) { $t = $r['type'] === 'in' ? 'in|' . ($r['wh'] === 'custody' ? 'custody' : 'shop') : $r['type']; $PD[$r['id']]['t'] = $t; $PD[$r['id']]['d'] = $r['day']; $PD[$r['id']]['row'] = $r; $PD[$r['id']]['L'][(int)$r['pid']] = ($PD[$r['id']]['L'][(int)$r['pid']] ?? 0) + (float)$r['qty']; }
+      $dup = []; $keep = [];
+      foreach ($PD as $id => $x) { $k = $sig($x['d'], $x['t'], $x['L']); if (!empty($CS[$k])) { $dup[] = ['id' => $id, 'cs' => array_shift($CS[$k]), 'label' => docLabel($x['row']['type']), 'day' => $x['d'], 'partner' => $x['row']['partner']]; } else $keep[] = ['id' => $id, 'label' => docLabel($x['row']['type']), 'day' => $x['d'], 'partner' => $x['row']['partner'], 'note' => $x['row']['note']]; }
+      $newDocs = count($G);
+      if ($a === 'cs_check') out(['resync' => true, 'until' => $until, 'prev_until' => $prevUntil, 'last_arch' => $lastArch, 'new_docs' => $newDocs, 'dup' => $dup, 'keep' => $keep, 'missing' => array_slice($R['miss'], 0, 200), 'missing_n' => count($R['miss'])]);
+      backupNow($cfg, true); $p->beginTransaction(); $p->exec("DELETE FROM csmoves WHERE kind = 'cs'");
+      $ins = $p->prepare('INSERT INTO csmoves (doc, num, day, type, kind, party, pid, wh, qty, cost, price) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+      foreach ($R['moves'] as $m) $ins->execute([(string)$m[0], (string)$m[1], $m[2], $m[3], 'cs', mb_substr((string)$m[4], 0, 200), $m[5], $m[6], $m[7], $m[8], $m[9]]);
+      $up = $p->prepare("UPDATE docs SET status = 'cs', cs_doc = ? WHERE id = ?"); foreach ($dup as $x) $up->execute(['есть в CloudShop: документ ' . $x['cs'], $x['id']]);
+      $p->prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('cs_until', ?)")->execute([$until]); $p->prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('arch_until', ?)")->execute([$until]);
+      $p->commit(); logit($cfg, $role, 'cs_resync', $prevUntil . ' → ' . $until . ': совпало ' . count($dup) . ', только в пульте ' . count($keep));
+      out(['ok' => true, 'resync' => true, 'until' => $until, 'dup' => count($dup), 'keep' => count($keep)]);
+    }
+    // документы пульта по день перехода включительно — уже есть в истории CloudShop (стартовые остатки, сверки, акт ОХ, продажи, внесённые в обе программы)
+    $old = $p->prepare("SELECT d.id, d.type, d.day, d.note, d.partner, COUNT(m.id) n FROM docs d LEFT JOIN moves m ON m.doc_id = d.id WHERE d.status = 'posted' AND d.day <= ? GROUP BY d.id ORDER BY d.day, d.id"); $old->execute([$until]); $old = $old->fetchAll();
+    // эталон: текущий остаток пульта, если CloudShop не задан выгрузкой остатков (ref: [{pid, shop, custody}])
+    $ref = csRef($cfg, $until); if (!empty($b['ref']) && is_array($b['ref'])) { $ref = []; foreach ($b['ref'] as $x) { $ref[(int)$x['pid'] . '|shop'] = (float)($x['shop'] ?? 0); $ref[(int)$x['pid'] . '|custody'] = (float)($x['custody'] ?? 0); } }
+    // после замены: что останется от документов пульта после дня перехода
+    $after = []; $st = $p->prepare("SELECT m.product_id pid, m.wh, SUM(m.qty) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.day > ? GROUP BY m.product_id, m.wh"); $st->execute([$until]);
+    foreach ($st->fetchAll() as $r) $after[(int)$r['pid'] . '|' . $r['wh']] = (float)$r['q'];
+    $keys = array_unique(array_merge(array_keys($ref), array_keys($R['q']), array_keys($after))); $AL = []; $ok = 0; $bad = 0; $sumD = 0;
+    $pn = []; foreach ($p->query('SELECT id, name FROM products')->fetchAll() as $x) $pn[(int)$x['id']] = $x['name'];
+    foreach ($keys as $k) { $want = ($ref[$k] ?? 0) - ($after[$k] ?? 0); $got = $R['q'][$k] ?? 0; $d = round($want - $got, 3);
+      if (abs($d) < 1e-6) { if (abs($want) > 1e-9) $ok++; continue; } [$pid, $wh] = explode('|', $k); $bad++; $sumD += abs($d);
+      $AL[] = ['pid' => (int)$pid, 'name' => $pn[(int)$pid] ?? ('#' . $pid), 'wh' => $wh, 'hist' => round($got, 3), 'now' => round($want, 3), 'd' => $d]; }
+    usort($AL, fn($x, $y) => abs($y['d']) <=> abs($x['d']));
+    $docsN = count(array_unique(array_column($R['moves'], 0)));
+    if ($a === 'cs_check') out(['until' => $until, 'last_arch' => $lastArch, 'prev_until' => $prevUntil, 'moves' => count($R['moves']), 'docs' => $docsN, 'ok' => $ok, 'bad' => $bad, 'bad_qty' => round($sumD), 'align' => array_slice($AL, 0, 400),
+      'missing' => array_slice($R['miss'], 0, 200), 'missing_n' => count($R['miss']), 'old' => array_map(fn($d) => ['id' => (int)$d['id'], 'label' => docLabel($d['type']), 'day' => $d['day'], 'note' => $d['note'], 'partner' => $d['partner'], 'n' => (int)$d['n']], array_slice($old, 0, 300)), 'old_n' => count($old)]);
+    // применение: копия базы, заменённые документы пульта — статус «учтён в истории CloudShop», новые движения истории, выравнивание
+    backupNow($cfg, true); $p->beginTransaction();
+    $p->exec('DELETE FROM csmoves');
+    $ins = $p->prepare('INSERT INTO csmoves (doc, num, day, type, kind, party, pid, wh, qty, cost, price) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    foreach ($R['moves'] as $m) $ins->execute([(string)$m[0], (string)$m[1], $m[2], $m[3], 'cs', mb_substr((string)$m[4], 0, 200), $m[5], $m[6], $m[7], $m[8], $m[9]]);
+    $lc = lastCosts($cfg); foreach ($AL as $x) $ins->execute(['', '', $until, 'inv', 'align', 'Выравнивание с остатком на день перехода', $x['pid'], $x['wh'], $x['d'], $lc[$x['pid']] ?? 0, null]);
+    $up = $p->prepare("UPDATE docs SET status = 'cs', cs_doc = ? WHERE id = ?"); foreach ($old as $d) $up->execute(['история CloudShop по ' . $until, (int)$d['id']]);
+    $p->prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('cs_until', ?)")->execute([$until]);
+    $p->prepare("INSERT OR REPLACE INTO settings (k, v) VALUES ('arch_until', ?)")->execute([$until]);
+    $p->commit(); logit($cfg, $role, 'cs_apply', $until . ': движений ' . count($R['moves']) . ', выравнивание ' . count($AL) . ', документов пульта заменено ' . count($old));
+    out(['ok' => true, 'until' => $until, 'moves' => count($R['moves']), 'align' => count($AL), 'replaced' => count($old)]);
+
   case 'arch_info':
     needRole($role, ['owner']); $p = db($cfg);
     $r = $p->query("SELECT MIN(day) a, MAX(day) b, COUNT(*) n, COUNT(DISTINCT doc) d FROM arch")->fetch();
@@ -2113,7 +2217,7 @@ try {
     foreach ($p->query("SELECT m.product_id pid, MAX(d.day) day FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type = 'sale' GROUP BY m.product_id")->fetchAll() as $r) $lastSale[(int)$r['pid']] = max($lastSale[(int)$r['pid']] ?? '', $r['day']);
     // остатки по группам и товарам (наш + ОХ)
     $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody'); $S = []; $prods = []; $lastIn = [];
-    foreach ($p->query("SELECT m.product_id pid, MAX(d.day) day FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type IN ('in','open') AND m.qty > 0 GROUP BY m.product_id")->fetchAll() as $r) $lastIn[(int)$r['pid']] = $r['day'];
+    foreach ($p->query("SELECT pid, MAX(day) day FROM (SELECT m.product_id pid, d.day FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.status = 'posted' AND d.type IN ('in','open') AND m.qty > 0 UNION ALL SELECT pid, day FROM csmoves WHERE type = 'in' AND qty > 0) GROUP BY pid")->fetchAll() as $r) $lastIn[(int)$r['pid']] = $r['day'];
     foreach ($p->query("SELECT id, name, kind, attrs, price FROM products WHERE archived = 0 AND kind != 'svc'")->fetchAll() as $r) { $id = (int)$r['id']; $q = max(0, $sm[$id]['q'] ?? 0); $qc = max(0, $smc[$id]['q'] ?? 0);
       [$kg, $gk, $d, $season] = groupOf((string)$r['kind'], json_decode($r['attrs'], true) ?: [], $r['name']); $g = $kg . '|' . $gk;
       $S[$g] = $S[$g] ?? ['q' => 0, 'qc' => 0, 'season' => $season]; $S[$g]['q'] += $q; $S[$g]['qc'] += $qc;
@@ -2183,6 +2287,7 @@ try {
     $b = body(); $id = (int)($b['id'] ?? 0); $reason = mb_substr(trim((string)($b['reason'] ?? '')), 0, 300); if ($reason === '') fail('Напишите причину отмены');
     $st = db($cfg)->prepare('SELECT * FROM docs WHERE id = ?'); $st->execute([$id]); $d = $st->fetch(); if (!$d) fail('Документ не найден', 404);
     if ($d['type'] === 'open') fail('Стартовые остатки не отменяются — исправляются инвентаризацией', 409);
+    if ($d['status'] === 'cs') fail('Этот документ уже учтён в истории CloudShop — отменять не нужно', 409);
     if ($d['status'] === 'draft' && !empty($d['req'])) { db($cfg)->prepare("UPDATE docs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?")->execute([time(), $role, $reason, $id]); out(['ok' => true]); }
     if ($d['status'] === 'draft') { db($cfg)->prepare('DELETE FROM moves WHERE doc_id = ?')->execute([$id]); db($cfg)->prepare('DELETE FROM docs WHERE id = ?')->execute([$id]); out(['deleted' => true]); }
     if ($d['status'] !== 'posted') fail('Документ уже отменён', 409);
