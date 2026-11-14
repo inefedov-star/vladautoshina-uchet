@@ -399,7 +399,7 @@ function pwSyncHolds(array $cfg, bool $force = false): array {
   if (!$force && time() - $last < 600) return ['skipped' => true, 'at' => $last];
   setSetting($cfg, 'pw_hold_sync', (string)time());
   if (empty($cfg['api4t_login']) || !class_exists('SoapClient')) return ['error' => 'нет доступа к API Пауэра'];
-  @set_time_limit(120); $p = db($cfg); $res = ['created' => 0, 'updated' => 0, 'issued' => [], 'issue_err' => [], 'gone' => [], 'nocard' => [], 'orders' => 0];
+  @set_time_limit(120); $p = db($cfg); $res = ['created' => 0, 'updated' => 0, 'dropped' => [], 'issued' => [], 'issue_err' => [], 'gone' => [], 'nocard' => [], 'orders' => 0];
   $obj = function ($x) use (&$obj) { if (is_object($x)) $x = get_object_vars($x); if (is_array($x)) foreach ($x as $k => $v) $x[$k] = (is_object($v) || is_array($v)) ? $obj($v) : $v; return $x; };
   $find = function ($x, string $key, array &$out, int $dep = 0) use (&$find) { if ($dep > 9 || !is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER); if (array_key_exists($key, $l)) { $out[] = $l; return; } foreach ($x as $v) if (is_array($v)) $find($v, $key, $out, $dep + 1); };
   try { $cl = api4t($cfg); } catch (Throwable $e) { return ['error' => $e->getMessage()]; }
@@ -441,13 +441,18 @@ function pwSyncHolds(array $cfg, bool $force = false): array {
   // брони, заказов которых нет среди ожидающих: спрашиваем кабинет по номеру — выдан (проводим) или отменён (помечаем)
   if (empty($res['error'])) foreach ($p->query("SELECT id, num FROM docs WHERE type = 'iss' AND status = 'draft' AND hold = 1 AND (num LIKE 'F%' OR num LIKE 'Z%')")->fetchAll() as $d) {
     if (isset($active[$d['num']])) continue; $stn = $stOf[$d['num']] ?? ''; $sd = '';
-    if ($stn === '') { try { $i = $obj($cl->GetStoOrderInfo($auth + ['orderNumber' => $d['num']])); $h = []; $find($i, 'statusname', $h); $h = $h[0] ?? []; $stn = trim((string)($h['statusname'] ?? '')); $sd = substr((string)($h['shipmentdate'] ?? ''), 0, 10); } catch (Throwable $e) { $stn = ''; } }
+    $lost = false;
+    if ($stn === '') { try { $i = $obj($cl->GetStoOrderInfo($auth + ['orderNumber' => $d['num']])); $h = []; $find($i, 'statusname', $h); $h = $h[0] ?? []; $stn = trim((string)($h['statusname'] ?? '')); $sd = substr((string)($h['shipmentdate'] ?? ''), 0, 10); if ($stn === '') $lost = true; } catch (Throwable $e) { $stn = ''; $lost = stripos($e->getMessage(), 'не найден') !== false; } }
+    // партнёр отменил заказ (или кабинет его больше не знает) — снимаем бронь: шины снова свободны на ОХ
+    if ($lost || preg_match('/^(Заказ отмен|Отмен)/u', $stn)) {
+      $p->beginTransaction(); $p->prepare('DELETE FROM moves WHERE doc_id = ?')->execute([(int)$d['id']]); $p->prepare("DELETE FROM docs WHERE id = ? AND status = 'draft'")->execute([(int)$d['id']]); $p->commit();
+      logit($cfg, 'auto', 'hold_drop', $d['num']); $res['dropped'][] = $d['num'] . ($stn !== '' ? ' (' . $stn . ')' : ' (нет в кабинете)'); continue; }
     if (preg_match('/^(Отгруж|Выдан)/u', $stn)) { if (!preg_match('/^20\d\d-\d\d-\d\d$/', $sd)) $sd = date('Y-m-d');
       $err = issAutoPost($cfg, (int)$d['id'], $sd, 'выдан в кабинете Пауэра ' . date('d.m H:i') . ' (автоматически)');
       if ($err === null) $res['issued'][] = $d['num']; else { $res['issue_err'][] = $d['num'] . ': ' . $err; $res['gone'][(string)$d['id']] = $stn . ' — не провелось: ' . $err; }
       continue; }
     $res['gone'][(string)$d['id']] = $stn !== '' ? $stn : 'нет среди ожидающих выдачи'; }
-  if ($res['issued']) { $log = json_decode(getSetting($cfg, 'pw_hold_issued') ?? '[]', true) ?: []; foreach ($res['issued'] as $x) array_unshift($log, date('d.m H:i') . ' — ' . $x); setSetting($cfg, 'pw_hold_issued', json_encode(array_slice($log, 0, 15), JSON_UNESCAPED_UNICODE)); }
+  if ($res['issued'] || $res['dropped']) { $log = json_decode(getSetting($cfg, 'pw_hold_issued') ?? '[]', true) ?: []; foreach ($res['issued'] as $x) array_unshift($log, date('d.m H:i') . ' — выдан ' . $x); foreach ($res['dropped'] as $x) array_unshift($log, date('d.m H:i') . ' — бронь снята, заказ отменён: ' . $x); setSetting($cfg, 'pw_hold_issued', json_encode(array_slice($log, 0, 15), JSON_UNESCAPED_UNICODE)); }
   setSetting($cfg, 'pw_hold_gone', json_encode($res['gone'])); setSetting($cfg, 'pw_hold_nocard', json_encode($res['nocard'], JSON_UNESCAPED_UNICODE));
   return $res; }
 // «ждёт выдачи»: черновики выдачи с ОХ, забронированные под заказ партнёра поставщика (товар ещё на ОХ, но уже чужой)
