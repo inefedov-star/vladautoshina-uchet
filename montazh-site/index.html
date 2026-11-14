@@ -741,7 +741,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
   <div class="sg"><span class="sgh">Каталог</span><button type="button" data-p="goods">Товары и остатки</button><button type="button" class="owner-only" data-p="lbl">Этикетки</button><button type="button" class="owner-only" data-p="res">Резервы</button><button type="button" class="owner-only" data-p="pho">Фото товаров</button></div>
   <div class="sg"><span class="sgh">Контрагенты</span><button type="button" data-p="cli">Клиенты</button><button type="button" class="owner-only" data-p="sup">Поставщики</button></div>
   <div class="sg owner-only"><span class="sgh">Отчёты</span><button type="button" data-p="an">Итоги и графики</button><button type="button" data-p="adv">Что довезти · советы</button><button type="button" data-p="cuts">Сезоны, бренды, АКБ</button><button type="button" data-p="rep">Продажи по товарам</button><button type="button" data-p="pay">Чем платили</button><button type="button" data-p="sv">Сверка кассы и банка</button><button type="button" data-p="month">Все документы</button></div>
-  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" id="sgStart">Переход с CloudShop</button><button type="button" data-p="cs">История CloudShop → остатки</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button><button type="button" data-p="arch">Архив CloudShop</button></div>
+  <div class="sg owner-only"><span class="sgh">Сервис</span><button type="button" data-p="import">Загрузка каталога</button><button type="button" id="sgStart">Переход с CloudShop</button><button type="button" data-p="cs">История CloudShop → остатки</button><button type="button" data-p="bak">Резервные копии</button><button type="button" data-p="evo">Каталог для Эвотора</button><button type="button" data-p="arch">Архив CloudShop</button><button type="button" data-p="supz">Поставщики «на заказ»</button></div>
 </aside>
 <main class="wrap">
   <section id="v-day">
@@ -2125,13 +2125,33 @@ function renderBnav(){const nav=document.getElementById('bnav');if(!nav)return;c
     else if(k==='t:open'||k==='t:done'){TK.st=k.slice(2);loadTasks();}else if(k==='t:pr')printTasks();else if(k==='tn')openTask(null);renderBnav();});}
 function openMore(){const P=[['Продажи и закупки',[['n:in','+ Закупка','box'],['n:iss','+ Выдача с ОХ','out'],['n:buy','+ Выкуп с ОХ','box'],['p:pwo','Заказы Пауэра','box'],['p:iss','Выдачи с ОХ','list']]],
     ['Отчёты',[['p:an','Итоги и графики','chart'],['p:adv','Что довезти','bulb'],['p:cuts','Сезоны, бренды, АКБ','chart'],['p:rep','Продажи по товарам','list'],['p:pay','Чем платили','chart'],['p:sv','Сверка кассы и банка','docs'],['p:month','Все документы','docs']]],
-    ['Каталог и люди',[['p:lbl','Этикетки','list'],['p:res','Резервы','box'],['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up'],['p:arch','Архив CloudShop','chart']]]];
+    ['Каталог и люди',[['p:lbl','Этикетки','list'],['p:res','Резервы','box'],['p:pho','Фото товаров','cam'],['p:cli','Клиенты','user'],['p:sup','Поставщики','truck'],['p:import','Загрузка каталога','up']]],['Сервис',[['p:bak','Резервные копии','docs'],['p:evo','Каталог для Эвотора','up'],['p:arch','Архив CloudShop','chart'],['p:supz','Поставщики «на заказ»','truck']]]];
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Магазин</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>${P.map(([h,L])=>`<h3 class="anh3">${h}</h3><div class="moreg">${L.map(([k,l,i])=>`<button type="button" class="moret" data-mo="${k}"${k==='p:'+S.page?' aria-current="page"':''}>${bic(i)}<span>${l}</span></button>`).join('')}</div>`).join('')}<div style="height:30px"></div>`;
   $('#close').onclick=closeSheet;
   $('#shIn').querySelectorAll('[data-mo]').forEach(b=>b.onclick=()=>{const k=b.dataset.mo;if(k.startsWith('n:'))openDoc(null,{type:k.slice(2)});else{closeSheet();page(k.slice(2));renderBnav();}});
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 /* ---------- каталог для кассы Эвотор (файл Excel) ---------- */
 /* архив CloudShop: история продаж, закупок, ОХ и клиентов до перехода на пульт */
+/* другие поставщики «на заказ»: Шинсервис и SVR — ключи вносит собственник */
+async function openSupz(refresh){let J;try{J=refresh?await api('sup_cfg',null,{refresh:'1'}):await api('sup_cfg');}catch(e){toast('<b>Не получилось</b>'+esc(e.message));return;}
+  const st=(k,nm)=>{const x=J.status[k]||{},c=x.cnt||{};return `<p class="pay" style="margin:4px 0 0">${x.at?'обновлено '+esc(x.at)+' · шин '+fmtQty((c.tire||{}).n||0)+' поз., дисков '+fmtQty((c.disk||{}).n||0)+' поз.':'ещё не загружалось'}${x.err?'<br><b style="color:var(--signal-deep)">'+esc(x.err)+'</b>':''}</p>`;};
+  $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Поставщики «на заказ»</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
+  <p class="note" style="margin-top:0">Кроме Пауэра, подбор «на заказ» на витрине показывает остатки Шинсервиса (только «доступно на доставку») и SVR (склады Балашиха-Черное, Электроугли, Н. Новгород-Ореховская). Остатки обновляются раз в час по расписанию. Цена клиенту — рекомендованная поставщика, но не меньше закупки + 20%, округление до десятков.</p>
+  <div class="form" style="margin:0 0 6px"><h3 class="anh3" style="grid-column:1/-1;margin:6px 0 0">Шинсервис</h3>
+    <label><span class="mono lbl">ID клиента (из «Выгрузки каталога», старая версия: …?id=…)</span><input class="inp" id="sfShin" value="${esc(J.shin_id||'')}" inputmode="numeric" autocomplete="off"></label>
+    <label><span class="mono lbl">Срок доставки, дней</span><input class="inp" id="sfShinD" value="${J.shin_days}" inputmode="numeric"></label>
+    <div style="grid-column:1/-1">${st('shin')}</div>
+    <h3 class="anh3" style="grid-column:1/-1;margin:14px 0 0">SVR (МИМ)</h3>
+    <label style="grid-column:1/-1"><span class="mono lbl">Ключ выгрузки остатков (МИМ → Помощь → Интеграция → Выгрузка остатков → «Ключ»)</span><input class="inp" id="sfSvr" type="password" placeholder="${J.svr_has?'ключ сохранён — оставьте пустым, чтобы не менять':'вставьте ключ'}" autocomplete="off"></label>
+    ${Object.entries(J.svr_terr).map(([t,n])=>`<label><span class="mono lbl">${esc(n)}: срок, дней</span><input class="inp" data-svrd="${esc(t)}" value="${J.svr_days[t]??''}" inputmode="numeric"></label>`).join('')}
+    <div style="grid-column:1/-1">${st('svr')}</div></div>
+  <div class="row" style="gap:8px;margin:14px 0 40px"><button class="btn sig" type="button" id="sfSave">Сохранить</button><button class="btn" type="button" id="sfRef">Сохранить и загрузить остатки сейчас</button></div>`;
+  $('#close').onclick=closeSheet;
+  const save=async(ref)=>{const b={shin_id:$('#sfShin').value,shin_days:$('#sfShinD').value,svr_token:$('#sfSvr').value.trim(),svr_days:{}};document.querySelectorAll('[data-svrd]').forEach(i=>b.svr_days[i.dataset.svrd]=i.value);
+    try{await api('sup_cfg',b);}catch(e){toast('<b>Не сохранилось</b>'+esc(e.message));return;}
+    if(ref){$('#sfRef').disabled=true;$('#sfRef').textContent='Загружаю — до пары минут…';await openSupz(true);toast('<b>Остатки поставщиков обновлены</b>');}else{toast('<b>Сохранено</b>');openSupz();}};
+  $('#sfSave').onclick=()=>save(false);$('#sfRef').onclick=()=>save(true);
+  const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
 async function openArch(){let I;try{I=await api('arch_info');}catch(e){toast('<b>Не получилось</b>'+esc(e.message));return;}
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Архив CloudShop</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
   <div class="tiles" style="margin-top:0"><div class="tile"><span class="mono">Период</span><b class="tnum" style="font-size:1.1rem">${I.from?fmtDay(I.from)+' — '+fmtDay(I.to):'не загружен'}</b></div>
@@ -3127,7 +3147,7 @@ function setHdr(){const h=document.querySelector('header.top');if(h)document.doc
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
 const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',buy:'Выкуп с ОХ',pwo:'Заказы Пауэра',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',sv:'Сверка кассы и банка',cuts:'Сезоны, бренды, АКБ',cs:'История CloudShop',lbl:'Этикетки',res:'Резервы',month:'Все документы'};
-function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}
+function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}if(p==='supz'){openSupz();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
   if(p==='cli'&&S.role==='owner'){setArea('c');return;} // клиенты собственника — это раздел CRM; в «Магазин» потом возвращаемся на прежнюю страницу
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}

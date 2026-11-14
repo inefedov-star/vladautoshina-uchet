@@ -101,6 +101,10 @@ function db(array $cfg): PDO {
   // резерв (черновик продажи, товар закреплён до даты) и счёт/УПД из Эльбы у продажи организации
   foreach (['res_until' => "TEXT NOT NULL DEFAULT ''", 'inv_no' => "TEXT NOT NULL DEFAULT ''", 'upd_no' => "TEXT NOT NULL DEFAULT ''", 'inv_paid' => "TEXT NOT NULL DEFAULT ''", 'recv' => "TEXT NOT NULL DEFAULT ''", 'hold' => "INTEGER NOT NULL DEFAULT 0"] as $c9 => $t9) if (!in_array($c9, $cols, true)) $pdo->exec("ALTER TABLE docs ADD COLUMN $c9 $t9");
   $pdo->exec('CREATE TABLE IF NOT EXISTS pwcache (k TEXT PRIMARY KEY, ts INTEGER NOT NULL, body TEXT NOT NULL)');
+  // остатки других поставщиков «на заказ» (Шинсервис, SVR): обновляются по расписанию целиком
+  $pdo->exec('CREATE TABLE IF NOT EXISTS supstock (sup TEXT NOT NULL, kind TEXT NOT NULL, sku TEXT NOT NULL, brand TEXT, model TEXT, name TEXT, w REAL, p REAL, d REAL, season TEXT, stud INTEGER, pn INTEGER, pcd REAL, pcd2 REAL, et REAL, dia REAL, color TEXT, wh TEXT, rest INTEGER, buy REAL, rrp REAL, img TEXT, mcode TEXT)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS supstock_t ON supstock (kind, d, w, p)');
+  $pdo->exec('CREATE INDEX IF NOT EXISTS supstock_d ON supstock (kind, d, pn, pcd)');
   // движения истории CloudShop (пересчитываются из архива arch) и выравнивание на день перехода
   $pdo->exec("CREATE TABLE IF NOT EXISTS csmoves (id INTEGER PRIMARY KEY AUTOINCREMENT, doc TEXT NOT NULL DEFAULT '', num TEXT NOT NULL DEFAULT '', day TEXT NOT NULL, type TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'cs', party TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, wh TEXT NOT NULL, qty REAL NOT NULL, cost REAL NOT NULL DEFAULT 0, price REAL)");
   $pdo->exec('CREATE INDEX IF NOT EXISTS csmoves_pid ON csmoves(pid)');
@@ -324,6 +328,70 @@ function csRef(array $cfg, string $until): array { $q = [];
 function reservedMap(array $cfg): array { $o = [];
   $st = db($cfg)->prepare("SELECT m.product_id pid, SUM(ABS(m.qty)) q FROM moves m JOIN docs d ON d.id = m.doc_id WHERE d.type = 'sale' AND d.status = 'draft' AND d.res_until != '' AND d.res_until >= ? GROUP BY m.product_id");
   $st->execute([date('Y-m-d')]); foreach ($st->fetchAll() as $r) $o[(int)$r['pid']] = (float)$r['q']; return $o; }
+// ---------- другие поставщики «на заказ»: Шинсервис (выгрузка TSV «на доставку») и SVR/МИМ (выгрузка остатков XML) ----------
+function supCfg(array $cfg): array { $j = json_decode(getSetting($cfg, 'sup_cfg') ?? '{}', true) ?: [];
+  return $j + ['shin_id' => '', 'shin_days' => 2, 'svr_token' => '', 'svr_terr' => ['85858701837' => 'Балашиха (Черное)', '85858701785' => 'Электроугли', '85859922413' => 'Н. Новгород (Ореховская)'], 'svr_days' => ['85858701837' => 2, '85858701785' => 2, '85859922413' => 3]]; }
+function supGet(string $url, int $timeout = 120): string {
+  if (function_exists('curl_init')) { $c = curl_init($url); curl_setopt_array($c, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => $timeout, CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_ENCODING => '', CURLOPT_USERAGENT => 'IVANOR-pult/1.0']);
+    $b = curl_exec($c); $code = (int)curl_getinfo($c, CURLINFO_HTTP_CODE); $e = curl_error($c); curl_close($c); if ($b === false || $code !== 200) throw new RuntimeException('HTTP ' . $code . ($e ? ' ' . $e : '') . ($b && $code !== 200 ? ' ' . mb_substr((string)$b, 0, 150) : '')); return (string)$b; }
+  $b = @file_get_contents($url, false, stream_context_create(['http' => ['timeout' => $timeout]])); if ($b === false) throw new RuntimeException('не скачалось'); return $b; }
+function supNum($v): ?float { $v = trim(str_replace([',', ' '], ['.', ''], (string)$v)); return $v === '' || !is_numeric($v) ? null : (float)$v; }
+function supSeason(string $s): string { $s = mb_strtolower($s); return ($s === 'w' || mb_strpos($s, 'зим') !== false) ? 'winter' : (($s === 's' || mb_strpos($s, 'лет') !== false) ? 'summer' : 'all'); }
+// Шинсервис: публичные TSV «остатки и цены на доставку» по ID клиента
+function supShin(array $cfg, array $C): array { $id = preg_replace('/\D+/', '', (string)$C['shin_id']); if ($id === '') return ['skip' => 'нет ID Шинсервиса'];
+  $p = db($cfg); $n = 0;
+  foreach (['tire' => 'tyre', 'disk' => 'disk'] as $kind => $f) {
+    $raw = supGet('https://duplo.shinservice.ru/xml/v2/shinservice-35-delivery-' . $f . '.tsv?id=' . $id . '&t=' . time() . '000');
+    $L = preg_split('/\r?\n/', $raw); $H = array_flip(str_getcsv(array_shift($L), "\t")); if (!isset($H['sku'], $H['price'])) throw new RuntimeException('Шинсервис: неожиданный формат файла');
+    $g = fn($r, $k) => isset($H[$k]) ? ($r[$H[$k]] ?? '') : '';
+    $p->beginTransaction(); $p->prepare('DELETE FROM supstock WHERE sup = ? AND kind = ?')->execute(['shin', $kind]);
+    $ins = $p->prepare('INSERT INTO supstock (sup, kind, sku, brand, model, name, w, p, d, season, stud, pn, pcd, pcd2, et, dia, color, wh, rest, buy, rrp, img, mcode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    foreach ($L as $line) { if (trim($line) === '') continue; $r = explode("\t", $line); $rest = (int)supNum($g($r, 'amountTotal')); $buy = supNum($g($r, 'price')); if ($rest <= 0 || !$buy) continue;
+      $d = supNum(preg_replace('/[^\d.,]/', '', $g($r, 'diameter')));
+      if ($kind === 'tire') $ins->execute(['shin', 'tire', $g($r, 'sku'), $g($r, 'brand'), $g($r, 'model'), $g($r, 'title'), supNum($g($r, 'width')), supNum($g($r, 'profile')), $d, supSeason($g($r, 'season')), strtoupper($g($r, 'pins')) === 'Y' ? 1 : 0, null, null, null, null, null, null, 'доставка', $rest, $buy, supNum($g($r, 'priceRetail')) ?: supNum($g($r, 'priceMsrp')), $g($r, 'photoUrl'), $g($r, 'brandSku')]);
+      else $ins->execute(['shin', 'disk', $g($r, 'sku'), $g($r, 'brand'), $g($r, 'model'), $g($r, 'title'), supNum(preg_replace('/[^\d.,]/', '', $g($r, 'width'))), null, $d, null, null, (int)supNum($g($r, 'pn')), supNum($g($r, 'pcd')), supNum($g($r, 'pcd2')), supNum($g($r, 'et')), supNum($g($r, 'cb')), $g($r, 'type'), 'доставка', $rest, $buy, supNum($g($r, 'priceRetail')), $g($r, 'photoUrl'), $g($r, 'brandSku')]);
+      $n++; }
+    $p->commit(); }
+  return ['rows' => $n]; }
+// SVR / МИМ: выгрузка остатков XML по ключу, только выбранные склады (территории)
+function supSvr(array $cfg, array $C): array { $tk = trim((string)$C['svr_token']); if ($tk === '') return ['skip' => 'нет ключа SVR'];
+  if (!class_exists('XMLReader')) throw new RuntimeException('на хостинге нет XMLReader');
+  $p = db($cfg); $T = $C['svr_terr']; $n = 0;
+  foreach (['tire' => 1, 'disk' => 2] as $kind => $type) {
+    $tmp = tempnam(sys_get_temp_dir(), 'svr'); file_put_contents($tmp, supGet('https://webmim.svrauto.ru/api/v1/catalog/unload?access-token=' . rawurlencode($tk) . '&format=xml&types=' . $type, 300));
+    $x = new XMLReader(); if (!$x->open($tmp)) throw new RuntimeException('SVR: не читается файл');
+    $p->beginTransaction(); $p->prepare('DELETE FROM supstock WHERE sup = ? AND kind = ?')->execute(['svr', $kind]);
+    $ins = $p->prepare('INSERT INTO supstock (sup, kind, sku, brand, model, name, w, p, d, season, stud, pn, pcd, pcd2, et, dia, color, wh, rest, buy, rrp, img, mcode) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    while ($x->read()) { if ($x->nodeType !== XMLReader::ELEMENT || $x->name !== 'COMMODITY') continue;
+      $e = @simplexml_load_string($x->readOuterXml()); if (!$e) continue; $g = fn($k) => trim((string)($e->$k ?? ''));
+      $terr = $g('TERRITORY_RN'); if (!isset($T[$terr])) continue; $rest = (int)supNum($g('NREST')); $buy = supNum($g('NPRICE_PREPAYMENT')) ?: supNum($g('NPRICE_DELAYED')); if ($rest <= 0 || !$buy) continue;
+      $rrp = supNum($g('NPRICE_RRP')) ?: supNum($g('NPRICE_CLI_P'));
+      if ($kind === 'tire') { $th = mb_strtolower($g('STHORNING')); $ins->execute(['svr', 'tire', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SWIDTH')), supNum($g('SHEIGHT')), supNum(preg_replace('/[^\d.,]/', '', $g('SDIAMETR'))), supSeason($g('SSEASON')), ($th !== '' && $th !== 'нет' && $th !== 'n' && $th !== '0') ? 1 : 0, null, null, null, null, null, null, $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]); }
+      else $ins->execute(['svr', 'disk', $g('NNOMMODIF'), $g('SMARKA'), $g('SMODEL'), $g('SMODIFNAME'), supNum($g('SWIDTH')), null, supNum($g('SDIAMETR')), null, null, (int)supNum($g('SHOLESQUANT')), supNum($g('SPCD')), supNum($g('SDPCD')), supNum($g('SWHEELOFFSET')), supNum($g('SDIA')), trim($g('STYPE') . ' ' . $g('SCOLOR')), $T[$terr], $rest, $buy, $rrp, $g('SPICTURE'), $g('SMNFCODE')]);
+      $n++; }
+    $x->close(); @unlink($tmp); $p->commit(); }
+  return ['rows' => $n]; }
+// обновить остатки поставщиков (раз в час по расписанию; force — кнопкой)
+function supRefresh(array $cfg, bool $force = false): array { $C = supCfg($cfg); $out = [];
+  foreach (['shin' => 'supShin', 'svr' => 'supSvr'] as $k => $fn) { $last = (int)(getSetting($cfg, 'sup_ts_' . $k) ?? 0);
+    if (!$force && time() - $last < 3300) { $out[$k] = ['fresh' => date('H:i', $last)]; continue; }
+    @set_time_limit(300);
+    try { $r = $fn($cfg, $C); if (empty($r['skip'])) setSetting($cfg, 'sup_ts_' . $k, (string)time()); setSetting($cfg, 'sup_err_' . $k, ''); $out[$k] = $r; }
+    catch (Throwable $e) { if (db($cfg)->inTransaction()) db($cfg)->rollBack(); setSetting($cfg, 'sup_err_' . $k, date('d.m H:i') . ' ' . mb_substr($e->getMessage(), 0, 200)); $out[$k] = ['error' => $e->getMessage()]; } }
+  return $out; }
+// варианты «на заказ» у других поставщиков в формате строк Пауэра
+function supRows(array $cfg, string $kind, array $q, bool $owner): array { $C = supCfg($cfg); $p = db($cfg); $o = [];
+  $nm = ['shin' => 'Шинсервис', 'svr' => 'SVR'];
+  if ($kind === 'tire') { $st = $p->prepare("SELECT * FROM supstock WHERE kind = 'tire' AND w = ? AND p = ? AND d = ?"); $st->execute([$q['w'], $q['p'], $q['d']]); }
+  else { $st = $p->prepare("SELECT * FROM supstock WHERE kind = 'disk' AND d = ? AND pn = ? AND (ABS(pcd - ?) < 0.06 OR ABS(COALESCE(pcd2, 0) - ?) < 0.06)"); $st->execute([$q['d'], $q['pn'], $q['pcd'], $q['pcd']]); }
+  foreach ($st->fetchAll() as $r) { $days = $r['sup'] === 'shin' ? (int)$C['shin_days'] : (int)($C['svr_days'][array_search($r['wh'], $C['svr_terr'], true)] ?? 3);
+    $price = pwRetail((float)$r['buy'], (float)$r['rrp'], $cfg);
+    $row = ['sup' => $nm[$r['sup']] ?? $r['sup'], 'code' => $r['sku'], 'name' => $r['name'], 'brand' => $r['brand'], 'model' => $r['model'], 'img' => $r['img'], 'small' => $r['img'], 'rest' => (int)$r['rest'], 'days' => $days, 'price' => $price, 'wh' => $r['wh']];
+    if ($kind === 'tire') { $row['season'] = $r['season']; $row['stud'] = (bool)$r['stud']; }
+    else { $row['w'] = $r['w'] !== null ? (float)$r['w'] : null; $row['et'] = $r['et'] !== null ? (float)$r['et'] : null; $row['dia'] = $r['dia'] !== null ? (float)$r['dia'] : null; $row['color'] = (string)$r['color']; $row['type'] = ''; }
+    if ($owner) { $row['buy'] = round((float)$r['buy']); $row['inet'] = round((float)$r['rrp']); }
+    $o[] = $row; }
+  return $o; }
 // заказы у Пауэра, которые к нам ещё едут (страница «Заказы Пауэра» и обновление по расписанию)
 function pwOrdersData(array $cfg, bool $fresh): array {
     // заказы у Пауэра, которые к нам ещё едут: «Подтвержден», «В логистике / на планировании», «На перемещении», «На перемещении / в пути»
@@ -1502,6 +1570,10 @@ try {
       $row = ['code' => $it['code'], 'name' => $it['name'], 'brand' => $it['brand'], 'model' => $it['model'], 'season' => $win ? 'winter' : ($sum ? 'summer' : 'all'), 'stud' => $stud, 'img' => $ownPh[normModel($it['brand']) . '|' . normModel($it['model']) . '|' . ($stud ? 'S' : '')] ?? $it['img'], 'small' => $it['small'] ?? $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
       if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
       $out2[] = $row; }
+    foreach ($out2 as &$r9) $r9['sup'] = 'Пауэр'; unset($r9);
+    // другие поставщики «на заказ» (Шинсервис, SVR) — тот же размер и сезон
+    foreach (supRows($cfg, 'tire', ['w' => $w, 'p' => $pr, 'd' => $d], $owner) as $r9) { $win = $r9['season'] === 'winter'; $sum = $r9['season'] === 'summer'; $stud = $r9['stud'];
+      if ($season === 'winter' && !$win) continue; if ($season === 'summer' && !$sum) continue; if ($season === 'stud' && !($win && $stud)) continue; if ($season === 'fric' && !($win && !$stud)) continue; if ($season === 'all' && ($win || $sum)) continue; $out2[] = $r9; }
     usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
     out(['size' => "$w/" . rtrim(rtrim((string)$pr, '0'), '.') . ' R' . rtrim(rtrim((string)$d, '0'), '.'), 'rows' => array_slice($out2, 0, 120), 'found' => count($raw['items'])] + ($owner ? ['warehouses' => $whSeen, 'cached' => $hit && $raw !== null, 'diag' => $raw['diag'] ?? [], 'stages' => $stg, 'sample' => isset($raw['items'][0]) ? ['season' => $raw['items'][0]['season'], 'thorn' => $raw['items'][0]['thorn'], 'imgs' => $raw['items'][0]['imgs'] ?? []] : null] : []));
 
@@ -1544,8 +1616,13 @@ try {
         'img' => $it['img'], 'small' => $it['small'] ?? $it['img'], 'rest' => $rest, 'days' => $minDays, 'price' => pwRetail((float)$best['buy'], (float)$best['inet'], $cfg)];
       if ($owner) { $row['buy'] = round((float)$best['buy']); $row['inet'] = round((float)$best['inet']); }
       $out2[] = $row; }
+    foreach ($out2 as &$r9) $r9['sup'] = 'Пауэр'; unset($r9);
+    foreach (supRows($cfg, 'disk', ['d' => $d, 'pn' => $bc, 'pcd' => $bs], $owner) as $r9) {
+      if ($etMin !== null && ($r9['et'] === null || $r9['et'] < $etMin)) continue; if ($etMax !== null && ($r9['et'] === null || $r9['et'] > $etMax)) continue; if ($diaMin !== null && ($r9['dia'] === null || $r9['dia'] + 0.01 < $diaMin)) continue;
+      if ($kind === 'steel' && !preg_match('/штамп|сталь/iu', $r9['color'] . ' ' . $r9['name'])) continue; if (in_array($kind, ['cast', 'forged'], true) && preg_match('/штамп|стальн/iu', $r9['color'] . ' ' . $r9['name'])) continue;
+      $out2[] = $r9; }
     usort($out2, fn($a, $b) => $a['price'] <=> $b['price']);
-    out(['size' => "R$d $bc×" . rtrim(rtrim(number_format($bs, 2, '.', ''), '0'), '.'), 'rows' => array_slice($out2, 0, 150), 'found' => count($raw['items']), 'shown' => count($out2)]);
+    out(['size' => "R$d $bc×" . rtrim(rtrim(number_format($bs, 2, '.', ''), '0'), '.'), 'rows' => array_slice($out2, 0, 200), 'found' => count($raw['items']), 'shown' => count($out2)]);
 
   case 'rep_cuts':
     // продажи в разрезах: сезон и шипы, бренды, диаметры, аккумуляторы — период против того же периода год назад, остаток и прогноз на 4 недели
@@ -2043,10 +2120,25 @@ try {
       foreach ($lines as $i => $x) $lines[$i]['stock'] = ($smc[$x['product_id']]['q'] ?? 0) - ($HL[$x['product_id']] ?? 0); }
     out(['doc' => $d, 'returns' => $rets, 'lines' => $lines]);
 
+  case 'sup_cfg':
+    // настройки других поставщиков «на заказ»: ID Шинсервиса, ключ SVR (вносит собственник; обратно ключ не показываем), сроки доставки
+    needRole($role, ['owner']); $C = supCfg($cfg);
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') { $b = body();
+      if (isset($b['shin_id'])) $C['shin_id'] = preg_replace('/\D+/', '', (string)$b['shin_id']);
+      if (isset($b['shin_days'])) $C['shin_days'] = max(0, min(30, (int)$b['shin_days']));
+      if (!empty($b['svr_token'])) $C['svr_token'] = trim((string)$b['svr_token']);
+      if (!empty($b['svr_clear'])) $C['svr_token'] = '';
+      if (isset($b['svr_days']) && is_array($b['svr_days'])) foreach ($b['svr_days'] as $t => $dd) if (isset($C['svr_terr'][$t])) $C['svr_days'][$t] = max(0, min(30, (int)$dd));
+      setSetting($cfg, 'sup_cfg', json_encode($C, JSON_UNESCAPED_UNICODE)); }
+    if (!empty($_GET['refresh'])) { session_write_close(); $res = supRefresh($cfg, true); } else $res = null;
+    $cnt = []; foreach (db($cfg)->query('SELECT sup, kind, COUNT(*) n, SUM(rest) q FROM supstock GROUP BY sup, kind')->fetchAll() as $r) $cnt[$r['sup']][$r['kind']] = ['n' => (int)$r['n'], 'q' => (int)$r['q']];
+    $st = []; foreach (['shin', 'svr'] as $k) { $t = (int)(getSetting($cfg, 'sup_ts_' . $k) ?? 0); $st[$k] = ['at' => $t ? date('d.m H:i', $t) : '', 'err' => getSetting($cfg, 'sup_err_' . $k) ?? '', 'cnt' => $cnt[$k] ?? []]; }
+    out(['shin_id' => $C['shin_id'], 'shin_days' => (int)$C['shin_days'], 'svr_has' => $C['svr_token'] !== '', 'svr_terr' => $C['svr_terr'], 'svr_days' => $C['svr_days'], 'status' => $st, 'refresh' => $res]);
+
   case 'cron':
     // обновление по расписанию (cron на хостинге): брони «ждёт выдачи» из кабинета Пауэра и кэш «Заказов Пауэра»
     if (empty($cfg['cron_key']) || !hash_equals((string)$cfg['cron_key'], (string)($_GET['key'] ?? ''))) fail('Нет доступа', 403);
-    $r = ['holds' => pwSyncHolds($cfg, true)]; try { $o = pwOrdersData($cfg, true); $r['orders'] = count($o['orders']); } catch (Throwable $e) { $r['orders_error'] = $e->getMessage(); }
+    $r = ['holds' => pwSyncHolds($cfg, true), 'suppliers' => supRefresh($cfg)]; try { $o = pwOrdersData($cfg, true); $r['orders'] = count($o['orders']); } catch (Throwable $e) { $r['orders_error'] = $e->getMessage(); }
     out($r);
   case 'pw_orders':
     needRole($role, ['owner']); session_write_close();
