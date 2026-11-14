@@ -388,19 +388,23 @@ function supRefresh(array $cfg, bool $force = false): array { $C = supCfg($cfg);
     try { $r = $fn($cfg, $C); if (empty($r['skip'])) setSetting($cfg, 'sup_ts_' . $k, (string)time()); setSetting($cfg, 'sup_err_' . $k, ''); $out[$k] = $r; }
     catch (Throwable $e) { if (db($cfg)->inTransaction()) db($cfg)->rollBack(); setSetting($cfg, 'sup_err_' . $k, date('d.m H:i') . ' ' . mb_substr($e->getMessage(), 0, 200)); $out[$k] = ['error' => $e->getMessage()]; } }
   return $out; }
+// цвет диска одним словом: black / silver / gray / gold / white (по-русски и по-английски, коды BK, S, GM…)
+function diskColor(string $t): string { $u = ' ' . normModel($t) . ' ';
+  foreach (['black' => '/ (BLACK|BK|B|BL|MB|ЧЕРН\w*|ЧЁРН\w*|БЛЭК|DARK|ДАРК|ГРАФИТ\w*|GRAPHITE|GM|GUN\w*)(?= )/u', 'silver' => '/ (SILVER|S|SL|SIL|СЕРЕБР\w*|СИЛЬВЕР|СЕЛЕНА|SELENA|HS|HYPER|АЛМАЗ\w*|БЛИЗЗАРД|BLIZZARD|СЕРЫЙ|СЕРЫЕ|GREY|GRAY|GR)(?= )/u', 'white' => '/ (WHITE|W|БЕЛ\w*)(?= )/u', 'gold' => '/ (GOLD|ЗОЛОТ\w*)(?= )/u'] as $c => $re) if (preg_match($re, $u)) return $c; return ''; }
 // марка в одном написании у нас и у поставщиков (SVR пишет по-русски: ТУНГА, КОРДИАНТ, Пирелли)
 function brandNorm(string $b): string { $u = normModel(preg_replace('/\([^)]*\)/u', '', $b)); $u = preg_replace('/\s+(TYRES|TIRES|TYRE|ШИНЫ|АКБ)$/u', '', $u);
   $m = ['ТУНГА' => 'TUNGA', 'КОРДИАНТ' => 'CORDIANT', 'ПИРЕЛЛИ' => 'PIRELLI', 'НОКИАН' => 'NOKIAN', 'КАМА' => 'KAMA', 'БЕЛШИНА' => 'BELSHINA', 'АМТЕЛ' => 'AMTEL', 'ВИАТТИ' => 'VIATTI', 'ГУДИЕР' => 'GOODYEAR', 'КОНТИНЕНТАЛ' => 'CONTINENTAL', 'МИШЛЕН' => 'MICHELIN', 'БРИДЖСТОУН' => 'BRIDGESTONE', 'ЙОКОХАМА' => 'YOKOHAMA', 'ТОЙО' => 'TOYO', 'ХАНКУК' => 'HANKOOK', 'КУМХО' => 'KUMHO', 'ДАНЛОП' => 'DUNLOP', 'НЕКСЕН' => 'NEXEN', 'МАТАДОР' => 'MATADOR', 'ГИСЛАВЕД' => 'GISLAVED', 'ТРАЙАНГЛ' => 'TRIANGLE', 'САИЛУН' => 'SAILUN', 'ЛИНГЛОНГ' => 'LINGLONG', 'ЛАУФЕНН' => 'LAUFENN', 'ФОРМУЛА' => 'FORMULA', 'ТОРЕРО' => 'TORERO', 'МАКСИС' => 'MAXXIS', 'АЙКОН' => 'IKON', 'СКАД' => 'SKAD', 'ЗУБР' => 'ZUBR', 'ЗВЕРЬ' => 'ZVER', 'ТЮМЕНЬ' => 'TYUMEN', 'АКТЕХ' => 'AKTEX', 'ROADX' => 'SAILUN', 'LEAO' => 'LINGLONG', 'LINGLONG LEAO' => 'LINGLONG', 'HANKOOK LAUFENN' => 'LAUFENN', 'PRINX FORTUNE' => 'FORTUNE', 'PIRELLI FORMULA' => 'FORMULA', 'FURUKAWA' => 'FURUKAWA'];
   return $m[$u] ?? ($m[explode(' ', $u)[0]] ?? explode(' ', $u)[0]); }
 // фото моделей от поставщиков: SVR — крупные фото без водяных знаков (1000–1200 px); Шинсервис — с крупным логотипом, не берём
-function photoAuto(array $cfg, int $limit = 25): array { $p = db($cfg); $pm = photoMap($cfg); $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $done = 0; $miss = []; $t0 = time();
+function photoAuto(array $cfg, int $limit = 25, string $redo = ''): array { $p = db($cfg); $pm = photoMap($cfg); $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $done = 0; $miss = []; $t0 = time();
   $tried = json_decode(getSetting($cfg, 'photo_auto_tried') ?? '{}', true) ?: [];
   $S = ['tire' => [], 'disk' => [], 'akb' => []];
-  foreach ($p->query("SELECT kind, brand, model, name, w, color, img FROM svrphoto WHERE img != ''")->fetchAll() as $r) $S[$r['kind']][brandNorm((string)$r['brand'])][] = $r;
+  foreach ($p->query((int)$p->query('SELECT COUNT(*) FROM svrphoto')->fetchColumn() ? "SELECT kind, brand, model, name, w, color, img FROM svrphoto WHERE img != ''" : "SELECT kind, brand, model, name, w, color, img FROM supstock WHERE sup = 'svr' AND kind IN ('tire', 'disk', 'akb') AND img != ''")->fetchAll() as $r) $S[$r['kind']][brandNorm((string)$r['brand'])][] = $r;
   $seen = [];
   foreach ($p->query("SELECT id, name, kind, attrs FROM products WHERE archived = 0 AND kind IN ('tire', 'disk', 'akb')")->fetchAll() as $pr) {
     $id = (int)$pr['id']; if (($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0) <= 0) continue; $a = json_decode($pr['attrs'], true) ?: [];
-    $k = photoKey($pr['kind'], $a, $pr['name'], $id); if (isset($seen[$k]) || isset($pm[$k]) || ($pr['kind'] === 'akb' && isset($pm[photoKeyOld('akb', $pr['name'])]))) continue; $seen[$k] = 1;
+    $k = photoKey($pr['kind'], $a, $pr['name'], $id); if ($redo !== '' && ($pr['kind'] !== $redo || ($pm[$k]['source'] ?? '') !== 'svr' || isset($tried['redo|' . $k]))) continue;
+    if (isset($seen[$k]) || ($redo === '' && isset($pm[$k])) || ($pr['kind'] === 'akb' && isset($pm[photoKeyOld('akb', $pr['name'])]))) continue; $seen[$k] = 1;
     if (isset($tried[$k]) && time() - $tried[$k] < 7 * 86400) continue;
     if ($done >= $limit || time() - $t0 > 80) break;
     $best = null; $bs = 0;
@@ -408,11 +412,15 @@ function photoAuto(array $cfg, int $limit = 25): array { $p = db($cfg); $pm = ph
       foreach ($S['tire'][$b] ?? [] as $r) { $t = ' ' . normModel(str_replace('_', ' ', $r['model'] . ' ' . $r['name'])) . ' '; $hit = (bool)$words; foreach ($words as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; }
         if ($hit) { $sc = 100 - abs(mb_strlen(normModel($r['model'])) - mb_strlen(implode(' ', $words))); if ($sc > $bs) { $bs = $sc; $best = $r; } } } }
     elseif ($pr['kind'] === 'disk') { $mw = array_values(array_filter(explode(' ', normModel((string)($a['model'] ?? ''))), fn($w) => mb_strlen($w) >= 2)); if (!$mw) { $tried[$k] = time(); continue; }
-      $b = brandNorm($mw[0]); $rest = array_slice($mw, 1, 2);
-      foreach ($S['disk'][$b] ?? [] as $r) { $t = ' ' . normModel($r['model'] . ' ' . $r['name'] . ' ' . $r['color']) . ' '; $hit = (bool)$rest; foreach ($rest as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; } if ($hit) { $best = $r; break; } } }
+      $b = brandNorm($mw[0]); $rest = array_values(array_filter(array_slice($mw, 1, 3), fn($w) => diskColor($w) === '')); $rest = array_slice($rest, 0, 2); $mc = diskColor(implode(' ', $mw));
+      foreach ($S['disk'][$b] ?? [] as $r) { $t = ' ' . normModel($r['model'] . ' ' . $r['name'] . ' ' . $r['color']) . ' '; $hit = (bool)$rest; foreach ($rest as $w) if (strpos($t, ' ' . $w . ' ') === false) { $hit = false; break; } if (!$hit) continue;
+        // цвет: серебристый диск не показываем чёрным фото и наоборот
+        $rc = diskColor($t); $sc = 10 + ($mc !== '' && $rc === $mc ? 5 : 0) - ($mc !== '' && $rc !== '' && $rc !== $mc ? 20 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } }
+      if ($bs <= 0) $best = null; }
     else { [$ab, $al, ] = akbModel($pr['name'], $a); [$bc, , $bg] = akbBody($pr['name'], $a); $b = brandNorm($ab);
       foreach ($S['akb'][$b] ?? [] as $r) { [$rb, , $rg] = akbBody($r['name'] . ' ' . preg_replace('/[хx]/u', '*', (string)$r['color']), ['ah' => $r['w']]); if ($rg !== $bg) continue;
         $sc = 10 + ($rb === $bc ? 3 : 0) + ($al !== '' && mb_stripos($r['model'] . ' ' . $r['name'], $al) !== false ? 5 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } } }
+    if ($redo !== '') $tried['redo|' . $k] = time();
     if (!$best) { $tried[$k] = time(); $miss[] = photoLabel($pr['kind'], $a, $pr['name']); continue; }
     try { $bytes = supGet((string)$best['img'], 30); $info = @getimagesizefromstring($bytes); if (!$info || strlen($bytes) < 2000) throw new RuntimeException('не картинка');
       photoSave($cfg, $k, $bytes, 'svr', (string)$best['img']); $done++; }
@@ -2813,7 +2821,7 @@ try {
     // подобрать фото моделей от поставщиков (SVR) для всего, что есть в наличии и ещё без фото
     needRole($role, ['owner']); session_write_close(); @set_time_limit(120);
     if (($_GET['reset'] ?? '') === '1') setSetting($cfg, 'photo_auto_tried', '{}');
-    out(photoAuto($cfg, 40));
+    out(photoAuto($cfg, 40, preg_replace('/[^a-z]/', '', (string)($_GET['redo'] ?? ''))));
 
   case 'photo_suggest':
     // предложить фото модели из API поставщика: ищем по размеру одной из шин модели и сверяем бренд+модель
