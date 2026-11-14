@@ -318,6 +318,8 @@ function pwSize(string $name): ?array { return preg_match('/(\d{3})\s*\/\s*(\d{2
 function pwSizeOk(string $name, int $w, float $p, float $d): bool { $u = mb_strtoupper(str_replace(',', '.', $name));
   if (!preg_match_all('/(\d{3})\s*[\/XХ]\s*(\d{2,3}(?:\.\d)?)\s*(?:Z?R|\/|-|\s)\s*(\d{2}(?:\.\d)?)/u', $u, $m, PREG_SET_ORDER)) return true;
   foreach ($m as $x) if ((int)$x[1] === $w && abs((float)$x[2] - $p) < 0.01 && abs((float)$x[3] - $d) < 0.01) return true; return false; }
+// склад только для самовывоза: наше ответхранение (ОХВЛАДН) и пункты выдачи «ОХ Владимир …»
+function pwPickup(string $id, string $name): bool { return (bool)preg_match('/^\s*(ОХ|OX)/iu', $id) || (bool)preg_match('/^\s*(ОХ|OX)(\s|$|[А-ЯA-Z])/u', mb_strtoupper($name)) || mb_stripos($name, 'самовывоз') !== false; }
 // сроки доставки по складам из того же ответа (warehouseLogistics): склад → дней
 function pwDays($x, array &$out, int $depth = 0): void {
   if ($depth > 9) return; if (is_object($x)) $x = get_object_vars($x); if (!is_array($x)) return; $l = array_change_key_case($x, CASE_LOWER);
@@ -1310,8 +1312,8 @@ try {
     $ownPh = []; foreach (photoMap($cfg) as $k9 => $v9) if (strpos($k9, 'tire|') === 0) { $pp = explode('|', $k9); $ownPh[normModel($pp[1] ?? '') . '|' . normModel($pp[2] ?? '') . '|' . ($pp[3] ?? '')] = '/' . basename(__DIR__) . '/' . $v9['url']; }
     $allow = array_map('strval', (array)($cfg['pw_wrh'] ?? [])); $skip = array_map('strval', (array)($cfg['pw_wrh_skip'] ?? [])); $out2 = []; $whSeen = []; $raw['items'] = array_values(array_filter($raw['items'], fn($x) => pwSizeOk((string)$x['name'], $w, $pr, $d))); $stg = ['size_ok' => count($raw['items']), 'no_wh' => 0, 'wh_ok' => 0, 'stud' => 0, 'fric' => 0, 'summer' => 0, 'all' => 0];
     foreach ($raw['items'] as $it) { $best = null; $rest = 0; $minDays = null;
-      foreach ($it['wh'] as $x) { $id = (string)$x['wrh']; $whSeen[$id] = ($raw['days'][$id]['name'] ?? '') . (isset($raw['days'][$id]) ? ' · ' . $raw['days'][$id]['days'] . ' д.' : '');
-        if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true)) continue; if (!$allow && preg_match('/^\s*ОХ\b/u', (string)($raw['days'][$id]['name'] ?? ''))) continue; // наше ответхранение — это уже наш склад, не «на заказ» if (!$allow && $raw['days'] && !isset($raw['days'][$id])) continue; // без списка складов берём только те, по которым Пауэр даёт срок доставки
+      foreach ($it['wh'] as $x) { $id = (string)$x['wrh']; $whSeen[$id] = ($raw['days'][$id]['name'] ?? '') . (isset($raw['days'][$id]) ? ' · ' . $raw['days'][$id]['days'] . ' д.' : '') . (pwPickup($id, (string)($raw['days'][$id]['name'] ?? '')) ? ' — самовывоз, не показываем' : '');
+        if ($x['rest'] <= 0 || ($allow && !in_array($id, $allow, true)) || in_array($id, $skip, true)) continue; if (pwPickup($id, (string)($raw['days'][$id]['name'] ?? ''))) continue; // ОХ и пункты самовывоза во Владимире — не «на заказ» if (!$allow && $raw['days'] && !isset($raw['days'][$id])) continue; // без списка складов берём только те, по которым Пауэр даёт срок доставки
         $rest += $x['rest']; $dd = $raw['days'][$id]['days'] ?? null; if ($dd !== null && ($minDays === null || $dd < $minDays)) $minDays = $dd;
         if ($best === null || $x['buy'] < $best['buy']) $best = $x; }
       if ($best === null || $rest <= 0) { $stg['no_wh']++; continue; } $stg['wh_ok']++; $se = mb_strtolower(trim($it['season'])); $nmU = mb_strtoupper($it['name'] . ' ' . $it['model']);
@@ -1924,10 +1926,10 @@ try {
     $byExt = []; foreach ($p->query("SELECT id, ext_id, price FROM products WHERE archived = 0")->fetchAll() as $r) { if ($r['ext_id'] !== null && $r['ext_id'] !== '') $byExt[(string)$r['ext_id']] = $r; $byExt['p' . $r['id']] = $r; }
     $sm = stockMap($cfg, 'shop'); $smc = stockMap($cfg, 'custody');
     $phone = phoneKey((string)($b['phone'] ?? '')); $pay = in_array($b['pay'] ?? '', ['cash', 'card', 'qr', 'sbp', 'bank'], true) ? $b['pay'] : '';
-    $who = (string)($_SESSION['seller'] ?? '') ?: 'Продавец';
+    $who = (string)($_SESSION['seller'] ?? '') ?: ($role === 'owner' ? 'Собственник' : 'Продавец');
     $p->beginTransaction();
-    $p->prepare("INSERT INTO docs (type, day, partner, num, note, wh, phone, pay, status, author, created, seller, req) VALUES ('sale', ?, ?, '', ?, 'shop', ?, ?, 'draft', ?, ?, ?, 1)")
-      ->execute([date('Y-m-d'), mb_substr(trim((string)($b['name'] ?? '')), 0, 200), mb_substr(trim((string)($b['note'] ?? '')), 0, 500), $phone, $pay, $role, time(), $who]);
+    $p->prepare("INSERT INTO docs (type, day, partner, num, note, wh, phone, pay, status, author, created, seller, req) VALUES ('sale', ?, ?, '', ?, 'shop', ?, ?, 'draft', ?, ?, ?, ?)")
+      ->execute([date('Y-m-d'), mb_substr(trim((string)($b['name'] ?? '')), 0, 200), mb_substr(trim((string)($b['note'] ?? '')), 0, 500), $phone, $pay, $role, time(), $who, $role === 'owner' ? 0 : 1]);
     $id = (int)$p->lastInsertId(); $ins = $p->prepare('INSERT INTO moves (doc_id, product_id, wh, qty, cost, price, list) VALUES (?,?,?,?,0,?,?)'); $n = 0;
     foreach (array_slice($L, 0, 100) as $l) { $pr = $byExt[(string)($l['id'] ?? '')] ?? null; $q = max(0, (float)($l['q'] ?? 0)); if (!$pr || $q <= 0) continue;
       $pid = (int)$pr['id']; $wh = ($sm[$pid]['q'] ?? 0) >= $q || ($smc[$pid]['q'] ?? 0) <= 0 ? 'shop' : 'custody';

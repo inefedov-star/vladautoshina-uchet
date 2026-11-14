@@ -657,6 +657,38 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
 @media(max-width:560px){.doclist th:nth-child(4),.doclist td:nth-child(4){display:none}.doclist td,.doclist th{padding-left:6px;padding-right:6px}.doclist td:first-child{font-size:.85rem}}
 .pybar{display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;margin:4px 0 14px}.pydot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px}
 .resb{display:inline-block;padding:1px 7px;border-radius:6px;background:var(--amber-tint,#FFF4E5);color:var(--amber,#8A4B00);font-weight:600;font-size:.74rem}.ctb{display:block;height:7px;border-radius:4px;background:var(--rule-soft);margin:2px 0;overflow:hidden}.ctb i{display:block;height:100%;background:var(--acc);border-radius:4px}.ctb.p i{background:var(--ink-3);opacity:.45}
+/* ===== телефон: компактная шапка — кнопка раздела со значком, тема и выход значками; разделы — плиткой по нажатию ===== */
+.arbtn,.arsheet,.arscrim{display:none}
+@media (max-width:760px){
+  header.top .bar{flex-wrap:nowrap!important;min-height:52px;padding-block:4px;gap:6px}
+  header.top .logo,header.top .areas,#who,#status,#thLbl{display:none!important}
+  .arbtn{display:inline-flex;align-items:center;gap:10px;min-height:44px;padding:0 10px 0 4px;margin-left:-4px;border:0;background:transparent;color:var(--ink);font:700 1.12rem/1.1 var(--f-display,inherit);letter-spacing:-.01em;border-radius:12px;position:relative;min-width:0}
+  .arbtn:active{background:var(--paper-2)}
+  .arico{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--acc);color:#fff;flex:none;box-shadow:0 3px 8px color-mix(in srgb,var(--acc) 35%,transparent)}
+  .arico svg{width:21px;height:21px;opacity:1!important;display:block!important}
+  .arnm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .archv{flex:none;color:var(--ink-3);transition:transform .25s}
+  .arbtn[aria-expanded="true"] .archv{transform:rotate(180deg)}
+  .arbtn .abadge{position:absolute;top:2px;left:30px;right:auto}
+  #thBtn,#logout{width:40px;height:40px;min-height:40px;padding:0!important;display:inline-grid;place-items:center;border-radius:12px}
+  #logout .lt{display:none!important}#logout svg{display:block!important}
+  .top{box-shadow:inset 0 -2px 0 var(--acc)}
+  .arscrim{display:block;position:fixed;inset:0;z-index:40;background:rgba(10,12,16,.38);opacity:0;transition:opacity .2s}
+  .arscrim.on{opacity:1}
+  .arsheet{display:block;position:fixed;left:8px;right:8px;top:calc(var(--hdr,56px) + 6px);z-index:41;background:var(--paper);border-radius:20px;box-shadow:0 18px 48px rgba(0,0,0,.22);padding:12px;transform:translateY(-8px) scale(.98);opacity:0;transform-origin:top left;transition:transform .22s var(--ease,ease),opacity .18s}
+  .arsheet.on{transform:none;opacity:1}
+  .arscrim[hidden],.arsheet[hidden]{display:none}
+  .argrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .artile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 2px 10px;border:0;border-radius:14px;background:transparent;color:var(--ink-2);font:600 .76rem/1.15 inherit;position:relative;min-height:84px}
+  .artile:active{background:var(--paper-2)}
+  .artile i{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 13%,var(--paper));color:var(--c);font-style:normal}
+  .artile i svg{width:24px;height:24px;display:block!important;opacity:1!important}
+  .artile[aria-current="true"]{color:var(--ink);background:var(--paper-2)}
+  .artile[aria-current="true"] i{background:var(--c);color:#fff;box-shadow:0 4px 10px color-mix(in srgb,var(--c) 40%,transparent)}
+  .artile .abadge{top:6px;right:calc(50% - 30px)}
+  body.t-dark .artile i{background:color-mix(in srgb,var(--c) 22%,var(--paper))}
+}
+@media (max-width:760px) and (prefers-reduced-motion:reduce){.arsheet,.arscrim,.archv{transition:none}}
 </style>
 </head>
 <body>
@@ -678,6 +710,7 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
         <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="2" fill="var(--ink)"/><circle cx="16" cy="16" r="9.5" fill="none" stroke="var(--signal)" stroke-width="3"/><circle cx="16" cy="16" r="3.4" fill="var(--paper)"/></svg>
         <span><b id="areaName">Шиномонтаж</b><i>IVANOR · НОЯБРЬСКАЯ 129</i></span>
       </div>
+      <button type="button" class="arbtn" id="arBtn" aria-haspopup="dialog" aria-expanded="false" aria-controls="arSheet"><span class="arico" id="arIco"></span><span class="arnm" id="arNm">Шиномонтаж</span><svg class="archv" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
       <div class="areas" role="group" aria-label="Раздел"><button type="button" data-area="m" aria-pressed="true"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/></svg><span class="aln">Шиномонтаж</span><span class="asn">Монтаж</span></button><button type="button" data-area="s" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9h16l-1 11H5zM8 9V6a4 4 0 0 1 8 0v3"/></svg><span>Магазин</span></button><button type="button" data-area="h" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 10h18M3 15h18M12 4v16"/></svg><span class="aln">Хранение</span><span class="asn">Отель</span></button><button type="button" class="owner-only" data-area="z" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg><span>Заказы</span></button><button type="button" class="owner-only" data-area="c" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.6 3.6-5.5 6.5-5.5s5.5 1.9 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg><span>CRM</span></button><button type="button" class="owner-only" data-area="t" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m4 6 2 2 3-3M4 13l2 2 3-3M4 20l2 2 3-3"/><path d="M12 7h8M12 14h8M12 21h8"/></svg><span>Задачи</span></button><button type="button" class="owner-only" data-area="k" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg><span>КП</span></button><button type="button" data-area="v" aria-pressed="false"><svg class="ai" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M9 21h6M12 17v4"/></svg><span>Витрина</span></button></div>
       <div class="spacer"></div>
       <span class="status" id="status"></span><span class="mono" id="who" style="color:var(--ink-3)"></span><button class="out" type="button" id="thBtn" aria-label="Тема оформления" title="Тема: авто / светлая / тёмная"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg><span id="thLbl" style="margin-left:4px;font-size:.8rem"></span></button><button class="out" type="button" id="logout" title="Выйти"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 16l-4-4 4-4M5 12h11"/></svg><span class="lt">Выйти</span></button>
@@ -693,6 +726,8 @@ body.t-light.ar-t{--bg:#F5F3EE;--acc:#5A6B2E}
   </div>
 </header>
 
+<div class="arscrim" id="arScrim" hidden></div>
+<div class="arsheet" id="arSheet" role="dialog" aria-label="Разделы пульта" hidden><div class="argrid" id="arGrid"></div></div>
 <nav class="bnav" id="bnav" aria-label="Разделы" hidden></nav>
 <div class="shell">
 <aside id="side" class="smenu" aria-label="Меню магазина">
@@ -2218,7 +2253,7 @@ function sizeOf(q){const m=String(q||'').match(/(?:^|\D)(\d{3})[\/\s-]?(\d{2})[\
 async function openPw(w,p,d){$('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">У Пауэра: ${w}/${p} R${d}</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div><p class="note" id="pwMsg">Спрашиваю склады Пауэра…</p><div id="pwOut"></div>`;$('#close').onclick=closeSheet;openSh();
   try{const j=await api('pw_find',null,{w,p,d});const own=S.role==='owner';
     $('#pwMsg').innerHTML=j.rows.length?`Найдено ${j.rows.length}. Цена — розничная для клиента${own?' (закупка видна только вам)':''}. Срок — дни доставки с ближайшего склада.`:`На складах с доставкой в этом размере ничего нет${j.found?` (всего позиций у Пауэра: ${j.found} — но не на ваших складах)`:''}.`;
-    $('#pwOut').innerHTML=`${j.stages?`<p class="note" style="font-size:.85rem">Проверка (видно только собственнику): шин этого размера у Пауэра ${j.stages.size_ok}, из них на складах с доставкой ${j.stages.wh_ok} (без доставки ${j.stages.no_wh}): шипы ${j.stages.stud}, липучка ${j.stages.fric}, лето ${j.stages.summer}, без сезона ${j.stages.all}.${(j.diag||[]).map(x=>`<br>Запрос [${esc((x.filter||[]).join(', '))}]: ${x.error?'ошибка — '+esc(x.error):`пришло ${x.got}, нужного размера ${x.size_ok}${x.sample&&x.sample.length?' · '+esc(x.sample.join(' | ')):''}`}`).join('')}</p>`:''}`+(j.rows.length?`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Шина</th><th>Есть</th><th>Срок</th>${own?'<th>Закупка</th><th>Интернет</th>':''}<th>Клиенту</th><th></th></tr></thead><tbody>${j.rows.map((r,i)=>`<tr><td class="nm">${r.img?`<a href="${esc(r.img)}" target="_blank" rel="noopener" title="Открыть фото крупно"><img class="thumb" src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:64px;height:64px"></a>`:''}${esc(r.name||(r.brand+' '+r.model))}<small class="pay" style="display:block">${r.season==='winter'?(r.stud?'зима, шипы':'зима, липучка'):r.season==='summer'?'лето':'всесезон'} · код ${esc(r.code)}</small></td><td>${r.rest>=20?'20+':r.rest}</td><td>${r.days!=null?r.days+' д.':'—'}</td>${own?`<td>${rub(r.buy)}</td><td>${rub(r.inet)}</td>`:''}<td><b>${rub(r.price)}</b></td><td><button type="button" class="out" data-pwz="${i}">В заказ</button></td></tr>`).join('')}</tbody></table></div>`:'')+(own&&j.warehouses&&Object.keys(j.warehouses).length?`<details style="margin-top:12px"><summary class="pay">Склады Пауэра в ответе</summary><p class="pay">${Object.entries(j.warehouses).map(([k,v])=>esc(k+(v?' — '+v:''))).join('<br>')}</p>${j.sample?`<p class="pay">Для настройки: сезон «${esc(j.sample.season)}», шипы «${esc(String(j.sample.thorn))}», картинки: ${Object.entries(j.sample.imgs||{}).map(([k,v])=>`<a href="${esc(v)}" target="_blank" rel="noopener">${esc(k)}</a>`).join(', ')||'нет'}</p>`:''}</details>`:'');
+    $('#pwOut').innerHTML=`${j.stages?`<details style="margin:0 0 10px"><summary class="pay">Проверка ответа Пауэра</summary><p class="pay">Шин этого размера у Пауэра ${j.stages.size_ok}, из них на складах с доставкой ${j.stages.wh_ok} (без доставки ${j.stages.no_wh}): шипы ${j.stages.stud}, липучка ${j.stages.fric}, лето ${j.stages.summer}, без сезона ${j.stages.all}.${(j.diag||[]).map(x=>`<br>Запрос [${esc((x.filter||[]).join(', '))}]: ${x.error?'ошибка — '+esc(x.error):`пришло ${x.got}, нужного размера ${x.size_ok}${x.sample&&x.sample.length?' · '+esc(x.sample.join(' | ')):''}`}`).join('')}</p></details>`:''}`+(j.rows.length?`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">Шина</th><th>Есть</th><th>Срок</th>${own?'<th>Закупка</th><th>Интернет</th>':''}<th>Клиенту</th><th></th></tr></thead><tbody>${j.rows.map((r,i)=>`<tr><td class="nm">${r.img?`<a href="${esc(r.img)}" target="_blank" rel="noopener" title="Открыть фото крупно"><img class="thumb" src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:64px;height:64px"></a>`:''}${esc(r.name||(r.brand+' '+r.model))}<small class="pay" style="display:block">${r.season==='winter'?(r.stud?'зима, шипы':'зима, липучка'):r.season==='summer'?'лето':'всесезон'} · код ${esc(r.code)}</small></td><td>${r.rest>=20?'20+':r.rest}</td><td>${r.days!=null?r.days+' д.':'—'}</td>${own?`<td>${rub(r.buy)}</td><td>${rub(r.inet)}</td>`:''}<td><b>${rub(r.price)}</b></td><td><button type="button" class="out" data-pwz="${i}">В заказ</button></td></tr>`).join('')}</tbody></table></div>`:'')+(own&&j.warehouses&&Object.keys(j.warehouses).length?`<details style="margin-top:12px"><summary class="pay">Склады Пауэра в ответе</summary><p class="pay">${Object.entries(j.warehouses).map(([k,v])=>esc(k+(v?' — '+v:''))).join('<br>')}</p>${j.sample?`<p class="pay">Для настройки: сезон «${esc(j.sample.season)}», шипы «${esc(String(j.sample.thorn))}», картинки: ${Object.entries(j.sample.imgs||{}).map(([k,v])=>`<a href="${esc(v)}" target="_blank" rel="noopener">${esc(k)}</a>`).join(', ')||'нет'}</p>`:''}</details>`:'');
     $('#pwOut').querySelectorAll('[data-pwz]').forEach(b=>b.onclick=()=>{const r=j.rows[+b.dataset.pwz];openZak({id:0,day:iso(new Date()),phone:'',name:'',items:`${r.name||r.brand+' '+r.model}, 4 шт`,total:r.price*4,prepay:'',supplier:'Пауэр',promo:'',note:`код Пауэра ${r.code}${r.days!=null?', доставка '+r.days+' д.':''}`,status:'wait'});});}
   catch(e){$('#pwMsg').innerHTML=`<b>Не получилось.</b> ${esc(e.message)}`;}}
 /* ---------- резервы ---------- */
@@ -2975,7 +3010,7 @@ document.getElementById('thBtn').onclick=()=>{const n=themePref()==='dark'?'ligh
 function setArea(a,first){if(first)setTimeout(tkBadge,900);if((a==='z'||a==='k'||a==='c'||a==='t')&&S.role!=='owner')a='m';if(!['m','s','z','h','k','v','c','t'].includes(a))a='m';S.area=a;try{localStorage.setItem('ivanor_area',a);}catch(_){}['m','s','h','z','k','v','c','t'].forEach(x=>document.body.classList.toggle('ar-'+x,x===a));document.body.classList.toggle('area-s',a==='s');document.body.classList.toggle('area-z',a==='z'||a==='c'||a==='t');document.body.classList.toggle('area-fr',a==='h'||a==='k'||a==='v');applyTheme();
   document.querySelectorAll('[data-area]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.area===a));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('off-area',!t.dataset.a.includes(a)));
-  const AN={s:'Магазин',z:'Заказы',m:'Шиномонтаж',h:'Хранение',k:'КП',v:'Витрина',c:'Клиенты CRM',t:'Задачи'}[a];$('#areaName').textContent=AN;document.title=AN+' IVANOR';
+  const AN={s:'Магазин',z:'Заказы',m:'Шиномонтаж',h:'Хранение',k:'КП',v:'Витрина',c:'Клиенты CRM',t:'Задачи'}[a];$('#areaName').textContent=AN;document.title=AN+' IVANOR';try{arSync();}catch(_){}
   const cur=document.querySelector(`.tab[data-v="${S.view}"]`);
   if(a==='h'||a==='k'||a==='v'){openFrame(a);}
   else if(a==='z')show('zak');
@@ -2984,6 +3019,20 @@ function setArea(a,first){if(first)setTimeout(tkBadge,900);if((a==='z'||a==='k'|
   else if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
   else if(first||!cur||!cur.dataset.a.includes(a))show('day');
   setHdr();renderBnav();}
+/* ---------- телефон: кнопка раздела в шапке и плитка разделов ---------- */
+function arLbl(b){const a=b.querySelector('.aln');if(a)return a.textContent.trim();const c=b.cloneNode(true);c.querySelectorAll('.abadge,.asn').forEach(x=>x.remove());return c.textContent.trim();}
+const ARC={m:'#F25C05',s:'#E8590C',h:'#B0661A',z:'#2F6FD6',c:'#0E7C86',t:'#5A6B2E',k:'#6B4FD0',v:'#1E7A44'};
+function arList(){return [...document.querySelectorAll('.areas button[data-area]')].filter(b=>!b.hidden&&getComputedStyle(b).display!=='none');}
+function arSync(){const b=document.querySelector(`.areas button[data-area="${S.area}"]`);if(!b)return;const ico=b.querySelector('svg');$('#arIco').innerHTML=ico?ico.outerHTML:'';$('#arNm').textContent=arLbl(b);
+  const n=arList().reduce((a,x)=>a+(+((x.querySelector('.abadge')||{}).textContent)||0),0);let bd=$('#arBtn').querySelector('.abadge');if(n&&S.area!=='t'){if(!bd){bd=document.createElement('i');bd.className='abadge';$('#arBtn').appendChild(bd);}bd.textContent=n;}else if(bd)bd.remove();}
+function arOpen(on){const sh=$('#arSheet'),sc=$('#arScrim');$('#arBtn').setAttribute('aria-expanded',on);
+  if(on){$('#arGrid').innerHTML=arList().map(b=>{const a=b.dataset.area,ic=b.querySelector('svg'),bd=b.querySelector('.abadge');return `<button type="button" class="artile" data-go="${a}" style="--c:${ARC[a]||'var(--acc)'}" aria-current="${a===S.area}"><i>${ic?ic.outerHTML:''}</i>${esc(arLbl(b))}${bd?`<span class="abadge">${esc(bd.textContent)}</span>`:''}</button>`;}).join('');
+    $('#arGrid').querySelectorAll('[data-go]').forEach(t=>t.onclick=()=>{const b=document.querySelector(`.areas button[data-area="${t.dataset.go}"]`);arOpen(false);if(b)b.click();});
+    sh.hidden=false;sc.hidden=false;requestAnimationFrame(()=>{sh.classList.add('on');sc.classList.add('on');});const f=sh.querySelector('[aria-current="true"]')||sh.querySelector('button');if(f)f.focus();}
+  else{sh.classList.remove('on');sc.classList.remove('on');setTimeout(()=>{sh.hidden=true;sc.hidden=true;},200);}}
+$('#arBtn').onclick=()=>arOpen($('#arSheet').hidden);$('#arScrim').onclick=()=>arOpen(false);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#arSheet').hidden){arOpen(false);$('#arBtn').focus();}});
+new MutationObserver(()=>arSync()).observe(document.querySelector('.areas'),{subtree:true,childList:true,attributes:true,attributeFilter:['aria-pressed','hidden','class']});
 function setHdr(){const h=document.querySelector('header.top');if(h)document.documentElement.style.setProperty('--hdr',h.offsetHeight+'px');}
 window.addEventListener('resize',setHdr);
 /* меню магазина — как в кабинете CloudShop: продажи, закупки, каталог, контрагенты, отчёты */
