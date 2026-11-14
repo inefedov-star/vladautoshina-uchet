@@ -395,13 +395,14 @@ function diskColor(string $t): string { $u = ' ' . normModel($t) . ' ';
 function brandNorm(string $b): string { $u = normModel(preg_replace('/\([^)]*\)/u', '', $b)); $u = preg_replace('/\s+(TYRES|TIRES|TYRE|ШИНЫ|АКБ)$/u', '', $u);
   $m = ['ТУНГА' => 'TUNGA', 'КОРДИАНТ' => 'CORDIANT', 'ПИРЕЛЛИ' => 'PIRELLI', 'НОКИАН' => 'NOKIAN', 'КАМА' => 'KAMA', 'БЕЛШИНА' => 'BELSHINA', 'АМТЕЛ' => 'AMTEL', 'ВИАТТИ' => 'VIATTI', 'ГУДИЕР' => 'GOODYEAR', 'КОНТИНЕНТАЛ' => 'CONTINENTAL', 'МИШЛЕН' => 'MICHELIN', 'БРИДЖСТОУН' => 'BRIDGESTONE', 'ЙОКОХАМА' => 'YOKOHAMA', 'ТОЙО' => 'TOYO', 'ХАНКУК' => 'HANKOOK', 'КУМХО' => 'KUMHO', 'ДАНЛОП' => 'DUNLOP', 'НЕКСЕН' => 'NEXEN', 'МАТАДОР' => 'MATADOR', 'ГИСЛАВЕД' => 'GISLAVED', 'ТРАЙАНГЛ' => 'TRIANGLE', 'САИЛУН' => 'SAILUN', 'ЛИНГЛОНГ' => 'LINGLONG', 'ЛАУФЕНН' => 'LAUFENN', 'ФОРМУЛА' => 'FORMULA', 'ТОРЕРО' => 'TORERO', 'МАКСИС' => 'MAXXIS', 'АЙКОН' => 'IKON', 'СКАД' => 'SKAD', 'ЗУБР' => 'ZUBR', 'ЗВЕРЬ' => 'ZVER', 'ТЮМЕНЬ' => 'TYUMEN', 'АКТЕХ' => 'AKTEX', 'ROADX' => 'SAILUN', 'LEAO' => 'LINGLONG', 'LINGLONG LEAO' => 'LINGLONG', 'HANKOOK LAUFENN' => 'LAUFENN', 'PRINX FORTUNE' => 'FORTUNE', 'PIRELLI FORMULA' => 'FORMULA', 'FURUKAWA' => 'FURUKAWA'];
   return $m[$u] ?? ($m[explode(' ', $u)[0]] ?? explode(' ', $u)[0]); }
-// фото моделей от поставщиков: SVR — крупные фото без водяных знаков (1000–1200 px); Шинсервис — с крупным логотипом, не берём
+// фото моделей от поставщиков: SVR — крупные фото без водяных знаков (1000–1200 px); Шинсервис — с крупным логотипом, не берём.
+// АКБ у SVR не берём (решение 14.11): фото АКБ — с Авторуси (b2b.autorus.ru) и ЗК Авто (zkavto.ru), их подбирают в браузере
 function photoAuto(array $cfg, int $limit = 25, string $redo = ''): array { $p = db($cfg); $pm = photoMap($cfg); $sm = stockMap($cfg); $cu = stockMap($cfg, 'custody'); $done = 0; $miss = []; $t0 = time();
   $tried = json_decode(getSetting($cfg, 'photo_auto_tried') ?? '{}', true) ?: [];
   $S = ['tire' => [], 'disk' => [], 'akb' => []];
   foreach ($p->query((int)$p->query('SELECT COUNT(*) FROM svrphoto')->fetchColumn() ? "SELECT kind, brand, model, name, w, color, img FROM svrphoto WHERE img != ''" : "SELECT kind, brand, model, name, w, color, img FROM supstock WHERE sup = 'svr' AND kind IN ('tire', 'disk', 'akb') AND img != ''")->fetchAll() as $r) $S[$r['kind']][brandNorm((string)$r['brand'])][] = $r;
   $seen = [];
-  foreach ($p->query("SELECT id, name, kind, attrs FROM products WHERE archived = 0 AND kind IN ('tire', 'disk', 'akb')")->fetchAll() as $pr) {
+  foreach ($p->query("SELECT id, name, kind, attrs FROM products WHERE archived = 0 AND kind IN ('tire', 'disk')")->fetchAll() as $pr) {
     $id = (int)$pr['id']; if (($sm[$id]['q'] ?? 0) + ($cu[$id]['q'] ?? 0) <= 0) continue; $a = json_decode($pr['attrs'], true) ?: [];
     $k = photoKey($pr['kind'], $a, $pr['name'], $id); if ($redo !== '' && ($pr['kind'] !== $redo || ($pm[$k]['source'] ?? '') !== 'svr' || isset($tried['redo|' . $k]))) continue;
     if (isset($seen[$k]) || ($redo === '' && isset($pm[$k])) || ($pr['kind'] === 'akb' && isset($pm[photoKeyOld('akb', $pr['name'])]))) continue; $seen[$k] = 1;
