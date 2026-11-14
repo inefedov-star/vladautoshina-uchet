@@ -3106,7 +3106,7 @@ function setArea(a,first){if(first)setTimeout(tkBadge,900);if((a==='z'||a==='k'|
   else if(a==='z')show('zak');
   else if(a==='c')show('crm');
   else if(a==='t')show('task');
-  else if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}page(p);}
+  else if(a==='s'){let p='goods';try{p=localStorage.getItem('ivanor_page')||'goods';}catch(_){}if(p==='cli')p='goods';page(p);}
   else if(first||!cur||!cur.dataset.a.includes(a))show('day');
   setHdr();renderBnav();}
 /* ---------- телефон: кнопка раздела в шапке и плитка разделов ---------- */
@@ -3129,6 +3129,7 @@ window.addEventListener('resize',setHdr);
 const PAGES={an:'Итоги и графики',adv:'Что довезти',pho:'Фото товаров',sale:'Продажи',ret:'Возвраты',in:'Закупки',iss:'Выдача с ответхранения',buy:'Выкуп с ОХ',pwo:'Заказы Пауэра',goods:'Товары и остатки',custody:'Ответхранение',cli:'Клиенты',sup:'Поставщики',rep:'Продажи по товарам',pay:'Чем платили',sv:'Сверка кассы и банка',cuts:'Сезоны, бренды, АКБ',cs:'История CloudShop',lbl:'Этикетки',res:'Резервы',month:'Все документы'};
 function page(p){if(p==='import'){openImport();return;}if(p==='bak'){openBackups();return;}if(p==='evo'){openEvotor();return;}if(p==='arch'){openArch();return;}
   if(!PAGES[p])p='goods';if(p==='custody'||p==='ret')p=p==='ret'?'sale':'goods';if(S.role!=='owner'&&!['goods','cli'].includes(p))p='goods';
+  if(p==='cli'&&S.role==='owner'){setArea('c');return;} // клиенты собственника — это раздел CRM; в «Магазин» потом возвращаемся на прежнюю страницу
   S.page=p;try{localStorage.setItem('ivanor_page',p);}catch(_){}
   document.querySelectorAll('#side [data-p]').forEach(b=>b.toggleAttribute('aria-current',false));const cb=document.querySelector(`#side [data-p="${p}"]`);if(cb)cb.setAttribute('aria-current','page');
   if(p==='an'){show('an');loadAn();window.scrollTo(0,0);return;}if(p==='adv'){show('adv');loadAdv();window.scrollTo(0,0);return;}if(p==='cli'){if(S.role==='owner'){setArea('c');return;}show('cli');return;}if(p==='sup'){show('sup');loadSup();return;}if(p==='rep'){show('rep');loadRep();return;}if(p==='pay'){show('pay');loadPay();window.scrollTo(0,0);return;}if(p==='sv'){show('sv');loadSv();window.scrollTo(0,0);return;}if(p==='cs'){show('cs');loadCs();window.scrollTo(0,0);return;}if(p==='cuts'){show('cuts');loadCuts();window.scrollTo(0,0);return;}if(p==='lbl'){show('lbl');renderLbl();window.scrollTo(0,0);return;}if(p==='res'){show('res');loadRes();window.scrollTo(0,0);return;}if(p==='pwo'){show('pwo');loadPwo();window.scrollTo(0,0);return;}if(p==='pho'){show('pho');loadPho();return;}
