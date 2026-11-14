@@ -1084,17 +1084,19 @@ async function reqBadge(){if(S.role!=='owner')return;let n=0;try{n=(await api('r
   const bb=document.querySelector('#bnav [data-bn="p:sale"]');if(bb){bb.querySelector('.rq')?.remove();if(n)bb.insertAdjacentHTML('beforeend',`<span class="rq">${n}</span>`);}}
 setInterval(()=>{if(document.visibilityState==='visible'&&S.role==='owner'){reqBadge();waitBadge();}},45000);
 /* «ждут выдачи»: заказы партнёров поставщика, забронированные на ОХ */
-async function waitBadge(){if(S.role!=='owner')return;let r=[];try{r=(await api('wait_list')).rows||[];}catch(_){return;}S.wait=r;
+async function waitBadge(){if(S.role!=='owner')return;let r=[];try{S.waitJ=await api('wait_list');r=S.waitJ.rows||[];}catch(_){return;}S.wait=r;
   const b=document.getElementById('stWait');if(b){b.hidden=!r.length;b.innerHTML=`⏱ Ждут выдачи <span class="rq">${r.length}</span>`;b.onclick=openWait;}}
 function wdCls(n){return n>7?'w3':n>3?'w2':'';}
-async function openWait(){await waitBadge();const r=S.wait||[];
+async function openWait(sync){if(sync){try{S.waitJ=await api('wait_list',null,{sync:'1'});}catch(e){toast('<b>Кабинет не ответил</b>'+esc(e.message));}}await waitBadge();const r=S.wait||[],J=S.waitJ||{};
   $('#shIn').innerHTML=`<div class="sh-hd"><h2 id="shTitle">Ждут выдачи с ОХ</h2><button class="close" type="button" id="close" aria-label="Закрыть">×</button></div>
-  <p class="note" style="margin-top:0">Шины лежат у нас на ответхранении, но уже забронированы под заказ партнёра поставщика — продать их нельзя. Когда заберут — «Выдано».</p>
-  ${r.length?`<div class="wlist">${r.map(x=>`<div class="wcard"><div class="wtop"><span class="wdays ${wdCls(x.days)}">${x.days?'ждёт '+x.days+' дн.':'с сегодня'}</span><b>${esc(x.recv||'—')}</b>${x.num?`<span class="pay">заказ ${esc(x.num)}</span>`:''}</div>
-      <p class="witems">${esc(x.items)}</p><div class="row" style="gap:8px;align-items:center"><span class="pay">с ${fmtDay(x.day)} · ${esc(x.partner||'')}</span><span class="spacer"></span><button class="btn ghost" type="button" data-wop="${x.id}" style="min-height:40px">Открыть</button><button class="btn sig" type="button" data-wgo="${x.id}" style="min-height:40px">Выдано</button></div></div>`).join('')}</div>`
+  <p class="note" style="margin-top:0">Шины лежат у нас на ответхранении, но уже забронированы под заказ партнёра поставщика — продать их нельзя. Заказы на выдачу с ОХ подтягиваются из кабинета Пауэра сами (раз в 10 минут). Когда заберут — «Выдано».</p>
+  <div class="row" style="gap:8px;align-items:center;margin:-4px 0 12px"><span class="pay">${J.synced?'из кабинета: '+new Date(J.synced*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):''}${J.sync&&J.sync.error?' · <b style="color:var(--signal-deep)">'+esc(J.sync.error)+'</b>':''}</span><span class="spacer"></span><button class="btn ghost" type="button" id="wSync" style="min-height:38px">Обновить из кабинета</button></div>
+  ${(J.nocard||[]).length?`<p class="note" style="margin:0 0 12px;color:var(--signal-deep)">Нет карточки в пульте — бронь не поставлена: ${J.nocard.map(esc).join('; ')}</p>`:''}
+  ${r.length?`<div class="wlist">${r.map(x=>`<div class="wcard"><div class="wtop"><span class="wdays ${wdCls(x.days)}">${x.days?'ждёт '+x.days+' дн.':'с сегодня'}</span><b>${esc(x.recv||'—')}</b>${x.num?`<span class="pay">заказ ${esc(x.num)}</span>`:''}${x.gone?'<span class="pwst s1">в кабинете уже не ждёт — выдали?</span>':''}</div>
+      <p class="witems">${esc(x.items)}</p>${x.note?`<p class="pay" style="margin:-4px 0 8px">${esc(x.note)}</p>`:''}<div class="row" style="gap:8px;align-items:center"><span class="pay">с ${fmtDay(x.day)} · ${esc(x.partner||'')}</span><span class="spacer"></span><button class="btn ghost" type="button" data-wop="${x.id}" style="min-height:40px">Открыть</button><button class="btn sig" type="button" data-wgo="${x.id}" style="min-height:40px">Выдано</button></div></div>`).join('')}</div>`
     :'<div class="empty"><b>Никто не ждёт</b>Забронировать: «+ Выдача с ОХ» → шины, кому выдаём → «⏱ Ждёт выдачи».</div>'}
   <div class="row" style="margin:14px 0 40px"><button class="btn" type="button" id="wNew">+ Новый заказ «ждёт выдачи»</button></div>`;
-  $('#close').onclick=closeSheet;$('#wNew').onclick=()=>openDoc(null,{type:'iss',partner:'ОХ Пауэр Интернэшнл-шины'});
+  $('#close').onclick=closeSheet;$('#wSync').onclick=()=>openWait(true);$('#wNew').onclick=()=>openDoc(null,{type:'iss',partner:'ОХ Пауэр Интернэшнл-шины'});
   document.querySelectorAll('[data-wop]').forEach(b=>b.onclick=()=>openDoc(+b.dataset.wop));
   document.querySelectorAll('[data-wgo]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await api('doc_post',{id:+b.dataset.wgo});toast('<b>Выдано</b>Шины сняты с ответхранения');openWait();loadStock();}catch(e){b.disabled=false;toast('<b>Не получилось</b>'+esc(e.message));}});
   const sc=$('#scrim'),sh=$('#sheet');sc.hidden=false;sh.hidden=false;sh.scrollTop=0;requestAnimationFrame(()=>{sc.classList.add('on');sh.classList.add('on');});}
@@ -2323,7 +2325,8 @@ async function openPw(w,p,d){$('#shIn').innerHTML=`<div class="sh-hd"><h2 id="sh
 const PWO_ORD=['подтвержден','в логистике / на планировании','на перемещении','на перемещении / в пути'];
 const pwoN=s=>String(s||'').toLowerCase().replace(/\s*\/\s*/g,' / ').replace(/\s+/g,' ').trim();
 const pwoDt=v=>{if(!v)return '';const d=new Date(v);return isNaN(d)||d.getFullYear()<2000?'':d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'});};
-async function loadPwo(fresh){const el=$('#pwoBody');if(!el.innerHTML||fresh)el.innerHTML='<p class="note">Спрашиваю кабинет Пауэра… (до минуты при первом открытии)</p>';
+setInterval(()=>{if(document.visibilityState==='visible'&&S.view==='pwo')loadPwo(false,true);},300000);
+async function loadPwo(fresh,quiet){const el=$('#pwoBody');if(quiet&&!el.innerHTML)return;if(!quiet&&(!el.innerHTML||fresh))el.innerHTML='<p class="note">Спрашиваю кабинет Пауэра… (до минуты при первом открытии)</p>';
   $('#pwoR').onclick=()=>loadPwo(true);
   let j;try{j=await api('pw_orders',null,fresh?{fresh:'1'}:{});}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
   const O=j.orders||[],gq=o=>o.goods.filter(g=>g.type!==9).reduce((a,g)=>a+g.qty,0),here=g=>/ОХВЛАДН|ПВВЛАДН/i.test(g.wrh);
@@ -2336,13 +2339,13 @@ async function loadPwo(fresh){const el=$('#pwoBody');if(!el.innerHTML||fresh)el.
     ${O.length?grp.map(([k,L])=>`<h3 style="margin:18px 0 8px"><span class="pwst ${cls(k)}">${esc(L[0].status||k)}</span> <span class="pay">${L.length}</span></h3><div class="wlist">${L.map(o=>{const G=o.goods.filter(g=>g.type!==9),sv=o.goods.filter(g=>g.type===9);
       const eta=o.from||o.to?`прибудет ${pwoDt(o.from)}${o.to&&pwoDt(o.to)!==pwoDt(o.from)?'–'+pwoDt(o.to):''}`:o.shipdate?'отгрузка '+pwoDt(o.shipdate):'';
       return `<div class="wcard"><div class="wtop"><b>${esc(o.num)}</b><span class="pay">от ${pwoDt(o.created)}</span>${eta?`<span class="pwst ${cls(k)}">${esc(eta)}</span>`:''}<span class="spacer"></span><b class="tnum">${rub(o.sum)}</b></div>
-        <p class="pay" style="margin:4px 0 0">${/ОХ\s*Владимир/i.test(o.pickup||'')?'едет к нам на ОХ (Ноябрьская, 129)':o.ship==='Доставка'?'доставка'+(o.pickup?' · '+esc(o.pickup):''):'самовывоз'+(o.pickup?': '+esc(o.pickup):'')}</p>
+        ${o.pickup&&!/ОХ\s*Владимир/i.test(o.pickup)?`<p class="pay" style="margin:4px 0 0">едет к нам через склад Пауэра: ${esc(o.pickup)}</p>`:''}
         ${o.customer&&!/Нефедов|4точки/i.test(o.customer)?`<p class="pay" style="margin:4px 0 0">Покупатель: ${esc(o.customer)}</p>`:''}
         <div style="margin-top:6px">${G.map(g=>`<div class="pwg"><span>${esc(g.name)} <b>×${g.qty}</b></span><span class="pay tnum">${g.price?rub(g.price):''}</span>
           <small class="pay">${g.wrh?`<span class="${here(g)?'ohb':'kb'}" style="margin:0 6px 0 0">${esc(g.wrh)}${here(g)?' · уже у нас':''}</span>`:''}${g.pid?`у нас: ${esc(g.our)} — наш ${fmtQty(g.q)}${g.qc?', ОХ '+fmtQty(g.qc):''}`:'карточки у нас нет — заведётся при приходе'}</small></div>`).join('')}
         ${sv.length?`<p class="pay" style="margin:4px 0 0">+ ${sv.map(g=>esc(g.name)).join(', ')}</p>`:''}</div></div>`;}).join('')}</div>`).join('')
       :'<div class="empty"><b>Сейчас к нам ничего не едет</b>Нет заказов в статусах «Подтвержден», «В логистике», «На перемещении».</div>'}
-    <p class="pay" style="margin:14px 0 40px">Обновлено в ${esc(j.at||'')}</p>`;}
+    <p class="pay" style="margin:14px 0 40px">Обновлено в ${esc(j.at||'')} · страница сама обновляется каждые 5 минут</p>`;}
 async function loadRes(){const el=$('#rsBody');el.innerHTML='<p class="note">Загружаю…</p>';let j;try{j=await api('reserves');}catch(e){el.innerHTML=`<p class="err">${esc(e.message)}</p>`;return;}
   if(!j.rows.length){el.innerHTML='<div class="empty"><b>Резервов нет</b>Товар можно закрепить за клиентом из продажи: «В резерв на 5 дней».</div>';return;}
   el.innerHTML=`<div class="tw"><table class="sttab"><thead><tr><th style="text-align:left">До</th><th style="text-align:left">Клиент</th><th style="text-align:left">Товар</th><th>Сумма</th><th></th></tr></thead><tbody>${j.rows.map(r=>`<tr data-rs="${r.id}" style="cursor:pointer"><td style="text-align:left">${r.until<j.today?`<b style="color:var(--signal-deep)">истёк ${fmtDay(r.until)}</b>`:fmtDay(r.until)}</td><td style="text-align:left">${esc(r.partner||'—')}${r.phone?`<small class="pay" style="display:block">${esc(fmtPhone(r.phone))}</small>`:''}</td><td style="text-align:left">${esc(r.items)}</td><td><b>${rub(r.sum)}</b></td><td><button type="button" class="out" data-rs0="${r.id}">Снять</button></td></tr>`).join('')}</tbody></table></div>`;
