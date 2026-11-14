@@ -419,7 +419,10 @@ function photoAuto(array $cfg, int $limit = 25, string $redo = ''): array { $p =
       if ($bs <= 0) $best = null; }
     else { [$ab, $al, ] = akbModel($pr['name'], $a); [$bc, , $bg] = akbBody($pr['name'], $a); $b = brandNorm($ab);
       foreach ($S['akb'][$b] ?? [] as $r) { [$rb, , $rg] = akbBody($r['name'] . ' ' . preg_replace('/[хx]/u', '*', (string)$r['color']), ['ah' => $r['w']]); if ($rg !== $bg) continue;
-        $sc = 10 + ($rb === $bc ? 3 : 0) + ($al !== '' && mb_stripos($r['model'] . ' ' . $r['name'], $al) !== false ? 5 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } } }
+        // линейка: EFB-аккумулятор не показываем фото AGM и наоборот
+        $rt = mb_strtoupper($r['model'] . ' ' . $r['name']); $rl = ''; foreach (['AGM', 'EFB', 'GEL'] as $lk) if (preg_match('/(^|[^A-Z])' . $lk . '([^A-Z]|$)/u', $rt)) { $rl = $lk; break; }
+        if ($rl !== '' && $rl !== $al) continue; if (in_array($al, ['AGM', 'EFB', 'GEL'], true) && $rl !== $al) continue;
+        $sc = 10 + ($rb === $bc ? 3 : 0) + ($al !== '' && mb_stripos($rt, $al) !== false ? 5 : 0); if ($sc > $bs) { $bs = $sc; $best = $r; } } }
     if ($redo !== '') $tried['redo|' . $k] = time();
     if (!$best) { $tried[$k] = time(); $miss[] = photoLabel($pr['kind'], $a, $pr['name']); continue; }
     try { $bytes = supGet((string)$best['img'], 30); $info = @getimagesizefromstring($bytes); if (!$info || strlen($bytes) < 2000) throw new RuntimeException('не картинка');
